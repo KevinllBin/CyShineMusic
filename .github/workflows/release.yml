@@ -21,7 +21,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -65,11 +65,15 @@ jobs:
           name: ${{ env.APK_NAME }}
           path: ${{ env.APK_NAME }}
 
-      - name: Create draft GitHub Release
+      - name: Create or update draft GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" "$APK_NAME" \
-            --draft \
-            --title "CyShineMusic ${APP_VERSION}" \
-            --generate-notes
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$APK_NAME" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$APK_NAME" \
+              --draft \
+              --title "CyShineMusic ${APP_VERSION}" \
+              --generate-notes
+          fi

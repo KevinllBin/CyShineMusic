@@ -7,6 +7,9 @@
     ·
     <a href="https://github.com/KevinllBin/CyShineMusic/issues">问题反馈</a>
   </p>
+  <p>
+    <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License"></a>
+  </p>
 </div>
 
 ## 项目简介
@@ -44,7 +47,7 @@ CyShineMusic 是一个使用 Flutter 构建的 Android 音乐客户端，提供�
   <tr>
     <td align="center"><img src="./screenshots/settings-appearance.png" width="220" alt="浅色外观设置"><br>浅色外观</td>
     <td align="center"><img src="./screenshots/settings-dark.png" width="220" alt="深色外观设置"><br>深色外观</td>
-    <td align="center"></td>
+    <td align="center"><img src="./screenshots/online-playlist-detail.jpg" width="220" alt="在线歌单详情"><br>在线歌单</td>
   </tr>
 </table>
 
@@ -110,6 +113,14 @@ lib/
 flutter analyze
 flutter test
 ```
+
+## 友情链接
+
+- [Linux.do 社区](https://linux.do/)
+
+## 许可证
+
+本项目基于 [MIT License](./LICENSE) 开源。
 
 ## 免责声明
 
