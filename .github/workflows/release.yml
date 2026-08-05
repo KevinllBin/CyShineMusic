@@ -1,0 +1,75 @@
+name: Android Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build arm64 release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Validate release version
+        shell: bash
+        run: |
+          app_version="$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)"
+          tag_version="${GITHUB_REF_NAME#v}"
+
+          if [[ "$app_version" != "$tag_version" ]]; then
+            echo "Tag version v${tag_version} does not match pubspec version ${app_version}."
+            exit 1
+          fi
+
+          echo "APP_VERSION=${app_version}" >> "$GITHUB_ENV"
+          echo "APK_NAME=CyShineMusic-v${app_version}-arm64-v8a.apk" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Build APK
+        run: flutter build apk --target-platform=android-arm64
+
+      - name: Prepare artifact
+        shell: bash
+        run: cp build/app/outputs/flutter-apk/app-release.apk "$APK_NAME"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APK_NAME }}
+          path: ${{ env.APK_NAME }}
+
+      - name: Create draft GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "$APK_NAME" \
+            --draft \
+            --title "CyShineMusic ${APP_VERSION}" \
+            --generate-notes
