@@ -73,27 +73,6 @@ flutter build apk --target-platform=android-arm64
 build/app/outputs/flutter-apk/app-release.apk
 ```
 
-## 版本与发布
-
-版本号只维护在 [pubspec.yaml](./pubspec.yaml)：
-
-```yaml
-version: 1.0.0+1
-```
-
-其中 `1.0.0` 是用户看到的版本名，`+1` 是 Android 的内部构建号。设置页和启动页会读取应用包信息显示版本，例如 `栖弦 1.0.0`。
-
-发布 Release 时使用 tag 触发 GitHub Actions：
-
-```powershell
-git tag v1.0.0
-git push origin main
-git push origin v1.0.0
-```
-
-Action 会检查 tag 版本和 `pubspec.yaml` 的版本名是否一致，然后运行 `flutter analyze`、`flutter test`，并只构建 `arm64-v8a` 发布包。构建成功后会创建一个 Draft Release，并附加 APK 文件。
-
-发布说明可以在 GitHub 的 Releases 页面编辑：打开生成的 Draft Release，检查标题、更新说明和附件，确认无误后点击 Publish release。后续更新时先把 `pubspec.yaml` 改成新版本，例如 `1.0.1+2`，提交代码后打 `v1.0.1` tag，再按同样流程发布。
 
 ## 项目结构
 
