@@ -18,6 +18,16 @@ CyShineMusic 是一个使用 Flutter 构建的 Android 音乐客户端，提供�
 
 项目不内置或分发任何音乐内容。用户需要自行配置可用的自定义源，并自行确认相关内容来源的合法性。
 
+## 交流群
+
+欢迎加入 QQ 群交流使用问题、功能建议和开发想法：`949229928`。
+
+<div align="center">
+  <img src="./screenshots/qq-group.png" width="260" alt="CyShineMusic QQ 交流群二维码">
+  <br>
+  <sub>QQ 群：949229928</sub>
+</div>
+
 ## 功能特性
 
 - **自定义源**：支持导入、启用、禁用和管理自定义音乐源。
