@@ -162,6 +162,7 @@ class _MiniLyricsScrollerState extends State<_MiniLyricsScroller> {
       physics: const NeverScrollableScrollPhysics(),
       padding: EdgeInsets.zero,
       itemExtent: _miniLyricLineExtent,
+      // ignore: deprecated_member_use
       cacheExtent: 0,
       itemCount: lines.length,
       itemBuilder: (context, index) {
