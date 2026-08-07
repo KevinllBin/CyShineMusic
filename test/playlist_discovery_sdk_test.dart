@@ -132,6 +132,16 @@ void main() {
   });
 
   group('playlist cover normalization', () {
+    test('expands Migu OSS relative covers to the image host', () {
+      const raw = '/data/oss/resource/00/2u/wh/cover.webp';
+      const expected =
+          'https://d.musicapp.migu.cn/data/oss/resource/00/2u/wh/cover.webp';
+
+      expect(CoverImageSource.normalizeUrl(raw, size: 480), expected);
+      expect(CoverImageSource.isUsableUrl(raw), isTrue);
+      expect(CoverImageSource.isUsableUrl('/unsupported/cover.jpg'), isFalse);
+    });
+
     test('keeps Kuwo kwcdn on HTTP because that host has invalid TLS', () {
       const url = 'http://img1.kwcdn.kuwo.cn/star/userpl2015/cover.jpg';
 
@@ -201,6 +211,84 @@ void main() {
         Quality.k320,
         Quality.flac,
       ]);
+    });
+
+    test('falls back to Kugou global collection detail API', () async {
+      final requestedUrls = <String>[];
+
+      final playlist = await KgPlaylistAdapter.parse(
+        '2003',
+        jsonLoader: (url, {headers}) {
+          requestedUrls.add(url);
+          return _kugouGlobalFallbackFixture(url, headers: headers);
+        },
+        jsonPoster: _kugouDetailPoster,
+      );
+
+      expect(playlist.id, 'collection_3_509005732_35_0');
+      expect(playlist.name, '酷狗新版详情');
+      expect(playlist.creator, '新版作者');
+      expect(playlist.totalTracks, 1);
+      expect(playlist.tracks.single.name, '酷狗歌曲');
+      expect(playlist.tracks.single.meta.hash, 'DETAILHASH');
+      expect(
+        requestedUrls.any((url) => url.contains('/api/v5/special/info?')),
+        isTrue,
+      );
+      expect(
+        requestedUrls.any(
+          (url) =>
+              url.contains('/api/v5/special/info_v2') &&
+              Uri.parse(url).queryParameters.containsKey('signature'),
+        ),
+        isTrue,
+      );
+      expect(
+        requestedUrls.any(
+          (url) =>
+              url.contains('/api/v5/special/song_v2') &&
+              Uri.parse(url).queryParameters.containsKey('signature'),
+        ),
+        isTrue,
+      );
+    });
+
+    test('decodes Kugou gcid songlist links before loading detail', () async {
+      final requestedPosts = <String>[];
+
+      final playlist = await KgPlaylistAdapter.parse(
+        'gcid:gcid_3z9ly0fxznz0d1',
+        jsonLoader: _kugouGlobalFallbackFixture,
+        jsonPoster: (url, {headers, body}) {
+          requestedPosts.add(url);
+          return _kugouGcidPoster(url, headers: headers, body: body);
+        },
+      );
+
+      expect(playlist.id, 'collection_3_509005732_23_0');
+      expect(playlist.name, '酷狗新版详情');
+      expect(playlist.tracks.single.name, '酷狗歌曲');
+      expect(
+        requestedPosts.any(
+          (url) =>
+              url.contains('/v1/songlist/batch_decode') &&
+              Uri.parse(url).queryParameters.containsKey('signature'),
+        ),
+        isTrue,
+      );
+    });
+
+    test('keeps Kugou base fields when detail metadata is partial', () async {
+      final playlist = await KgPlaylistAdapter.parse(
+        'global:collection_3_509005732_23_0',
+        jsonLoader: _kugouGlobalFallbackFixture,
+        jsonPoster: _kugouPartialDetailPoster,
+      );
+
+      expect(playlist.totalTracks, 1);
+      expect(playlist.tracks.single.name, '酷狗补全标题');
+      expect(playlist.tracks.single.meta.hash, 'BASEHASH');
+      expect(playlist.tracks.single.meta.songId, 301);
     });
 
     test('continues Kugou pagination when the total is unknown', () async {
@@ -467,6 +555,95 @@ Future<dynamic> _kugouDetailPoster(
       ],
     ],
   };
+}
+
+Future<dynamic> _kugouGcidPoster(
+  String url, {
+  Map<String, String>? headers,
+  Object? body,
+}) async {
+  if (url.contains('/v1/songlist/batch_decode')) {
+    expect(body, contains('gcid_3z9ly0fxznz0d1'));
+    return {
+      'status': 1,
+      'err_code': 0,
+      'data': {
+        'list': [
+          {'global_collection_id': 'collection_3_509005732_23_0'},
+        ],
+      },
+    };
+  }
+  return _kugouDetailPoster(url, headers: headers, body: body);
+}
+
+Future<dynamic> _kugouPartialDetailPoster(
+  String url, {
+  Map<String, String>? headers,
+  Object? body,
+}) async {
+  return {
+    'error_code': 0,
+    'data': [
+      [
+        {
+          'songname': '酷狗补全标题',
+          'album_info': {'album_name': '补全专辑'},
+        },
+      ],
+    ],
+  };
+}
+
+Future<dynamic> _kugouGlobalFallbackFixture(
+  String url, {
+  Map<String, String>? headers,
+}) async {
+  if (url.contains('/api/v3/special/info')) {
+    return {'status': 1};
+  }
+  if (url.contains('/api/v5/special/info?')) {
+    return {
+      'status': 1,
+      'errcode': 0,
+      'data': {'global_specialid': 'collection_3_509005732_35_0'},
+    };
+  }
+  if (url.contains('/api/v5/special/info_v2')) {
+    return {
+      'status': 1,
+      'errcode': 0,
+      'data': {
+        'global_specialid': Uri.parse(url).queryParameters['global_specialid'],
+        'specialname': '酷狗新版详情',
+        'songcount': 1,
+        'imgurl': 'http://img.test/{size}/kg-global.jpg',
+        'nickname': '新版作者',
+        'intro': '新版详情简介',
+        'playcount': 9876,
+      },
+    };
+  }
+  if (url.contains('/api/v5/special/song_v2')) {
+    return {
+      'status': 1,
+      'errcode': 0,
+      'data': {
+        'total': 1,
+        'info': [
+          {
+            'audio_id': 301,
+            'hash': 'BASEHASH',
+            'songname': '酷狗歌曲',
+            'singername': '酷狗歌手',
+            'duration': 180,
+            'filesize': 3145728,
+          },
+        ],
+      },
+    };
+  }
+  throw StateError('Unexpected Kugou global URL: $url');
 }
 
 Future<dynamic> _miguDetailFixture(

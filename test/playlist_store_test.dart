@@ -9,6 +9,7 @@ import 'package:cy_shine_music/core/models/music_info.dart';
 import 'package:cy_shine_music/core/models/playlist_info.dart';
 import 'package:cy_shine_music/core/storage/settings_store.dart';
 import 'package:cy_shine_music/features/downloads/download_history_store.dart';
+import 'package:cy_shine_music/features/playlists/lx_playlist_import.dart';
 import 'package:cy_shine_music/features/playlists/playlist_models.dart';
 import 'package:cy_shine_music/features/playlists/playlist_store.dart';
 
@@ -130,6 +131,98 @@ void main() {
               .firstWhere((track) => track.musicId == '1')
               .name,
           '更新后的歌名',
+        );
+      },
+    );
+
+    test(
+      'imports multiple LX playlists with unique names and dedupes',
+      () async {
+        final notifier = container.read(localPlaylistsProvider.notifier);
+        await notifier.create('我的收藏');
+
+        final imported = await notifier.importLxPlaylists([
+          LxPlaylistData(
+            sourceId: 'love',
+            name: '我的收藏',
+            tracks: [_music('1', '旧歌名'), _music('1', '更新后的歌名')],
+          ),
+          const LxPlaylistData(sourceId: 'empty', name: '我的收藏', tracks: []),
+        ]);
+
+        expect(imported.map((playlist) => playlist.name), [
+          '我的收藏 (2)',
+          '我的收藏 (3)',
+        ]);
+        expect(imported.first.id, startsWith('lx-'));
+        expect(imported.first.tracks, hasLength(1));
+        expect(imported.first.tracks.single.name, '更新后的歌名');
+        expect(imported.last.tracks, isEmpty);
+
+        container.dispose();
+        container = _containerWith(prefs);
+        expect(
+          container
+              .read(localPlaylistsProvider)
+              .map((playlist) => playlist.name),
+          ['我的收藏', '我的收藏 (2)', '我的收藏 (3)'],
+        );
+      },
+    );
+
+    test(
+      'persists a resolved cover in both playlist track snapshots',
+      () async {
+        final music = MusicInfo.fromJson({
+          'id': 'kg-cover-1',
+          'name': '缺少封面的歌曲',
+          'singer': '歌手',
+          'source': MusicSource.kg.code,
+          'interval': '03:30',
+          'meta': {
+            'songId': 'kg-cover-1',
+            'albumName': '专辑',
+            'hash': 'hash-1',
+            'qualitys': [
+              {'type': Quality.k320.code, 'size': '1024'},
+            ],
+          },
+        });
+        final notifier = container.read(localPlaylistsProvider.notifier);
+        final imported = await notifier.importLxPlaylists([
+          LxPlaylistData(sourceId: 'love', name: '待补图歌单', tracks: [music]),
+        ]);
+        final track = imported.single.tracks.single;
+
+        expect(
+          await notifier.updateTrackCover(
+            playlistId: imported.single.id,
+            trackId: track.identityKey,
+            picUrl: 'https://img.test/kg-cover-1.jpg',
+          ),
+          isTrue,
+        );
+
+        final updated = notifier.byId(imported.single.id)!.tracks.single;
+        expect(updated.picUrl, 'https://img.test/kg-cover-1.jpg');
+        expect(
+          (updated.musicJson!['meta'] as Map)['picUrl'],
+          'https://img.test/kg-cover-1.jpg',
+        );
+        expect((updated.musicJson!['meta'] as Map)['hash'], 'hash-1');
+        expect(music.meta.picUrl, isNull);
+
+        container.dispose();
+        container = _containerWith(prefs);
+        final restored = container
+            .read(localPlaylistsProvider)
+            .single
+            .tracks
+            .single;
+        expect(restored.picUrl, 'https://img.test/kg-cover-1.jpg');
+        expect(
+          restored.musicInfo?.meta.picUrl,
+          'https://img.test/kg-cover-1.jpg',
         );
       },
     );

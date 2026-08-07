@@ -16,6 +16,7 @@ import '../../core/ui/app_toast.dart';
 import '../../core/ui/expressive_loading_status.dart';
 import '../downloads/download_progress.dart';
 import '../discovery/discovery_content.dart';
+import '../discovery/discovery_controller.dart';
 import '../music_sources/music_source_action_guard.dart';
 import '../player/player_controller.dart';
 import 'search_controller.dart';
@@ -74,7 +75,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       final api = ref.read(musicApiProvider);
       final tips = await api.searchTip(
         keyword: query,
-        source: ref.read(searchControllerProvider).source,
+        source: _sourceForSearchRequest(ref.read(searchControllerProvider)),
       );
       if (!identical(request, _tipRequest) || query != controller.text.trim()) {
         return _lastSuggestionWidgets;
@@ -126,10 +127,12 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     _dismissTransientRoutes();
     _releaseSearchFocus();
 
-    final requestedSource = ref.read(searchControllerProvider).source;
+    final requestedSource = _sourceForSearchRequest(
+      ref.read(searchControllerProvider),
+    );
     await ref
         .read(searchControllerProvider.notifier)
-        .search(keyword: query, page: page);
+        .search(keyword: query, source: requestedSource, page: page);
     if (!scrollToTopOnSuccess || !mounted) return;
 
     final completedState = ref.read(searchControllerProvider);
@@ -288,6 +291,16 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     final toast = _searchErrorToast;
     _searchErrorToast = null;
     dismissAppToast(toast, showRemoveAnimation: false);
+  }
+
+  MusicSource _sourceForSearchRequest(SearchState state) {
+    if (state.isSearchActive) return state.source;
+    final discoverySource = ref.read(selectedDiscoverySourceProvider);
+    final enabled = ref.read(settingsProvider).enabledSearchSources;
+    if (enabled.contains(discoverySource)) return discoverySource;
+    return state.source == MusicSource.all || !enabled.contains(state.source)
+        ? MusicSource.all
+        : state.source;
   }
 }
 

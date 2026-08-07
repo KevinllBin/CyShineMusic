@@ -241,6 +241,43 @@ void main() {
       expect(state.queueIndex, 0);
     },
   );
+
+  test('playlist queue expands without restarting the active track', () async {
+    final harness = await _Harness.create(loadFailures: 0);
+    addTearDown(harness.dispose);
+    final directory = await Directory.systemTemp.createTemp(
+      'cyshine-player-expand-queue-',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final expanded = <DownloadHistoryEntry>[];
+    for (var index = 1; index <= 5; index++) {
+      final file = File(
+        '${directory.path}${Platform.pathSeparator}track-$index.mp3',
+      );
+      await file.writeAsBytes(const [0]);
+      expanded.add(_localEntry('track-$index', file.path));
+    }
+    final initial = expanded.take(3).toList(growable: false);
+
+    await harness.controller.playFromPlaylistQueue(initial[1], initial);
+    final before = harness.container.read(playerControllerProvider);
+    final loadedBefore = harness.audio.loadedUris.length;
+
+    expect(
+      harness.controller.expandPlaylistQueue(
+        expectedQueue: initial,
+        expandedQueue: expanded,
+      ),
+      isTrue,
+    );
+
+    final after = harness.container.read(playerControllerProvider);
+    expect(after.queue, hasLength(5));
+    expect(after.queueIndex, 1);
+    expect(after.queue[after.queueIndex].id, 'track-2');
+    expect(after.track?.id, before.track?.id);
+    expect(harness.audio.loadedUris, hasLength(loadedBefore));
+  });
 }
 
 class _Harness {

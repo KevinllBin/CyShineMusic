@@ -156,6 +156,33 @@ class SettingsPage extends ConsumerWidget {
                                   ),
                               ],
                             ),
+                            SettingsSwitchAction(
+                              key: const ValueKey('bluetooth-lyric-setting'),
+                              icon: Icons.bluetooth_audio_rounded,
+                              title: '显示蓝牙歌词',
+                              subtitle: '将当前歌词行作为媒体标题发送到车机或蓝牙设备',
+                              value: settings.bluetoothLyricEnabled,
+                              onChanged: (value) => _setBluetoothLyricEnabled(
+                                context,
+                                ref,
+                                value,
+                              ),
+                            ),
+                            SettingsSwitchAction(
+                              key: const ValueKey(
+                                'bluetooth-full-lyric-setting',
+                              ),
+                              icon: Icons.lyrics_rounded,
+                              title: '显示完整蓝牙歌词',
+                              subtitle: '写入完整 LRC，需接收设备支持',
+                              value: settings.bluetoothFullLyricEnabled,
+                              onChanged: (value) =>
+                                  _setBluetoothFullLyricEnabled(
+                                    context,
+                                    ref,
+                                    value,
+                                  ),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 30),
@@ -347,6 +374,54 @@ class SettingsPage extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _setBluetoothLyricEnabled(
+    BuildContext context,
+    WidgetRef ref,
+    bool value,
+  ) async {
+    if (value) await _ensureBluetoothLyricNotice(context, ref);
+    if (!context.mounted) return;
+    await ref.read(settingsProvider.notifier).setBluetoothLyricEnabled(value);
+  }
+
+  Future<void> _setBluetoothFullLyricEnabled(
+    BuildContext context,
+    WidgetRef ref,
+    bool value,
+  ) async {
+    if (value) await _ensureBluetoothLyricNotice(context, ref);
+    if (!context.mounted) return;
+    await ref
+        .read(settingsProvider.notifier)
+        .setBluetoothFullLyricEnabled(value);
+  }
+
+  Future<void> _ensureBluetoothLyricNotice(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    if (ref.read(settingsProvider).bluetoothLyricNoticeSeen) return;
+    await showDialog<void>(
+      context: context,
+      useRootNavigator: true,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.directions_car_filled_rounded),
+        title: const Text('蓝牙歌词提示'),
+        content: const Text(
+          '蓝牙歌词通过媒体信息兼容发送，不同车机或蓝牙设备的支持情况可能不同。'
+          '\n\n驾车时请勿操作手机，注意道路安全。',
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('我知道了'),
+          ),
+        ],
+      ),
+    );
+    await ref.read(settingsProvider.notifier).markBluetoothLyricNoticeSeen();
   }
 
   Future<void> _resetDownloadDir(BuildContext context, WidgetRef ref) async {

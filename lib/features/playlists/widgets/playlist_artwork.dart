@@ -2,9 +2,12 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/embedded_artwork_cache.dart';
+import '../../../core/ui/cover_image_source.dart';
 import '../playlist_cover_image.dart';
+import '../playlist_cover_resolver.dart';
 import '../playlist_models.dart';
 
 /// 歌单封面回退来源：第一个带封面来源（网络图或本地文件）的曲目。
@@ -82,6 +85,51 @@ class PlaylistTrackArtwork extends StatefulWidget {
 
   @override
   State<PlaylistTrackArtwork> createState() => _PlaylistTrackArtworkState();
+}
+
+class ResolvingPlaylistTrackArtwork extends ConsumerWidget {
+  const ResolvingPlaylistTrackArtwork({
+    super.key,
+    required this.playlistId,
+    required this.track,
+    required this.size,
+    required this.radius,
+    required this.placeholder,
+  });
+
+  final String playlistId;
+  final PlaylistTrack track;
+  final double size;
+  final double radius;
+  final Widget placeholder;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final normalized = CoverImageSource.normalizeUrl(
+      track.picUrl,
+      size: (size * 3).round(),
+    );
+    final storedUrl = CoverImageSource.isUsableUrl(normalized)
+        ? normalized
+        : null;
+    AsyncValue<String?>? lookup;
+    if (storedUrl == null && track.musicInfo != null) {
+      lookup = ref.watch(
+        playlistTrackCoverProvider(
+          PlaylistTrackCoverKey(playlistId: playlistId, track: track),
+        ),
+      );
+    }
+    final resolved = lookup?.asData?.value?.trim();
+
+    return PlaylistTrackArtwork(
+      localPath: track.localPath,
+      picUrl: resolved?.isNotEmpty == true ? resolved : storedUrl,
+      size: size,
+      radius: radius,
+      placeholder: placeholder,
+    );
+  }
 }
 
 class _PlaylistTrackArtworkState extends State<PlaylistTrackArtwork> {

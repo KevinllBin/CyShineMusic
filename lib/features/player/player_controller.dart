@@ -17,6 +17,7 @@ import '../../core/services/app_logger.dart';
 import '../../core/services/tagger.dart';
 import '../../core/storage/settings_store.dart';
 import '../downloads/download_history_store.dart';
+import 'bluetooth_lyric_metadata.dart';
 import 'lyric_parser.dart';
 import 'player_audio_handler.dart';
 import 'player_models.dart';
@@ -47,6 +48,7 @@ class PlayerController extends StateNotifier<PlayerState>
       _audioHandler.positionStream.listen((position) {
         if (!mounted || _transportSuppressionToken != null) return;
         state = state.copyWith(position: position);
+        _syncBluetoothMetadata();
         _schedulePositionCheckpoint();
       }),
       _audioHandler.durationStream.listen((duration) {
@@ -61,6 +63,7 @@ class PlayerController extends StateNotifier<PlayerState>
           playing: playerState.playing,
           processingState: playerState.processingState,
         );
+        _syncBluetoothMetadata();
         if ((wasPlaying && !playerState.playing) ||
             playerState.processingState == ProcessingState.completed) {
           _persistPositionCheckpoint();
@@ -71,6 +74,13 @@ class PlayerController extends StateNotifier<PlayerState>
       }),
       _audioHandler.errorStream.listen(_handlePlaybackError),
     ];
+    _ref.listen<AppSettings>(settingsProvider, (previous, next) {
+      if (previous?.bluetoothLyricEnabled != next.bluetoothLyricEnabled ||
+          previous?.bluetoothFullLyricEnabled !=
+              next.bluetoothFullLyricEnabled) {
+        _syncBluetoothMetadata(force: true);
+      }
+    });
     WidgetsBinding.instance.addObserver(this);
 
     final restored = _sessionStore.read();
@@ -102,6 +112,10 @@ class PlayerController extends StateNotifier<PlayerState>
   String? _completionHandledForTrackId;
   Set<String> _attemptedRemoteSourceIds = <String>{};
   bool _lateSourceFallbackActive = false;
+  final BluetoothLyricMetadataCoordinator _bluetoothLyricMetadata =
+      BluetoothLyricMetadataCoordinator();
+
+  MusicInfo? get currentMusic => _currentMusic;
 
   Future<void> playFromMusic(MusicInfo music, {Quality? quality}) async {
     _pendingRestoredSession = null;
@@ -260,7 +274,7 @@ class PlayerController extends StateNotifier<PlayerState>
         processingState: _audioHandler.processingState,
         error: null,
       );
-      _audioHandler.updateMediaMetadata(finalItem);
+      _publishMediaMetadata(finalItem);
       _syncQueueAvailability();
       _persistFullSession();
       if (!identical(_requestToken, token)) return false;
@@ -368,6 +382,36 @@ class PlayerController extends StateNotifier<PlayerState>
     List<DownloadHistoryEntry> queue,
   ) {
     return _playFromQueue(entry, queue);
+  }
+
+  /// Replaces a playlist queue after its remaining tracks finish loading,
+  /// without restarting or seeking the active track.
+  ///
+  /// The replacement is ignored when the user has switched or edited the
+  /// queue since [expectedQueue] began loading.
+  bool expandPlaylistQueue({
+    required List<DownloadHistoryEntry> expectedQueue,
+    required List<DownloadHistoryEntry> expandedQueue,
+  }) {
+    final expected = _playableQueue(expectedQueue);
+    if (!_hasSameQueueIdentity(_queue, expected)) return false;
+
+    final expanded = _playableQueue(expandedQueue);
+    if (expanded.length < _queue.length) return false;
+    if (expanded.length == _queue.length) return true;
+
+    final current = _hasCurrentQueueTrack ? _queue[_queueIndex] : null;
+    final nextIndex = current == null
+        ? -1
+        : expanded.indexWhere((entry) => _sameEntry(entry, current));
+    if (current != null && nextIndex < 0) return false;
+
+    _queue = expanded;
+    _queueIndex = nextIndex;
+    _rebuildPlayOrder(anchorIndex: _queueIndex);
+    _syncQueueAvailability();
+    _persistFullSession();
+    return true;
   }
 
   Future<void> _playFromQueue(
@@ -527,6 +571,7 @@ class PlayerController extends StateNotifier<PlayerState>
         processingState: _audioHandler.processingState,
         error: null,
       );
+      _syncBluetoothMetadata(force: true);
       _syncQueueAvailability();
       unawaited(_publishEmbeddedArtworkAfterEntrance(resolvedTrack, token));
       _persistFullSession();
@@ -743,6 +788,17 @@ class PlayerController extends StateNotifier<PlayerState>
         a.musicId == b.musicId;
   }
 
+  bool _hasSameQueueIdentity(
+    List<DownloadHistoryEntry> first,
+    List<DownloadHistoryEntry> second,
+  ) {
+    if (first.length != second.length) return false;
+    for (var index = 0; index < first.length; index++) {
+      if (first[index].id != second[index].id) return false;
+    }
+    return true;
+  }
+
   void _clearQueue({bool syncState = true}) {
     _queue = const [];
     _queueIndex = -1;
@@ -872,7 +928,7 @@ class PlayerController extends StateNotifier<PlayerState>
       duration: _audioHandler.duration,
     );
     if (!identical(_requestToken, token)) return;
-    _audioHandler.updateMediaMetadata(item);
+    _publishMediaMetadata(item);
   }
 
   MediaItem _mediaItemForHistoryEntry(DownloadHistoryEntry entry) {
@@ -909,6 +965,56 @@ class PlayerController extends StateNotifier<PlayerState>
         'quality': track.qualityLabel,
       },
     );
+  }
+
+  void _publishMediaMetadata(MediaItem item) {
+    _audioHandler.updateMediaMetadata(item);
+    _bluetoothLyricMetadata.reset();
+    _syncBluetoothMetadata(force: true);
+  }
+
+  void _syncBluetoothMetadata({bool force = false}) {
+    if (!mounted) return;
+    final track = state.track;
+    final current = _audioHandler.currentMediaItem;
+    if (track == null || current == null || current.id != track.id) return;
+
+    final settings = _ref.read(settingsProvider);
+    final canPublishLine =
+        settings.bluetoothLyricEnabled &&
+        state.playing &&
+        !state.loading &&
+        !state.buffering &&
+        state.processingState != ProcessingState.completed &&
+        !state.lyrics.isEmpty;
+    var lineIndex = -1;
+    String? activeLine;
+    if (canPublishLine) {
+      lineIndex = state.lyrics.activeIndex(state.position);
+      if (lineIndex >= 0 && lineIndex < state.lyrics.lines.length) {
+        activeLine = state.lyrics.lines[lineIndex].text;
+      }
+    }
+    final fullLyric = state.lyricInfo?.lyric.trim();
+    try {
+      final item = _bluetoothLyricMetadata.next(
+        current: current,
+        track: track,
+        lineIndex: lineIndex,
+        lineLyricEnabled: settings.bluetoothLyricEnabled,
+        fullLyricEnabled: settings.bluetoothFullLyricEnabled,
+        activeLine: activeLine,
+        fullLyric: fullLyric,
+        force: force,
+      );
+      if (item == null) return;
+      _audioHandler.updateMediaMetadata(item);
+    } catch (error) {
+      _bluetoothLyricMetadata.reset();
+      unawaited(
+        AppLogger.write('player', 'bluetooth lyric metadata failed: $error'),
+      );
+    }
   }
 
   Uri? _networkArtworkUri(String? value) {
@@ -1231,6 +1337,7 @@ class PlayerController extends StateNotifier<PlayerState>
         info: lyricInfo,
         parsed: KaraokeLyricsParser.parse(lyricInfo),
       );
+      _syncBluetoothMetadata(force: true);
     } on TimeoutException catch (e) {
       await AppLogger.write(
         'player',
@@ -1251,6 +1358,7 @@ class PlayerController extends StateNotifier<PlayerState>
         item: item,
         queueIndex: _hasCurrentQueueTrack ? _queueIndex : null,
       );
+      _bluetoothLyricMetadata.reset();
     } catch (e) {
       await AppLogger.write(
         'player',

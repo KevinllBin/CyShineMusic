@@ -1,0 +1,127 @@
+name: Android Prerelease
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Branch, tag, or commit SHA to build
+        required: true
+        default: dev
+        type: string
+      create_prerelease:
+        description: Create or update a GitHub prerelease
+        required: true
+        default: true
+        type: boolean
+      tag_name:
+        description: Optional prerelease tag; defaults to dev-v<version>-<short_sha>
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build manual arm64 prerelease APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout selected ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Prepare build metadata
+        shell: bash
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+          INPUT_TAG_NAME: ${{ inputs.tag_name }}
+        run: |
+          app_version="$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)"
+          short_sha="$(git rev-parse --short HEAD)"
+          head_sha="$(git rev-parse HEAD)"
+          safe_ref="$(printf '%s' "$SOURCE_REF" | tr '/: ' '---' | tr -cd 'A-Za-z0-9._-')"
+          tag_name="$INPUT_TAG_NAME"
+
+          if [[ -z "$tag_name" ]]; then
+            tag_name="dev-v${app_version}-${short_sha}"
+          fi
+
+          echo "APP_VERSION=${app_version}" >> "$GITHUB_ENV"
+          echo "SHORT_SHA=${short_sha}" >> "$GITHUB_ENV"
+          echo "HEAD_SHA=${head_sha}" >> "$GITHUB_ENV"
+          echo "TAG_NAME=${tag_name}" >> "$GITHUB_ENV"
+          echo "ARM64_APK_NAME=CyShineMusic-${safe_ref}-v${app_version}-${short_sha}-arm64-v8a.apk" >> "$GITHUB_ENV"
+          echo "V7A_APK_NAME=CyShineMusic-${safe_ref}-v${app_version}-${short_sha}-armeabi-v7a.apk" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Build arm64 APK
+        run: flutter build apk --target-platform=android-arm64
+
+      - name: Prepare arm64 artifact
+        shell: bash
+        run: cp build/app/outputs/flutter-apk/app-release.apk "$ARM64_APK_NAME"
+
+      - name: Build armeabi-v7a APK
+        run: flutter build apk --release --target-platform=android-arm
+
+      - name: Prepare armeabi-v7a artifact
+        shell: bash
+        run: cp build/app/outputs/flutter-apk/app-release.apk "$V7A_APK_NAME"
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: CyShineMusic-${{ env.SHORT_SHA }}-android-apks
+          path: |
+            ${{ env.ARM64_APK_NAME }}
+            ${{ env.V7A_APK_NAME }}
+
+      - name: Create or update prerelease
+        if: ${{ inputs.create_prerelease }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        shell: bash
+        run: |
+          cat > release-notes.md <<EOF
+          Manual prerelease build.
+
+          Source ref: ${SOURCE_REF}
+          Commit: ${HEAD_SHA}
+          Version: ${APP_VERSION}
+          EOF
+
+          title="CyShineMusic ${APP_VERSION} prerelease (${SHORT_SHA})"
+
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" "$ARM64_APK_NAME" "$V7A_APK_NAME" --clobber
+            gh release edit "$TAG_NAME" --prerelease --title "$title" --notes-file release-notes.md
+          else
+            gh release create "$TAG_NAME" "$ARM64_APK_NAME" "$V7A_APK_NAME" \
+              --prerelease \
+              --target "$HEAD_SHA" \
+              --title "$title" \
+              --notes-file release-notes.md
+          fi

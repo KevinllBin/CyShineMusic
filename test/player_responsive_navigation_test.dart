@@ -56,11 +56,12 @@ void main() {
   });
 
   testWidgets(
-    'compact remote player keeps title in header and exposes quality action',
+    'compact remote player moves quality and source into the cover menu',
     (tester) async {
       final controller = await _pumpPlayer(
         tester,
         size: const Size(390, 844),
+        currentMusic: _remoteMusic(),
         track: const PlayerTrack(
           id: 'tx:remote-song',
           kind: PlayerTrackKind.remote,
@@ -99,24 +100,30 @@ void main() {
       expect(artist.style?.fontSize, lessThan(title.style!.fontSize!));
       expect(artist.style?.fontWeight, FontWeight.w400);
 
-      final source = find.byKey(const ValueKey('player-source-chip'));
-      final qualityTag = find.byKey(const ValueKey('player-quality-tag'));
-      final quality = find.byKey(const ValueKey('player-quality-button'));
-      expect(source, findsOneWidget);
-      expect(qualityTag, findsOneWidget);
-      expect(
-        find.descendant(of: source, matching: find.text('QQ')),
-        findsOneWidget,
-      );
-      expect(quality, findsOneWidget);
-      expect(
-        find.descendant(of: quality, matching: find.text('320k')),
-        findsOneWidget,
-      );
-      expect(tester.getSize(qualityTag), tester.getSize(source));
-      expect(tester.getSize(qualityTag), const Size(80, 28));
+      expect(find.byKey(const ValueKey('player-source-chip')), findsNothing);
+      expect(find.byKey(const ValueKey('player-quality-tag')), findsNothing);
 
-      await tester.tap(quality);
+      await tester.tap(find.byKey(const ValueKey('player-cover-menu-button')));
+      await _pumpUi(tester);
+
+      expect(
+        find.byKey(const ValueKey('player-cover-actions-sheet')),
+        findsOneWidget,
+      );
+      expect(find.text('窄屏在线歌曲'), findsNWidgets(2));
+      expect(find.text('高品质 320K · QQ'), findsOneWidget);
+      expect(
+        tester
+            .widget<ListTile>(
+              find.byKey(const ValueKey('player-cover-action-download')),
+            )
+            .enabled,
+        isTrue,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('player-cover-action-quality')),
+      );
       await _pumpUi(tester);
 
       expect(
@@ -143,7 +150,7 @@ void main() {
     },
   );
 
-  testWidgets('compact local player uses static quality and local source tag', (
+  testWidgets('compact local player disables inapplicable cover actions', (
     tester,
   ) async {
     await _pumpPlayer(
@@ -164,17 +171,196 @@ void main() {
     expect(find.text('窄屏本地歌曲'), findsOneWidget);
     expect(find.text('本地歌手'), findsOneWidget);
     expect(find.byKey(const ValueKey('player-quality-button')), findsNothing);
+    expect(find.byKey(const ValueKey('player-source-chip')), findsNothing);
+    expect(find.byKey(const ValueKey('player-quality-tag')), findsNothing);
 
-    final source = find.byKey(const ValueKey('player-source-chip'));
-    final quality = find.byKey(const ValueKey('player-quality-tag'));
-    expect(source, findsOneWidget);
-    expect(quality, findsOneWidget);
-    expect(tester.getSize(quality), tester.getSize(source));
+    await tester.tap(find.byKey(const ValueKey('player-cover-menu-button')));
+    await _pumpUi(tester);
+    expect(find.text('FLAC · 本地'), findsOneWidget);
     expect(
-      find.descendant(of: source, matching: find.text('本地')),
+      tester
+          .widget<ListTile>(
+            find.byKey(const ValueKey('player-cover-action-download')),
+          )
+          .enabled,
+      isFalse,
+    );
+    expect(
+      tester
+          .widget<ListTile>(
+            find.byKey(const ValueKey('player-cover-action-quality')),
+          )
+          .enabled,
+      isFalse,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('compact mini lyrics show three lines, scroll, and open lyrics', (
+    tester,
+  ) async {
+    const lyrics = KaraokeLyrics([
+      KaraokeLyricLine(startMs: 0, endMs: 3000, text: '第一句歌词'),
+      KaraokeLyricLine(startMs: 3000, endMs: 6000, text: '第二句歌词'),
+      KaraokeLyricLine(startMs: 6000, endMs: 9000, text: '第三句歌词'),
+      KaraokeLyricLine(startMs: 9000, endMs: 12000, text: '第四句歌词'),
+    ]);
+    final controller = await _pumpPlayer(
+      tester,
+      size: const Size(390, 844),
+      track: const PlayerTrack(
+        id: 'tx:mini-lyrics',
+        kind: PlayerTrackKind.remote,
+        title: '迷你歌词测试',
+        artist: '测试歌手',
+        album: '测试专辑',
+        sourceLabel: 'QQ',
+        qualityLabel: '320k',
+      ),
+      lyrics: lyrics,
+      position: const Duration(milliseconds: 3500),
+    );
+
+    expect(find.byKey(const ValueKey('player-mini-lyrics')), findsOneWidget);
+    expect(
+      tester
+          .widget<Material>(
+            find.byKey(const ValueKey('player-mini-lyrics-surface')),
+          )
+          .color,
+      Colors.transparent,
+    );
+    expect(
+      find.byKey(const ValueKey('player-mini-lyric-line-0')),
       findsOneWidget,
     );
-    expect(find.text('FLAC'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('player-mini-lyric-line-1')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('player-mini-lyric-line-2')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('player-mini-lyric-line-3')),
+      findsNothing,
+    );
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('player-mini-lyric-line-1')))
+          .style
+          ?.fontWeight,
+      FontWeight.w400,
+    );
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('player-mini-lyric-line-1')))
+          .style
+          ?.fontSize,
+      14,
+    );
+    expect(
+      tester
+          .widget<ImageFiltered>(
+            find.byKey(const ValueKey('player-mini-lyric-blur-1')),
+          )
+          .enabled,
+      isFalse,
+    );
+    expect(
+      tester
+          .widget<ImageFiltered>(
+            find.byKey(const ValueKey('player-mini-lyric-blur-0')),
+          )
+          .enabled,
+      isTrue,
+    );
+
+    final miniScroll = find.descendant(
+      of: find.byKey(const ValueKey('player-mini-lyrics-scroll')),
+      matching: find.byType(Scrollable),
+    );
+    final scrollState = tester.state<ScrollableState>(miniScroll);
+    expect(scrollState.position.pixels, 0);
+
+    controller.setStateForTest(
+      controller.state.copyWith(position: const Duration(milliseconds: 6500)),
+    );
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 190));
+    expect(scrollState.position.pixels, inExclusiveRange(0, 22));
+    await tester.pumpAndSettle();
+    expect(scrollState.position.pixels, closeTo(22, 0.01));
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('player-mini-lyric-line-2')))
+          .style
+          ?.fontSize,
+      14,
+    );
+    expect(
+      tester
+          .widget<ImageFiltered>(
+            find.byKey(const ValueKey('player-mini-lyric-blur-2')),
+          )
+          .enabled,
+      isFalse,
+    );
+
+    final pageView = tester.widget<PageView>(
+      find.byKey(const ValueKey('player-compact-pager')),
+    );
+    await tester.tap(find.byKey(const ValueKey('player-mini-lyrics')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(pageView.controller!.page, inExclusiveRange(0, 1));
+    await tester.pumpAndSettle();
+    expect(pageView.controller!.page, 1);
+    expect(find.byType(KaraokeLyricsView), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('cover menu switch hides compact mini lyrics immediately', (
+    tester,
+  ) async {
+    const lyrics = KaraokeLyrics([
+      KaraokeLyricLine(startMs: 0, endMs: 3000, text: '第一句歌词'),
+      KaraokeLyricLine(startMs: 3000, endMs: 6000, text: '第二句歌词'),
+      KaraokeLyricLine(startMs: 6000, endMs: 9000, text: '第三句歌词'),
+    ]);
+    await _pumpPlayer(
+      tester,
+      size: const Size(390, 844),
+      track: const PlayerTrack(
+        id: 'tx:toggle-mini-lyrics',
+        kind: PlayerTrackKind.remote,
+        title: '开关测试',
+        artist: '测试歌手',
+        album: '测试专辑',
+        sourceLabel: 'QQ',
+        qualityLabel: '320k',
+      ),
+      lyrics: lyrics,
+    );
+    expect(find.byKey(const ValueKey('player-mini-lyrics')), findsOneWidget);
+    final liftedCoverTop = tester.getTopLeft(
+      find.byKey(const ValueKey('player-cover-menu-button')),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('player-cover-menu-button')));
+    await _pumpUi(tester);
+    await tester.tap(
+      find.byKey(const ValueKey('player-cover-action-mini-lyrics-switch')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('player-mini-lyrics')), findsNothing);
+    final centeredCoverTop = tester.getTopLeft(
+      find.byKey(const ValueKey('player-cover-menu-button')),
+    );
+    expect(centeredCoverTop.dy - liftedCoverTop.dy, 36);
     expect(tester.takeException(), isNull);
   });
 
@@ -269,6 +455,11 @@ void main() {
         qualityLabel: '无损',
         remoteUrl: 'https://audio.example/wide-song.flac',
       ),
+      lyrics: const KaraokeLyrics([
+        KaraokeLyricLine(startMs: 0, endMs: 3000, text: '宽屏第一句'),
+        KaraokeLyricLine(startMs: 3000, endMs: 6000, text: '宽屏第二句'),
+        KaraokeLyricLine(startMs: 6000, endMs: 9000, text: '宽屏第三句'),
+      ]),
     );
 
     expect(find.byKey(const ValueKey('player-wide-layout')), findsOneWidget);
@@ -279,6 +470,15 @@ void main() {
     expect(find.byType(LyricsPanel), findsOneWidget);
     expect(find.text('宽屏歌曲'), findsOneWidget);
     expect(find.text('宽屏歌手'), findsOneWidget);
+    expect(find.byKey(const ValueKey('player-mini-lyrics')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('player-cover-menu-button')));
+    await _pumpUi(tester);
+    expect(
+      find.byKey(const ValueKey('player-cover-actions-sheet')),
+      findsOneWidget,
+    );
+    expect(find.text('仅在手机播放封面页显示'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
@@ -290,11 +490,19 @@ class _RouterHarness {
 }
 
 class _SeededPlayerController extends PlayerController {
-  _SeededPlayerController(super.ref, PlayerState initialState) {
+  _SeededPlayerController(
+    super.ref,
+    PlayerState initialState, {
+    this.seededCurrentMusic,
+  }) {
     state = initialState;
   }
 
   Quality? switchedQuality;
+  final MusicInfo? seededCurrentMusic;
+
+  @override
+  MusicInfo? get currentMusic => seededCurrentMusic ?? super.currentMusic;
 
   void setStateForTest(PlayerState next) => state = next;
 
@@ -329,6 +537,8 @@ Future<_SeededPlayerController> _pumpLyricsPanel(
       ),
     ),
   );
+  await _pumpUi(tester);
+  controller.setStateForTest(initialState);
   await _pumpUi(tester);
   return controller;
 }
@@ -368,6 +578,8 @@ Future<_SeededPlayerController> _pumpPlayer(
   required Size size,
   required PlayerTrack track,
   KaraokeLyrics lyrics = const KaraokeLyrics([]),
+  Duration position = Duration.zero,
+  MusicInfo? currentMusic,
 }) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
@@ -383,6 +595,7 @@ Future<_SeededPlayerController> _pumpPlayer(
     track: track,
     duration: const Duration(minutes: 3),
     lyrics: lyrics,
+    position: position,
   );
   late _SeededPlayerController controller;
 
@@ -392,7 +605,11 @@ Future<_SeededPlayerController> _pumpPlayer(
         sharedPreferencesProvider.overrideWithValue(preferences),
         playerAudioHandlerProvider.overrideWithValue(audioHandler),
         playerControllerProvider.overrideWith(
-          (ref) => controller = _SeededPlayerController(ref, initialState),
+          (ref) => controller = _SeededPlayerController(
+            ref,
+            initialState,
+            seededCurrentMusic: currentMusic,
+          ),
         ),
       ],
       child: MaterialApp(
@@ -407,6 +624,8 @@ Future<_SeededPlayerController> _pumpPlayer(
       ),
     ),
   );
+  await _pumpUi(tester);
+  controller.setStateForTest(initialState);
   await _pumpUi(tester);
   return controller;
 }
@@ -425,3 +644,18 @@ Future<void> _pumpUi(WidgetTester tester) async {
     await tester.pump(const Duration(milliseconds: 100));
   }
 }
+
+MusicInfo _remoteMusic() => MusicInfo.fromJson({
+  'id': 'remote-song',
+  'name': '窄屏在线歌曲',
+  'singer': '不应在封面下重复的歌手',
+  'source': MusicSource.tx.code,
+  'meta': {
+    'songId': 'remote-song',
+    'albumName': '测试专辑',
+    'qualitys': [
+      {'type': Quality.k320.code, 'size': '9.48 MB'},
+      {'type': Quality.k128.code, 'size': '3.82 MB'},
+    ],
+  },
+});

@@ -20,6 +20,10 @@ const String _kNetworkAdapterModeKey = 'network_adapter_mode';
 const String _kEnabledSearchSourcesKey = 'enabled_search_source_codes';
 const String _kOnlinePlaybackQualityKey = 'online_playback_quality';
 const String _kBatchDownloadQualityKey = 'batch_download_quality';
+const String _kShowMiniLyricsKey = 'show_mini_lyrics';
+const String _kBluetoothLyricEnabledKey = 'bluetooth_lyric_enabled';
+const String _kBluetoothFullLyricEnabledKey = 'bluetooth_full_lyric_enabled';
+const String _kBluetoothLyricNoticeSeenKey = 'bluetooth_lyric_notice_seen';
 const String _kDebugModeKey = 'debug_mode';
 const String _kLegacyBaseUrlKey = 'base_url';
 
@@ -35,6 +39,10 @@ class AppSettings {
     required this.enabledSearchSources,
     required this.onlinePlaybackQuality,
     required this.batchDownloadQuality,
+    required this.showMiniLyrics,
+    required this.bluetoothLyricEnabled,
+    required this.bluetoothFullLyricEnabled,
+    required this.bluetoothLyricNoticeSeen,
     required this.debugMode,
   });
 
@@ -47,6 +55,10 @@ class AppSettings {
   final Set<MusicSource> enabledSearchSources;
   final OnlinePlaybackQuality onlinePlaybackQuality;
   final OnlinePlaybackQuality batchDownloadQuality;
+  final bool showMiniLyrics;
+  final bool bluetoothLyricEnabled;
+  final bool bluetoothFullLyricEnabled;
+  final bool bluetoothLyricNoticeSeen;
   final bool debugMode;
 
   AppSettings copyWith({
@@ -59,6 +71,10 @@ class AppSettings {
     Set<MusicSource>? enabledSearchSources,
     OnlinePlaybackQuality? onlinePlaybackQuality,
     OnlinePlaybackQuality? batchDownloadQuality,
+    bool? showMiniLyrics,
+    bool? bluetoothLyricEnabled,
+    bool? bluetoothFullLyricEnabled,
+    bool? bluetoothLyricNoticeSeen,
     bool? debugMode,
   }) => AppSettings(
     downloadDir: downloadDir ?? this.downloadDir,
@@ -70,6 +86,12 @@ class AppSettings {
     enabledSearchSources: enabledSearchSources ?? this.enabledSearchSources,
     onlinePlaybackQuality: onlinePlaybackQuality ?? this.onlinePlaybackQuality,
     batchDownloadQuality: batchDownloadQuality ?? this.batchDownloadQuality,
+    showMiniLyrics: showMiniLyrics ?? this.showMiniLyrics,
+    bluetoothLyricEnabled: bluetoothLyricEnabled ?? this.bluetoothLyricEnabled,
+    bluetoothFullLyricEnabled:
+        bluetoothFullLyricEnabled ?? this.bluetoothFullLyricEnabled,
+    bluetoothLyricNoticeSeen:
+        bluetoothLyricNoticeSeen ?? this.bluetoothLyricNoticeSeen,
     debugMode: debugMode ?? this.debugMode,
   );
 
@@ -83,6 +105,10 @@ class AppSettings {
     enabledSearchSources: kDefaultEnabledSearchSources,
     onlinePlaybackQuality: OnlinePlaybackQuality.highest,
     batchDownloadQuality: OnlinePlaybackQuality.highest,
+    showMiniLyrics: true,
+    bluetoothLyricEnabled: false,
+    bluetoothFullLyricEnabled: false,
+    bluetoothLyricNoticeSeen: false,
     debugMode: false,
   );
 }
@@ -121,6 +147,13 @@ class SettingsNotifier extends Notifier<AppSettings> {
       batchDownloadQuality: OnlinePlaybackQuality.fromCode(
         _prefs.getString(_kBatchDownloadQualityKey),
       ),
+      showMiniLyrics: _prefs.getBool(_kShowMiniLyricsKey) ?? true,
+      bluetoothLyricEnabled:
+          _prefs.getBool(_kBluetoothLyricEnabledKey) ?? false,
+      bluetoothFullLyricEnabled:
+          _prefs.getBool(_kBluetoothFullLyricEnabledKey) ?? false,
+      bluetoothLyricNoticeSeen:
+          _prefs.getBool(_kBluetoothLyricNoticeSeenKey) ?? false,
       debugMode: _prefs.getBool(_kDebugModeKey) ?? false,
     );
   }
@@ -192,6 +225,27 @@ class SettingsNotifier extends Notifier<AppSettings> {
   Future<void> setBatchDownloadQuality(OnlinePlaybackQuality quality) async {
     await _prefs.setString(_kBatchDownloadQualityKey, quality.code);
     state = state.copyWith(batchDownloadQuality: quality);
+  }
+
+  Future<void> setShowMiniLyrics(bool value) async {
+    await _prefs.setBool(_kShowMiniLyricsKey, value);
+    state = state.copyWith(showMiniLyrics: value);
+  }
+
+  Future<void> setBluetoothLyricEnabled(bool value) async {
+    await _prefs.setBool(_kBluetoothLyricEnabledKey, value);
+    state = state.copyWith(bluetoothLyricEnabled: value);
+  }
+
+  Future<void> setBluetoothFullLyricEnabled(bool value) async {
+    await _prefs.setBool(_kBluetoothFullLyricEnabledKey, value);
+    state = state.copyWith(bluetoothFullLyricEnabled: value);
+  }
+
+  Future<void> markBluetoothLyricNoticeSeen() async {
+    if (state.bluetoothLyricNoticeSeen) return;
+    await _prefs.setBool(_kBluetoothLyricNoticeSeenKey, true);
+    state = state.copyWith(bluetoothLyricNoticeSeen: true);
   }
 
   Future<void> setDebugMode(bool value) async {

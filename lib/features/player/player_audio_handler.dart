@@ -77,6 +77,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   Stream<Duration?> get durationStream => _player.durationStream;
   Stream<PlayerState> get playerStateStream => _player.playerStateStream;
   Stream<PlayerException> get errorStream => _player.errorStream;
+  MediaItem? get currentMediaItem => _currentMediaItem;
 
   Duration get position => _player.position;
   Duration? get duration => _player.duration;

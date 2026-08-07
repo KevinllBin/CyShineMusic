@@ -97,14 +97,7 @@ String buildKgPrivilegeSignature(
 
 /// Returns quality options keyed by the original search hash.
 Map<String, List<QualityOption>> parseKgPrivilegeQualityDetails(Object? raw) {
-  Object? decoded = raw;
-  if (decoded is String) {
-    try {
-      decoded = jsonDecode(decoded);
-    } catch (_) {
-      return const {};
-    }
-  }
+  final decoded = _decodeKgResponse(raw);
   if (decoded is! Map) return const {};
   final errorCode = int.tryParse(decoded['error_code']?.toString() ?? '0');
   if (errorCode != null && errorCode != 0) return const {};
@@ -140,6 +133,29 @@ Map<String, List<QualityOption>> parseKgPrivilegeQualityDetails(Object? raw) {
   return result;
 }
 
+String? parseKgPrivilegeCoverUrl(Object? raw, {int preferredSize = 480}) {
+  final decoded = _decodeKgResponse(raw);
+  if (decoded is! Map) return null;
+  final data = decoded['data'];
+  final item = data is List && data.isNotEmpty ? data.first : null;
+  final info = item is Map ? item['info'] : null;
+  if (info is! Map) return null;
+
+  final template = _nonEmptyString(info['image']);
+  if (template == null) return null;
+  final rawSizes = info['imgsize'];
+  final sizes = rawSizes is List
+      ? rawSizes
+            .map((value) => int.tryParse(value.toString()))
+            .whereType<int>()
+            .toList(growable: false)
+      : const <int>[];
+  final size = sizes.contains(preferredSize)
+      ? preferredSize
+      : sizes.firstOrNull ?? preferredSize;
+  return template.replaceAll('{size}', '$size');
+}
+
 List<QualityOption> mergeKgQualityOptions(
   Iterable<QualityOption> fallback,
   Iterable<QualityOption> details,
@@ -171,4 +187,13 @@ String? _nonEmptyString(Object? value) {
 Object _numericAlbumId(Object? value) {
   if (value is num) return value.toInt();
   return int.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+Object? _decodeKgResponse(Object? raw) {
+  if (raw is! String) return raw;
+  try {
+    return jsonDecode(raw);
+  } catch (_) {
+    return null;
+  }
 }

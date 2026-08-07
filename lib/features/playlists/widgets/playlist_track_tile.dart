@@ -15,6 +15,7 @@ const double _trackCoverRadius = 10;
 class PlaylistTrackTile extends ConsumerWidget {
   const PlaylistTrackTile({
     super.key,
+    required this.playlistId,
     required this.index,
     required this.item,
     required this.playing,
@@ -27,6 +28,7 @@ class PlaylistTrackTile extends ConsumerWidget {
     required this.onRemove,
   });
 
+  final String playlistId;
   final int index;
   final ResolvedPlaylistTrack item;
   final bool playing;
@@ -90,9 +92,9 @@ class PlaylistTrackTile extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(4, 8, 2, 8),
               child: Row(
                 children: [
-                  PlaylistTrackArtwork(
-                    localPath: item.track.localPath,
-                    picUrl: item.track.picUrl,
+                  ResolvingPlaylistTrackArtwork(
+                    playlistId: playlistId,
+                    track: item.track,
                     size: _trackCoverSize,
                     radius: _trackCoverRadius,
                     placeholder: Container(

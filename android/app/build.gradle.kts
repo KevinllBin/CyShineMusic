@@ -5,6 +5,18 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val targetPlatformToAbi = mapOf(
+    "android-arm" to "armeabi-v7a",
+    "android-arm64" to "arm64-v8a",
+    "android-x64" to "x86_64",
+)
+val requestedAbis = (project.findProperty("target-platform") as? String)
+    ?.split(",")
+    ?.mapNotNull { targetPlatformToAbi[it.trim()] }
+    ?.toSet()
+    ?.takeIf { it.isNotEmpty() }
+    ?: setOf("arm64-v8a")
+
 android {
     namespace = "com.cyshine.music"
     compileSdk = flutter.compileSdkVersion
@@ -31,7 +43,7 @@ android {
         release {
             ndk {
                 abiFilters.clear()
-                abiFilters += "arm64-v8a"
+                abiFilters += requestedAbis
             }
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.

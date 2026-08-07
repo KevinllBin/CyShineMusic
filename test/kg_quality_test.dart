@@ -71,6 +71,25 @@ void main() {
     expect(byType[Quality.k128]?.hash, baseHash);
   });
 
+  test('parses a cover from the string response used by Kugou', () {
+    final cover = parseKgPrivilegeCoverUrl(
+      jsonEncode({
+        'status': 1,
+        'error_code': 0,
+        'data': [
+          {
+            'info': {
+              'image': 'http://imge.kugou.com/stdmusic/{size}/cover.png',
+              'imgsize': [480, 400, 240],
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(cover, 'http://imge.kugou.com/stdmusic/480/cover.png');
+  });
+
   test('merges detail results without dropping search-response fallbacks', () {
     final merged = mergeKgQualityOptions(
       const [

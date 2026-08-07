@@ -30,6 +30,8 @@ class SdkHttp {
     Map<String, Object?>? form,
     ResponseType responseType = ResponseType.json,
     CancelToken? cancelToken,
+    bool? followRedirects,
+    ValidateStatus? validateStatus,
   }) async {
     final mergedHeaders = <String, String>{...?headers};
     dynamic payload;
@@ -56,6 +58,8 @@ class SdkHttp {
         method: method,
         headers: mergedHeaders,
         responseType: responseType,
+        followRedirects: followRedirects,
+        validateStatus: validateStatus,
       ),
     );
 
@@ -63,6 +67,7 @@ class SdkHttp {
       body: response.data as T,
       statusCode: response.statusCode ?? 0,
       headers: response.headers,
+      realUri: response.realUri,
     );
   }
 
@@ -103,6 +108,26 @@ class SdkHttp {
     return result.body?.toString() ?? '';
   }
 
+  static Future<Uri?> resolveRedirectLocation(
+    String url, {
+    Map<String, String>? headers,
+    CancelToken? cancelToken,
+  }) async {
+    final result = await fetch<dynamic>(
+      url,
+      headers: headers,
+      cancelToken: cancelToken,
+      followRedirects: false,
+      validateStatus: (status) => status != null && status < 400,
+      responseType: ResponseType.plain,
+    );
+    final location = result.headers.value('location');
+    if (location == null || location.trim().isEmpty) {
+      return result.realUri;
+    }
+    return result.realUri.resolve(location);
+  }
+
   static void _syncAdapterPreference() {
     final next = NetworkAdapterPreference.current;
     if (_configuredAdapterMode == next) return;
@@ -117,8 +142,10 @@ class HttpResult<T> {
     required this.body,
     required this.statusCode,
     required this.headers,
+    required this.realUri,
   });
   final T body;
   final int statusCode;
   final Headers headers;
+  final Uri realUri;
 }

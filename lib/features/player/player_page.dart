@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../theme/app_motion.dart';
 import 'player_controller.dart';
 import 'widgets/album_cluster.dart';
 import 'widgets/immersive_background.dart';
@@ -146,6 +147,19 @@ class _NowPlayingBodyState extends ConsumerState<_NowPlayingBody> {
     super.dispose();
   }
 
+  void _openLyricsPage() {
+    if (!_pageController.hasClients) return;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _pageController.jumpToPage(1);
+      return;
+    }
+    _pageController.animateToPage(
+      1,
+      duration: AppMotion.long,
+      curve: AppMotion.emphasized,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -198,7 +212,10 @@ class _NowPlayingBodyState extends ConsumerState<_NowPlayingBody> {
                 child: PageView(
                   key: const ValueKey('player-compact-pager'),
                   controller: _pageController,
-                  children: const [AlbumPage(), LyricsPanel()],
+                  children: [
+                    AlbumPage(onOpenLyrics: _openLyricsPage),
+                    const LyricsPanel(),
+                  ],
                 ),
               ),
               const TransportBar(),

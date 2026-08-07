@@ -6,6 +6,10 @@ class CoverImageSource {
     var url = raw.trim();
     if (url.isEmpty) return url;
 
+    if (url.startsWith('/data/oss/')) {
+      url = 'https://d.musicapp.migu.cn$url';
+    }
+
     final candidate = url.startsWith('//') ? 'http:$url' : url;
     final host = Uri.tryParse(candidate)?.host.toLowerCase() ?? '';
     final keepHttp = host == 'kwcdn.kuwo.cn' || host.endsWith('.kwcdn.kuwo.cn');
@@ -21,6 +25,15 @@ class CoverImageSource {
       url = '$url${sep}param=${size}y$size';
     }
     return url;
+  }
+
+  static bool isUsableUrl(String? raw, {int? size}) {
+    final normalized = normalizeUrl(raw, size: size);
+    if (normalized == null || normalized.isEmpty) return false;
+    final uri = Uri.tryParse(normalized);
+    return uri != null &&
+        (uri.scheme == 'http' || uri.scheme == 'https') &&
+        uri.host.isNotEmpty;
   }
 
   static Map<String, String>? headersFor(String? url) {

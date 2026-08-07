@@ -12,15 +12,20 @@ class KwPlaylistAdapter {
   static Future<PlaylistInfo> parse(
     String id, {
     SdkJsonLoader? jsonLoader,
+    int? maxTracks,
   }) async {
     final load = jsonLoader ?? SdkHttp.getJson;
-    const pageSize = 500;
-    const maxTracks = 10000;
+    const defaultPageSize = 500;
+    final hardLimit = _trackLimit(maxTracks);
+    final pageSize =
+        maxTracks != null && maxTracks > 0 && maxTracks < defaultPageSize
+        ? maxTracks
+        : defaultPageSize;
     final songs = <Map>[];
     Map? firstPage;
     var expected = 0;
 
-    for (var page = 0; songs.length < maxTracks; page++) {
+    for (var page = 0; songs.length < hardLimit; page++) {
       final body = await load(
         'http://nplserver.kuwo.cn/pl.svc?op=getlistinfo&pid=$id'
         '&pn=$page&rn=$pageSize&encode=utf8&keyset=pl2012&identity=kuwo'
@@ -34,8 +39,11 @@ class KwPlaylistAdapter {
       final pageSongs = (body['musiclist'] as List? ?? const [])
           .whereType<Map>()
           .toList(growable: false);
-      songs.addAll(pageSongs);
-      if (pageSongs.isEmpty || songs.length >= expected) break;
+      songs.addAll(pageSongs.take(hardLimit - songs.length));
+      if (pageSongs.isEmpty) break;
+      if (expected > 0 && songs.length >= _targetCount(expected, hardLimit)) {
+        break;
+      }
     }
 
     final info = firstPage;
@@ -79,6 +87,17 @@ class KwPlaylistAdapter {
 
   static int? _int(Object? value) =>
       value is num ? value.toInt() : int.tryParse(value?.toString() ?? '');
+
+  static int _trackLimit(int? maxTracks) {
+    const hardLimit = 10000;
+    if (maxTracks == null || maxTracks <= 0 || maxTracks > hardLimit) {
+      return hardLimit;
+    }
+    return maxTracks;
+  }
+
+  static int _targetCount(int expected, int hardLimit) =>
+      expected < hardLimit ? expected : hardLimit;
 
   static String? _text(Object? value) {
     final text = value?.toString().trim();

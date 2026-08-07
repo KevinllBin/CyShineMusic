@@ -25,6 +25,7 @@ class MgPlaylistAdapter {
   static Future<PlaylistInfo> parse(
     String id, {
     SdkJsonLoader? jsonLoader,
+    int? maxTracks,
   }) async {
     final load = jsonLoader ?? SdkHttp.getJson;
     final infoBody = await load(
@@ -37,11 +38,15 @@ class MgPlaylistAdapter {
       throw Exception('咪咕歌单信息加载失败');
     }
 
-    const pageSize = 50;
-    const maxTracks = 10000;
+    const defaultPageSize = 50;
+    final hardLimit = _trackLimit(maxTracks);
+    final pageSize =
+        maxTracks != null && maxTracks > 0 && maxTracks < defaultPageSize
+        ? maxTracks
+        : defaultPageSize;
     final songs = <Map>[];
     var expected = 0;
-    for (var page = 1; songs.length < maxTracks; page++) {
+    for (var page = 1; songs.length < hardLimit; page++) {
       final body = await load(
         'https://app.c.nf.migu.cn/MIGUM3.0/resource/playlist/song/v2.0'
         '?pageNo=$page&pageSize=$pageSize&playlistId=$id',
@@ -55,8 +60,11 @@ class MgPlaylistAdapter {
       final pageSongs = (data['songList'] as List? ?? const [])
           .whereType<Map>()
           .toList(growable: false);
-      songs.addAll(pageSongs);
-      if (pageSongs.isEmpty || songs.length >= expected) break;
+      songs.addAll(pageSongs.take(hardLimit - songs.length));
+      if (pageSongs.isEmpty) break;
+      if (expected > 0 && songs.length >= _targetCount(expected, hardLimit)) {
+        break;
+      }
     }
 
     final tracks = songs
@@ -121,6 +129,17 @@ class MgPlaylistAdapter {
 
   static int? _int(Object? value) =>
       value is num ? value.toInt() : int.tryParse(value?.toString() ?? '');
+
+  static int _trackLimit(int? maxTracks) {
+    const hardLimit = 10000;
+    if (maxTracks == null || maxTracks <= 0 || maxTracks > hardLimit) {
+      return hardLimit;
+    }
+    return maxTracks;
+  }
+
+  static int _targetCount(int expected, int hardLimit) =>
+      expected < hardLimit ? expected : hardLimit;
 
   static String? _text(Object? value) {
     final text = value?.toString().trim();
