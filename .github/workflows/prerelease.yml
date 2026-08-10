@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   build:
-    name: Build manual arm64 prerelease APK
+    name: Build manual prerelease APKs
     runs-on: ubuntu-latest
 
     steps:
@@ -64,7 +64,8 @@ jobs:
           echo "SHORT_SHA=${short_sha}" >> "$GITHUB_ENV"
           echo "HEAD_SHA=${head_sha}" >> "$GITHUB_ENV"
           echo "TAG_NAME=${tag_name}" >> "$GITHUB_ENV"
-          echo "APK_NAME=CyShineMusic-${safe_ref}-v${app_version}-${short_sha}-arm64-v8a.apk" >> "$GITHUB_ENV"
+          echo "ARM64_APK_NAME=CyShineMusic-${safe_ref}-v${app_version}-${short_sha}-arm64-v8a.apk" >> "$GITHUB_ENV"
+          echo "V7A_APK_NAME=CyShineMusic-${safe_ref}-v${app_version}-${short_sha}-armeabi-v7a.apk" >> "$GITHUB_ENV"
 
       - name: Prepare dev signing
         shell: bash
@@ -102,15 +103,26 @@ jobs:
           APP_CHANNEL: dev
         run: flutter build apk --target-platform=android-arm64
 
-      - name: Prepare artifact
+      - name: Prepare arm64 artifact
         shell: bash
-        run: cp build/app/outputs/flutter-apk/app-release.apk "$APK_NAME"
+        run: cp build/app/outputs/flutter-apk/app-release.apk "$ARM64_APK_NAME"
 
-      - name: Upload workflow artifact
+      - name: Build armeabi-v7a APK
+        env:
+          APP_CHANNEL: dev
+        run: flutter build apk --release --target-platform=android-arm
+
+      - name: Prepare armeabi-v7a artifact
+        shell: bash
+        run: cp build/app/outputs/flutter-apk/app-release.apk "$V7A_APK_NAME"
+
+      - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.APK_NAME }}
-          path: ${{ env.APK_NAME }}
+          name: CyShineMusic-${{ env.SHORT_SHA }}-android-apks
+          path: |
+            ${{ env.ARM64_APK_NAME }}
+            ${{ env.V7A_APK_NAME }}
 
       - name: Create or update prerelease
         if: ${{ inputs.create_prerelease }}
@@ -130,10 +142,10 @@ jobs:
           title="CyShineMusic ${APP_VERSION} prerelease (${SHORT_SHA})"
 
           if gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            gh release upload "$TAG_NAME" "$APK_NAME" --clobber
+            gh release upload "$TAG_NAME" "$ARM64_APK_NAME" "$V7A_APK_NAME" --clobber
             gh release edit "$TAG_NAME" --prerelease --title "$title" --notes-file release-notes.md
           else
-            gh release create "$TAG_NAME" "$APK_NAME" \
+            gh release create "$TAG_NAME" "$ARM64_APK_NAME" "$V7A_APK_NAME" \
               --prerelease \
               --target "$HEAD_SHA" \
               --title "$title" \

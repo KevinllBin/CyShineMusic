@@ -30,6 +30,17 @@ val isDevChannel = appChannel == "dev"
 val appId = if (isDevChannel) "com.cyshine.music.dev" else "com.cyshine.music"
 val appLabel = if (isDevChannel) "栖弦dev" else "栖弦"
 
+val targetPlatformToAbi = mapOf(
+    "android-arm" to "armeabi-v7a",
+    "android-arm64" to "arm64-v8a",
+)
+val requestedAbis = (project.findProperty("target-platform") as? String)
+    ?.split(",")
+    ?.mapNotNull { targetPlatformToAbi[it.trim()] }
+    ?.toSet()
+    ?.takeIf { it.isNotEmpty() }
+    ?: setOf("arm64-v8a")
+
 val signingPropertiesFile = rootProject.file("signing/$appChannel.properties")
 val signingProperties = Properties().apply {
     if (signingPropertiesFile.isFile) {
@@ -89,7 +100,7 @@ android {
         release {
             ndk {
                 abiFilters.clear()
-                abiFilters += "arm64-v8a"
+                abiFilters += requestedAbis
             }
             if (releaseSigningReady) {
                 signingConfig = signingConfigs.getByName("channelRelease")
