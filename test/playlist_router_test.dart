@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:cy_shine_music/core/storage/settings_store.dart';
+import 'package:cy_shine_music/features/downloads/download_history_entry.dart';
 import 'package:cy_shine_music/features/player/player_audio_handler.dart';
 import 'package:cy_shine_music/features/player/lyric_parser.dart';
 import 'package:cy_shine_music/features/player/player_controller.dart';
@@ -372,6 +373,57 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('playback queue opens centered on the current track', (
+    tester,
+  ) async {
+    await _usePhoneViewport(tester);
+    final prefs = await _prefsWith(const []);
+    final audioHandler = PlayerAudioHandler();
+    final router = createAppRouter(initialLocation: '/player');
+    addTearDown(() {
+      router.dispose();
+      unawaited(audioHandler.disposeHandler());
+    });
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          playerAudioHandlerProvider.overrideWithValue(audioHandler),
+          playerControllerProvider.overrideWith(_TestPlayerController.new),
+        ],
+        child: MaterialApp.router(
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            useMaterial3: true,
+            colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+          ),
+          routerConfig: router,
+        ),
+      ),
+    );
+    await _pumpUi(tester);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(PlayerPage)),
+    );
+    final controller =
+        container.read(playerControllerProvider.notifier)
+            as _TestPlayerController;
+    controller.seedPlayingQueue(count: 30, currentIndex: 20);
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('播放列表，共 30 首'));
+    await _pumpUi(tester);
+
+    final list = find.byKey(const ValueKey('playback-queue-list'));
+    final current = find.byKey(const ValueKey('playback-queue-entry-20'));
+    expect(list, findsOneWidget);
+    expect(current, findsOneWidget);
+    expect(tester.getCenter(current).dy, closeTo(tester.getCenter(list).dy, 1));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('player applies dark backdrop and dark-theme foreground', (
     tester,
   ) async {
@@ -672,6 +724,41 @@ class _TestPlayerController extends PlayerController {
       ),
       playing: true,
       duration: Duration(minutes: 3),
+    );
+  }
+
+  void seedPlayingQueue({required int count, required int currentIndex}) {
+    final queue = List<DownloadHistoryEntry>.generate(
+      count,
+      (index) => DownloadHistoryEntry(
+        id: 'queue-$index',
+        musicId: 'queue-$index',
+        name: '队列歌曲 ${index + 1}',
+        singer: '测试歌手',
+        albumName: '测试专辑',
+        sourceCode: 'wy',
+        qualityCode: 'flac',
+        status: DownloadHistoryStatus.completed,
+        createdAt: DateTime.utc(2026, 8, 10),
+      ),
+    );
+    final current = queue[currentIndex];
+    state = PlayerState(
+      track: PlayerTrack(
+        id: current.id,
+        kind: PlayerTrackKind.remote,
+        title: current.name,
+        artist: current.singer,
+        album: current.albumName,
+        sourceLabel: '网易云音乐',
+        qualityLabel: 'FLAC',
+      ),
+      playing: true,
+      duration: const Duration(minutes: 3),
+      queue: queue,
+      queueIndex: currentIndex,
+      canPlayPrevious: true,
+      canPlayNext: true,
     );
   }
 

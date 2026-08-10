@@ -41,8 +41,29 @@ jobs:
           fi
 
           echo "APP_VERSION=${app_version}" >> "$GITHUB_ENV"
-          echo "ARM64_APK_NAME=CyShineMusic-v${app_version}-arm64-v8a.apk" >> "$GITHUB_ENV"
-          echo "V7A_APK_NAME=CyShineMusic-v${app_version}-armeabi-v7a.apk" >> "$GITHUB_ENV"
+          echo "APK_NAME=CyShineMusic-v${app_version}-arm64-v8a.apk" >> "$GITHUB_ENV"
+
+      - name: Prepare main signing
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.MAIN_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.MAIN_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MAIN_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.MAIN_KEY_PASSWORD }}
+        run: |
+          if [[ -z "$KEYSTORE_BASE64" || -z "$STORE_PASSWORD" || -z "$KEY_ALIAS" || -z "$KEY_PASSWORD" ]]; then
+            echo "Missing one or more MAIN_* signing secrets."
+            exit 1
+          fi
+
+          mkdir -p android/signing
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > android/signing/main-release.jks
+          cat > android/signing/main.properties <<EOF
+          storeFile=main-release.jks
+          storePassword=${STORE_PASSWORD}
+          keyAlias=${KEY_ALIAS}
+          keyPassword=${KEY_PASSWORD}
+          EOF
 
       - name: Install dependencies
         run: flutter pub get
@@ -54,35 +75,28 @@ jobs:
         run: flutter test
 
       - name: Build arm64 APK
+        env:
+          APP_CHANNEL: main
         run: flutter build apk --target-platform=android-arm64
 
-      - name: Prepare arm64 artifact
+      - name: Prepare artifact
         shell: bash
-        run: cp build/app/outputs/flutter-apk/app-release.apk "$ARM64_APK_NAME"
+        run: cp build/app/outputs/flutter-apk/app-release.apk "$APK_NAME"
 
-      - name: Build armeabi-v7a APK
-        run: flutter build apk --release --target-platform=android-arm
-
-      - name: Prepare armeabi-v7a artifact
-        shell: bash
-        run: cp build/app/outputs/flutter-apk/app-release.apk "$V7A_APK_NAME"
-
-      - name: Upload workflow artifacts
+      - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CyShineMusic-v${{ env.APP_VERSION }}-android-apks
-          path: |
-            ${{ env.ARM64_APK_NAME }}
-            ${{ env.V7A_APK_NAME }}
+          name: ${{ env.APK_NAME }}
+          path: ${{ env.APK_NAME }}
 
       - name: Create or update draft GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" "$ARM64_APK_NAME" "$V7A_APK_NAME" --clobber
+            gh release upload "$GITHUB_REF_NAME" "$APK_NAME" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" "$ARM64_APK_NAME" "$V7A_APK_NAME" \
+            gh release create "$GITHUB_REF_NAME" "$APK_NAME" \
               --draft \
               --title "CyShineMusic ${APP_VERSION}" \
               --generate-notes
