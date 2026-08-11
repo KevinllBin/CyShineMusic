@@ -12,9 +12,14 @@ import '../lyric_parser.dart';
 import 'player_palette.dart';
 
 const double _kLyricSelectionHorizontalPadding = 18;
-// Inactive rows render at 25.5px visually, but layout always runs at the
-// focused 32px metrics (see LyricLineTile.build) — the shrink is pure paint.
-const double _kLyricInactiveScale = 25.5 / 32;
+// The reference player keeps every row at one intrinsic text size and only
+// applies a very small paint-time focus scale. A larger 25.5/32 shrink made
+// the old and new active rows visibly "breathe" during every line advance.
+const double _kLyricInactiveScale = 0.95;
+const Duration _kLyricFocusInDuration = Duration(milliseconds: 600);
+const Duration _kLyricFocusOutDuration = Duration(milliseconds: 500);
+const Duration _kLyricFocusOutDelay = Duration(milliseconds: 100);
+const Curve _kLyricFocusCurve = Cubic(0.25, 0, 0.2, 1);
 const double _kLyricStaggerBaseDelayMs = 50;
 const double _kLyricStaggerDelayDecay = 1.05;
 const double _kLyricStaggerStiffness = 200;
@@ -78,27 +83,17 @@ class _StaggeredLyricLineState extends State<StaggeredLyricLine>
 
   void _startMotion() {
     _delayTimer?.cancel();
-    // Carry the offset/velocity left from an interrupted wave so a new
-    // advance starts exactly where the line is currently drawn instead of
-    // teleporting it (visible on fast, dense lyrics).
-    final residualVelocity = _controller.velocity;
+    // Each generation starts from the exact list relocation delta. Carrying
+    // a previous wave's residual offset adds it to the next line height and
+    // makes dense lyrics accumulate a larger and larger visible swing.
     _controller.stop();
-    final start = widget.shiftPx + _controller.value;
+    final start = widget.shiftPx;
     if (start.abs() < 0.5) {
       _controller.value = 0;
       return;
     }
 
     _controller.value = start;
-    if (widget.shiftPx.abs() < 0.01) {
-      // Cancelled wave: settle the leftover offset right away, no delay.
-      unawaited(
-        _controller.animateWith(
-          SpringSimulation(_spring, start, 0, residualVelocity),
-        ),
-      );
-      return;
-    }
     final distance = (widget.index - widget.visibleStartIndex).abs();
     var delayMs = 0.0;
     var stepMs = _kLyricStaggerBaseDelayMs;
@@ -109,9 +104,7 @@ class _StaggeredLyricLineState extends State<StaggeredLyricLine>
     _delayTimer = Timer(Duration(microseconds: (delayMs * 1000).round()), () {
       if (!mounted) return;
       unawaited(
-        _controller.animateWith(
-          SpringSimulation(_spring, start, 0, residualVelocity),
-        ),
+        _controller.animateWith(SpringSimulation(_spring, start, 0, 0)),
       );
     });
   }
@@ -150,6 +143,7 @@ class LyricLineTile extends StatelessWidget {
     required this.showTranslation,
     required this.anchorMs,
     required this.playing,
+    required this.buffering,
     required this.onSelect,
     required this.onSeek,
   });
@@ -162,6 +156,7 @@ class LyricLineTile extends StatelessWidget {
   final bool showTranslation;
   final ValueListenable<int> anchorMs;
   final ValueListenable<bool> playing;
+  final ValueListenable<bool> buffering;
   final VoidCallback onSelect;
   final VoidCallback onSeek;
 
@@ -265,18 +260,11 @@ class LyricLineTile extends StatelessWidget {
     // Paint-only shrink for unfocused rows. Scaling never touches layout, so
     // focus changes cause zero relayout of the list — the stagger wave is the
     // only motion on a line advance.
-    final scaledContent = TweenAnimationBuilder<double>(
-      tween: Tween<double>(end: active ? 1.0 : _kLyricInactiveScale),
-      duration: duration,
-      curve: AppMotion.emphasized,
+    final scaledContent = _LyricFocusScale(
+      lineStartMs: line.startMs,
+      active: active,
+      disableAnimations: MediaQuery.disableAnimationsOf(context),
       child: lineContent,
-      builder: (context, scale, child) {
-        return Transform.scale(
-          scale: scale,
-          alignment: Alignment.centerLeft,
-          child: child,
-        );
-      },
     );
 
     final tile = GestureDetector(
@@ -339,9 +327,9 @@ class LyricLineTile extends StatelessWidget {
   }
 
   Widget _mainText(Color karaokeDimColor) {
-    if (!active || !line.hasWordTiming) {
+    if (!line.hasWordTiming) {
       // No explicit style: the text inherits the AnimatedDefaultTextStyle
-      // above, so font size and color keep transitioning on focus changes.
+      // above, so color can transition without changing layout metrics.
       return Text(line.text, textAlign: TextAlign.start);
     }
     return _KaraokeLineText(
@@ -349,6 +337,101 @@ class LyricLineTile extends StatelessWidget {
       dimColor: karaokeDimColor,
       anchorMs: anchorMs,
       playing: playing,
+      buffering: buffering,
+      active: active,
+    );
+  }
+}
+
+class _LyricFocusScale extends StatefulWidget {
+  const _LyricFocusScale({
+    required this.lineStartMs,
+    required this.active,
+    required this.disableAnimations,
+    required this.child,
+  });
+
+  final int lineStartMs;
+  final bool active;
+  final bool disableAnimations;
+  final Widget child;
+
+  @override
+  State<_LyricFocusScale> createState() => _LyricFocusScaleState();
+}
+
+class _LyricFocusScaleState extends State<_LyricFocusScale>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    value: widget.active ? 1 : 0,
+  );
+  Timer? _delayTimer;
+
+  @override
+  void didUpdateWidget(covariant _LyricFocusScale oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active == oldWidget.active &&
+        widget.disableAnimations == oldWidget.disableAnimations) {
+      return;
+    }
+    _driveToTarget();
+  }
+
+  void _driveToTarget() {
+    _delayTimer?.cancel();
+    _controller.stop();
+    final target = widget.active ? 1.0 : 0.0;
+    if (widget.disableAnimations) {
+      _controller.value = target;
+      return;
+    }
+    if (widget.active) {
+      unawaited(
+        _controller.animateTo(
+          target,
+          duration: _kLyricFocusInDuration,
+          curve: _kLyricFocusCurve,
+        ),
+      );
+      return;
+    }
+    _delayTimer = Timer(_kLyricFocusOutDelay, () {
+      if (!mounted || widget.active) return;
+      unawaited(
+        _controller.animateTo(
+          target,
+          duration: _kLyricFocusOutDuration,
+          curve: _kLyricFocusCurve,
+        ),
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _delayTimer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      child: widget.child,
+      builder: (context, child) {
+        final scale = widget.disableAnimations
+            ? (widget.active ? 1.0 : _kLyricInactiveScale)
+            : _kLyricInactiveScale +
+                  (1 - _kLyricInactiveScale) * _controller.value;
+        return Transform.scale(
+          key: ValueKey('lyric-focus-scale-${widget.lineStartMs}'),
+          scale: scale,
+          alignment: Alignment.centerLeft,
+          child: child,
+        );
+      },
     );
   }
 }
@@ -359,6 +442,8 @@ class _KaraokeLineText extends StatefulWidget {
     required this.dimColor,
     required this.anchorMs,
     required this.playing,
+    required this.buffering,
+    required this.active,
   });
 
   final KaraokeLyricLine line;
@@ -372,6 +457,8 @@ class _KaraokeLineText extends StatefulWidget {
   /// per-frame clock (just_audio emits it only every ~200 ms).
   final ValueListenable<int> anchorMs;
   final ValueListenable<bool> playing;
+  final ValueListenable<bool> buffering;
+  final bool active;
 
   @override
   State<_KaraokeLineText> createState() => _KaraokeLineTextState();
@@ -397,6 +484,7 @@ class _KaraokeLineTextState extends State<_KaraokeLineText>
     _ticker = createTicker((_) => _publish());
     widget.anchorMs.addListener(_handleAnchorChanged);
     widget.playing.addListener(_handlePlayingChanged);
+    widget.buffering.addListener(_handleBufferingChanged);
     _syncDrive();
   }
 
@@ -413,6 +501,14 @@ class _KaraokeLineTextState extends State<_KaraokeLineText>
       widget.playing.addListener(_handlePlayingChanged);
       _syncDrive();
     }
+    if (!identical(widget.buffering, oldWidget.buffering)) {
+      oldWidget.buffering.removeListener(_handleBufferingChanged);
+      widget.buffering.addListener(_handleBufferingChanged);
+      _handleBufferingChanged();
+    }
+    if (widget.active != oldWidget.active) {
+      _syncDrive();
+    }
   }
 
   void _handleAnchorChanged() {
@@ -421,15 +517,25 @@ class _KaraokeLineTextState extends State<_KaraokeLineText>
   }
 
   void _handlePlayingChanged() {
+    _sinceAnchor.reset();
+    _syncDrive();
+  }
+
+  void _handleBufferingChanged() {
+    _sinceAnchor.reset();
     _syncDrive();
   }
 
   void _syncDrive() {
-    if (widget.playing.value) {
+    final clockRunning = widget.playing.value && !widget.buffering.value;
+    if (clockRunning) {
       _sinceAnchor.start();
-      if (!_ticker.isActive) _ticker.start();
     } else {
       _sinceAnchor.stop();
+    }
+    if (widget.active && clockRunning) {
+      if (!_ticker.isActive) _ticker.start();
+    } else {
       if (_ticker.isActive) _ticker.stop();
       _publish();
     }
@@ -444,6 +550,7 @@ class _KaraokeLineTextState extends State<_KaraokeLineText>
   void dispose() {
     widget.anchorMs.removeListener(_handleAnchorChanged);
     widget.playing.removeListener(_handlePlayingChanged);
+    widget.buffering.removeListener(_handleBufferingChanged);
     _ticker.dispose();
     _effectiveMs.dispose();
     super.dispose();
@@ -460,6 +567,7 @@ class _KaraokeLineTextState extends State<_KaraokeLineText>
             word: word,
             dimColor: widget.dimColor,
             positionMs: _effectiveMs,
+            active: widget.active,
           ),
       ],
     );
@@ -471,11 +579,13 @@ class _WordHighlight extends StatelessWidget {
     required this.word,
     required this.dimColor,
     required this.positionMs,
+    required this.active,
   });
 
   final KaraokeWordTiming word;
   final Color dimColor;
   final ValueListenable<int> positionMs;
+  final bool active;
 
   @override
   Widget build(BuildContext context) {
@@ -483,22 +593,23 @@ class _WordHighlight extends StatelessWidget {
       children: [
         // Color-only override: size and weight come from the inherited
         // DefaultTextStyle, so both layers stay in animated lockstep.
-        Text(word.text, style: TextStyle(color: dimColor)),
-        ClipRect(
-          // Only the Align rebuilds per frame; both Text render objects (and
-          // their laid-out glyphs) are reused untouched.
-          child: ValueListenableBuilder<int>(
-            valueListenable: positionMs,
-            child: Text(word.text),
-            builder: (context, ms, child) {
-              return Align(
-                alignment: Alignment.centerLeft,
-                widthFactor: word.progressAt(ms),
-                child: child,
-              );
-            },
+        Text(word.text, style: active ? TextStyle(color: dimColor) : null),
+        if (active)
+          ClipRect(
+            // Only the Align rebuilds per frame; both Text render objects (and
+            // their laid-out glyphs) are reused untouched.
+            child: ValueListenableBuilder<int>(
+              valueListenable: positionMs,
+              child: Text(word.text),
+              builder: (context, ms, child) {
+                return Align(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: word.progressAt(ms),
+                  child: child,
+                );
+              },
+            ),
           ),
-        ),
       ],
     );
   }

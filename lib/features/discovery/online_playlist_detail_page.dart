@@ -11,6 +11,7 @@ import '../../core/models/playlist_info.dart';
 import '../../core/models/playlist_summary.dart';
 import '../../core/services/app_logger.dart';
 import '../../core/ui/app_toast.dart';
+import '../../core/ui/app_refresh_indicator.dart';
 import '../../core/ui/cover_placeholder.dart';
 import '../downloads/download_history_store.dart';
 import '../downloads/download_progress.dart';
@@ -44,10 +45,16 @@ class OnlinePlaylistDetailPage extends ConsumerStatefulWidget {
 
 class _OnlinePlaylistDetailPageState
     extends ConsumerState<OnlinePlaylistDetailPage> {
+  static const _summaryCacheLimit = 48;
+
   int _trackLimit = onlinePlaylistDetailInitialTrackLimit;
   PlaylistInfo? _lastPlaylist;
+  PlaylistSummary? _summary;
   bool _saving = false;
   bool _removingFavorite = false;
+
+  OnlinePlaylistIdentity get _identity =>
+      (source: widget.source, id: widget.playlistId);
 
   OnlinePlaylistKey get _key => OnlinePlaylistKey(
     source: widget.source,
@@ -59,15 +66,41 @@ class _OnlinePlaylistDetailPageState
       '/discover/playlists/${widget.source.code}/${widget.playlistId}';
 
   @override
+  void initState() {
+    super.initState();
+    _summary =
+        widget.summary ??
+        ref.read(onlinePlaylistSummaryCacheProvider)[_identity];
+    _cacheSummary(_summary);
+  }
+
+  @override
   void didUpdateWidget(covariant OnlinePlaylistDetailPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.source != widget.source ||
-        oldWidget.playlistId != widget.playlistId) {
+    final identityChanged =
+        oldWidget.source != widget.source ||
+        oldWidget.playlistId != widget.playlistId;
+    if (identityChanged) {
       _trackLimit = onlinePlaylistDetailInitialTrackLimit;
       _lastPlaylist = null;
+      _summary =
+          widget.summary ??
+          ref.read(onlinePlaylistSummaryCacheProvider)[_identity];
       _saving = false;
       _removingFavorite = false;
+    } else if (widget.summary != null) {
+      _summary = widget.summary;
     }
+    _cacheSummary(_summary);
+  }
+
+  void _cacheSummary(PlaylistSummary? summary) {
+    if (summary == null) return;
+    final cache = ref.read(onlinePlaylistSummaryCacheProvider);
+    if (cache.length >= _summaryCacheLimit && !cache.containsKey(_identity)) {
+      cache.remove(cache.keys.first);
+    }
+    cache[_identity] = summary;
   }
 
   @override
@@ -91,12 +124,12 @@ class _OnlinePlaylistDetailPageState
     }
     return detail.when(
       loading: () => _DetailLoading(
-        summary: widget.summary,
+        summary: _summary,
         source: widget.source,
         playlistId: widget.playlistId,
       ),
       error: (error, _) => _DetailError(
-        summary: widget.summary,
+        summary: _summary,
         source: widget.source,
         playlistId: widget.playlistId,
         message: _friendlyError(error),
@@ -108,7 +141,7 @@ class _OnlinePlaylistDetailPageState
   }
 
   PlaylistInfo _withDiscoveryArtwork(PlaylistInfo playlist) {
-    final summary = widget.summary;
+    final summary = _summary;
     if (summary == null) return playlist;
     return PlaylistInfo(
       id: playlist.id,
@@ -137,7 +170,7 @@ class _OnlinePlaylistDetailPageState
 
     final artworkProvider = networkPlaylistArtworkProvider(
       playlist.coverUrl,
-      size: widget.summary == null ? 1200 : discoveryPlaylistArtworkSize,
+      size: _summary == null ? 1200 : discoveryPlaylistArtworkSize,
     );
     final wide = playlistDetailUsesWideLayout(context);
     final metadata = [
@@ -150,8 +183,8 @@ class _OnlinePlaylistDetailPageState
     return PlaylistArtworkTheme(
       artworkProvider: artworkProvider,
       cacheKey: _onlineArtworkCacheKey(
-        playlist.source,
-        playlist.id,
+        widget.source,
+        widget.playlistId,
         playlist.coverUrl,
       ),
       immersiveStatusBar: !wide,
@@ -257,7 +290,7 @@ class _OnlinePlaylistDetailPageState
                       description: playlist.description,
                       actions: actionsWith(const EdgeInsets.only(top: 4)),
                     ),
-                    right: RefreshIndicator(
+                    right: AppRefreshIndicator(
                       onRefresh: refresh,
                       child: CustomScrollView(
                         key: PageStorageKey(
@@ -270,7 +303,7 @@ class _OnlinePlaylistDetailPageState
                       ),
                     ),
                   )
-                : RefreshIndicator(
+                : AppRefreshIndicator(
                     onRefresh: refresh,
                     child: CustomScrollView(
                       key: PageStorageKey(
@@ -623,11 +656,7 @@ class _DetailError extends StatelessWidget {
     );
     return PlaylistArtworkTheme(
       artworkProvider: artworkProvider,
-      cacheKey: _onlineArtworkCacheKey(
-        source,
-        item?.id ?? 'unknown',
-        item?.coverUrl,
-      ),
+      cacheKey: _onlineArtworkCacheKey(source, playlistId, item?.coverUrl),
       immersiveStatusBar: !wide,
       child: Builder(
         builder: (context) {

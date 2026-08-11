@@ -148,6 +148,48 @@ void main() {
       expect(CoverImageSource.normalizeUrl(url, size: 480), url);
     });
 
+    test('upgrades Kuwo thumbnail paths to the requested dimensions', () {
+      const raw =
+          'https://img2.kuwo.cn/star/albumcover/120/78/66/3785767710.jpg';
+
+      expect(
+        CoverImageSource.normalizeUrl(raw, size: 500),
+        'https://img2.kuwo.cn/star/albumcover/500/78/66/3785767710.jpg',
+      );
+    });
+
+    test('uses the requested dimensions for Kugou covers', () {
+      const album = 'http://imge.kugou.com/stdmusic/480/20210112/cover.jpg';
+      const artist =
+          'https://singerimg.kugou.com/uploadpic/softhead/{size}/artist.jpg';
+
+      expect(
+        CoverImageSource.normalizeUrl(album, size: 700),
+        'https://imge.kugou.com/stdmusic/700/20210112/cover.jpg',
+      );
+      expect(
+        CoverImageSource.normalizeUrl(artist, size: 500),
+        'https://singerimg.kugou.com/uploadpic/softhead/500/artist.jpg',
+      );
+    });
+
+    test('maps QQ covers to supported CDN dimensions', () {
+      const raw =
+          'https://y.gtimg.cn/music/photo_new/'
+          'T002R500x500M0000015rUVB2OUdGA.jpg';
+
+      expect(
+        CoverImageSource.normalizeUrl(raw, size: 180),
+        'https://y.gtimg.cn/music/photo_new/'
+        'T002R300x300M0000015rUVB2OUdGA.jpg',
+      );
+      expect(
+        CoverImageSource.normalizeUrl(raw, size: 700),
+        'https://y.gtimg.cn/music/photo_new/'
+        'T002R800x800M0000015rUVB2OUdGA.jpg',
+      );
+    });
+
     test('normalizes NetEase covers with dimensions and signed headers', () {
       const raw = 'http://p1.music.126.net/token/109951170000000000.jpg';
       final url = CoverImageSource.normalizeUrl(raw, size: 640);
@@ -156,6 +198,11 @@ void main() {
         url,
         'https://p1.music.126.net/token/109951170000000000.jpg'
         '?param=640y640',
+      );
+      expect(
+        CoverImageSource.normalizeUrl('$raw?param=500y500', size: 700),
+        'https://p1.music.126.net/token/109951170000000000.jpg'
+        '?param=700y700',
       );
       expect(
         CoverImageSource.headersFor(url),

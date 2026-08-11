@@ -18,11 +18,38 @@ class CoverImageSource {
     } else if (url.startsWith('http://') && !keepHttp) {
       url = url.replaceFirst('http://', 'https://');
     }
-    if (size != null &&
-        url.contains('music.126.net') &&
-        !url.contains('param=')) {
-      final sep = url.contains('?') ? '&' : '?';
-      url = '$url${sep}param=${size}y$size';
+    if (size != null && url.contains('music.126.net')) {
+      final dimension = RegExp(r'([?&])param=\d+y\d+');
+      if (dimension.hasMatch(url)) {
+        url = url.replaceFirstMapped(
+          dimension,
+          (match) => '${match[1]}param=${size}y$size',
+        );
+      } else {
+        final sep = url.contains('?') ? '&' : '?';
+        url = '$url${sep}param=${size}y$size';
+      }
+    }
+    if (size != null && (host == 'kuwo.cn' || host.endsWith('.kuwo.cn'))) {
+      url = url.replaceFirstMapped(
+        RegExp(r'/star/(albumcover|starheads)/\d+/'),
+        (match) => '/star/${match[1]}/$size/',
+      );
+    }
+    if (size != null && (host == 'kugou.com' || host.endsWith('.kugou.com'))) {
+      url = url
+          .replaceAll('{size}', '$size')
+          .replaceFirstMapped(
+            RegExp(r'/(stdmusic|softhead)/\d+/'),
+            (match) => '/${match[1]}/$size/',
+          );
+    }
+    if (size != null && host == 'y.gtimg.cn') {
+      final qqSize = size <= 300 ? 300 : (size <= 500 ? 500 : 800);
+      url = url.replaceFirstMapped(
+        RegExp(r'/T002R\d+x\d+M000'),
+        (match) => '/T002R${qqSize}x${qqSize}M000',
+      );
     }
     return url;
   }

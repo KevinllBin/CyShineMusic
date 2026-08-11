@@ -16,6 +16,7 @@ import '../../core/music_sources/music_url_resolver.dart';
 import '../../core/services/app_logger.dart';
 import '../../core/services/tagger.dart';
 import '../../core/storage/settings_store.dart';
+import '../../core/ui/cover_image_source.dart';
 import '../downloads/download_history_store.dart';
 import 'bluetooth_lyric_metadata.dart';
 import 'lyric_parser.dart';
@@ -1018,7 +1019,7 @@ class PlayerController extends StateNotifier<PlayerState>
   }
 
   Uri? _networkArtworkUri(String? value) {
-    final normalized = value?.trim();
+    final normalized = CoverImageSource.normalizeUrl(value, size: 500)?.trim();
     if (normalized == null || normalized.isEmpty) return null;
     final candidate = normalized.startsWith('//')
         ? 'https:$normalized'

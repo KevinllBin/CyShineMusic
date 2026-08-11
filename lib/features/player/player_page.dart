@@ -209,13 +209,31 @@ class _NowPlayingBodyState extends ConsumerState<_NowPlayingBody> {
           child: Column(
             children: [
               Expanded(
-                child: PageView(
-                  key: const ValueKey('player-compact-pager'),
-                  controller: _pageController,
-                  children: [
-                    AlbumPage(onOpenLyrics: _openLyricsPage),
-                    const LyricsPanel(),
-                  ],
+                child: NotificationListener<OverscrollIndicatorNotification>(
+                  key: const ValueKey('player-compact-pager-edge-guard'),
+                  onNotification: (notification) {
+                    if (notification.depth == 0) {
+                      notification.disallowIndicator();
+                    }
+                    return false;
+                  },
+                  child: PageView(
+                    key: const ValueKey('player-compact-pager'),
+                    controller: _pageController,
+                    clipBehavior: Clip.hardEdge,
+                    children: [
+                      ClipRect(
+                        key: const ValueKey('player-compact-album-clip'),
+                        clipBehavior: Clip.hardEdge,
+                        child: AlbumPage(onOpenLyrics: _openLyricsPage),
+                      ),
+                      const ClipRect(
+                        key: ValueKey('player-compact-lyrics-clip'),
+                        clipBehavior: Clip.hardEdge,
+                        child: LyricsPanel(),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               const TransportBar(),

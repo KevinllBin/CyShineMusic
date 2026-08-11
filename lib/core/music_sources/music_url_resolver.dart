@@ -26,6 +26,7 @@ abstract interface class MusicUrlResolver {
     required MusicSourceUrlConsumer<T> use,
     Set<String> excludedSourceIds = const <String>{},
     bool Function()? isCancelled,
+    bool Function(Object error)? shouldFallbackOnConsumerError,
   });
 }
 
@@ -71,6 +72,7 @@ class LocalMusicUrlResolver implements MusicUrlResolver {
     required MusicSourceUrlConsumer<T> use,
     Set<String> excludedSourceIds = const <String>{},
     bool Function()? isCancelled,
+    bool Function(Object error)? shouldFallbackOnConsumerError,
   }) async {
     final sourceState = await _ref.read(musicSourceControllerProvider.future);
     if (sourceState.enabledRecords.isEmpty) {
@@ -95,6 +97,7 @@ class LocalMusicUrlResolver implements MusicUrlResolver {
         throw const MusicSourceFallbackCancelledException();
       }
       attemptedSourceIds.add(source.id);
+      var consumerStarted = false;
       try {
         final resolvedQuality = chooseMusicSourceQuality(
           requested: quality,
@@ -115,6 +118,7 @@ class LocalMusicUrlResolver implements MusicUrlResolver {
         if (isCancelled?.call() ?? false) {
           throw const MusicSourceFallbackCancelledException();
         }
+        consumerStarted = true;
         final value = await use(source, url);
         if (isCancelled?.call() ?? false) {
           throw const MusicSourceFallbackCancelledException();
@@ -127,6 +131,11 @@ class LocalMusicUrlResolver implements MusicUrlResolver {
       } on MusicSourceFallbackCancelledException {
         rethrow;
       } catch (error, stackTrace) {
+        if (consumerStarted &&
+            shouldFallbackOnConsumerError != null &&
+            !shouldFallbackOnConsumerError(error)) {
+          rethrow;
+        }
         failures.add(MusicSourceAttemptFailure(source: source, error: error));
         await AppLogger.write(
           'music-source',

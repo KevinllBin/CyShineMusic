@@ -12,6 +12,7 @@ import '../../core/services/embedded_artwork_cache.dart';
 import '../../core/services/tagger.dart';
 import '../../core/storage/settings_store.dart';
 import '../../core/ui/app_toast.dart';
+import '../../core/ui/app_refresh_indicator.dart';
 import '../../theme/app_motion.dart';
 import '../downloads/download_history_store.dart';
 import '../music_sources/music_source_action_guard.dart';
@@ -1095,7 +1096,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
           : null,
       body: _batchMode || playlistMode
           ? libraryView
-          : RefreshIndicator(
+          : AppRefreshIndicator(
               onRefresh: _scanLocalMusicFolder,
               child: libraryView,
             ),

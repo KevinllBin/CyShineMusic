@@ -607,7 +607,9 @@ class _AppShellState extends ConsumerState<AppShell>
                                     currentChild ?? const SizedBox.shrink(),
                                 transitionBuilder: _buildRouteTransition,
                                 child: KeyedSubtree(
-                                  key: ValueKey(widget.location),
+                                  key: ValueKey(
+                                    _shellContentAnimationKey(widget.location),
+                                  ),
                                   child: Listener(
                                     behavior: HitTestBehavior.translucent,
                                     onPointerUp: (_) =>
@@ -744,7 +746,8 @@ class _AppShellState extends ConsumerState<AppShell>
   }
 
   Widget _buildRouteTransition(Widget child, Animation<double> animation) {
-    final incoming = child.key == ValueKey(widget.location);
+    final incoming =
+        child.key == ValueKey(_shellContentAnimationKey(widget.location));
     // Entering the player slides the whole page up from the bottom edge —
     // the mirror of the player's own downward exit animation. A fade here
     // would read as a flicker, so the page slides in fully opaque.
@@ -822,6 +825,10 @@ int _routeOrder(String location) {
     '/debug' => 4,
     _ => 0,
   };
+}
+
+String _shellContentAnimationKey(String location) {
+  return isDiscoveryLocation(location) ? '/' : location;
 }
 
 const _appTaskChannel = MethodChannel('cy_shine_music/app_task');

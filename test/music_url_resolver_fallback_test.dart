@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -120,6 +122,36 @@ void main() {
       expect(runtime.calls, ['first:128k', 'second:128k']);
     },
   );
+
+  test('consumer can stop fallback for a non-source failure', () async {
+    final first = _record('first');
+    final second = _record('second');
+    final runtime = _FakeRuntime({
+      first.id: const MusicUrl(url: 'https://audio.test/first.mp3'),
+      second.id: const MusicUrl(url: 'https://audio.test/second.mp3'),
+    });
+    final container = await _container(
+      records: [first, second],
+      runtime: runtime,
+    );
+    addTearDown(container.dispose);
+
+    await expectLater(
+      container
+          .read(musicUrlResolverProvider)
+          .useFirstAvailable<void>(
+            music: _music(),
+            quality: Quality.k128,
+            shouldFallbackOnConsumerError: (error) =>
+                error is! FileSystemException,
+            use: (_, _) async =>
+                throw const FileSystemException('disk write failed'),
+          ),
+      throwsA(isA<FileSystemException>()),
+    );
+
+    expect(runtime.calls, ['first:128k']);
+  });
 
   test('runtime serializes source load and resolve as one operation', () async {
     const channel = MethodChannel('test/music-source-serialized');

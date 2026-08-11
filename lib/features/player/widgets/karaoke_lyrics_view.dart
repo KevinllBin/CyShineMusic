@@ -36,11 +36,12 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
   final _controller = ScrollController();
   final _lineKeys = <int, GlobalKey>{};
   final _viewportKey = GlobalKey();
-  // Per-tick position/playing values flow through these notifiers so the
+  // Per-tick playback values flow through these notifiers so the
   // ListView itself only rebuilds when the active line (or a tap selection)
   // changes — not on every position stream emission.
   final _anchorMs = ValueNotifier<int>(0);
   final _playing = ValueNotifier<bool>(false);
+  final _buffering = ValueNotifier<bool>(false);
   final _blurSuppressed = ValueNotifier<bool>(false);
   int _activeIndex = -1;
   int? _selectedIndex;
@@ -62,6 +63,7 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
   bool _userScrollLocked = false;
   bool _manualBlurSuppressed = false;
   bool _selectionBlurSuppressed = false;
+  bool _skipNextLineStagger = false;
   int _lyricStaggerGeneration = 0;
   int _lyricStaggerVisibleStartIndex = 0;
   double _lyricStaggerShiftPx = 0;
@@ -77,7 +79,8 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
     final initial = ref.read(playerControllerProvider);
     _anchorMs.value = initial.position.inMilliseconds;
     _playing.value = initial.playing;
-    if (initial.playing) _anchorAge.start();
+    _buffering.value = initial.buffering;
+    if (initial.playing && !initial.buffering) _anchorAge.start();
     _activeIndex = widget.lyrics.activeIndex(initial.position);
     _scheduleScrollToActive(retriesLeft: 1);
     _scheduleLineAdvance();
@@ -85,8 +88,7 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
       previous,
       next,
     ) {
-      _anchorMs.value = next.inMilliseconds;
-      _anchorAge.reset();
+      _reanchorPlaybackClock(next);
       _syncActiveLine(next);
       _scheduleLineAdvance();
     });
@@ -94,12 +96,18 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
       previous,
       next,
     ) {
+      final current = ref.read(playerControllerProvider);
+      _reanchorPlaybackClock(current.position, playing: next);
       _playing.value = next;
-      if (next) {
-        _anchorAge.start();
-      } else {
-        _anchorAge.stop();
-      }
+      _scheduleLineAdvance();
+    });
+    ref.listenManual(playerControllerProvider.select((s) => s.buffering), (
+      previous,
+      next,
+    ) {
+      _buffering.value = next;
+      final current = ref.read(playerControllerProvider);
+      _reanchorPlaybackClock(current.position, buffering: next);
       _scheduleLineAdvance();
     });
   }
@@ -118,11 +126,13 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
       _lyricStaggerResetTimer?.cancel();
       _manualBlurSuppressed = false;
       _selectionBlurSuppressed = false;
+      _skipNextLineStagger = false;
       _lyricStaggerGeneration++;
       _lyricStaggerShiftPx = 0;
       _syncBlurSuppression();
-      final position = ref.read(playerControllerProvider).position;
-      _anchorMs.value = position.inMilliseconds;
+      final current = ref.read(playerControllerProvider);
+      final position = current.position;
+      _reanchorPlaybackClock(position);
       _activeIndex = widget.lyrics.activeIndex(position);
       _scheduleScrollToActive(retriesLeft: 1);
       _scheduleLineAdvance();
@@ -147,12 +157,14 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
     _controller.dispose();
     _anchorMs.dispose();
     _playing.dispose();
+    _buffering.dispose();
     _blurSuppressed.dispose();
     super.dispose();
   }
 
   void _selectLine(int index) {
     _cancelLyricStagger();
+    _skipNextLineStagger = true;
     _suppressBlurForSelection();
     if (_selectedIndex != index) {
       setState(() => _selectedIndex = index);
@@ -168,12 +180,14 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
     final next = widget.lyrics.activeIndex(position);
     if (next == _activeIndex) return;
     final previous = _activeIndex;
+    final skipLineStagger = _skipNextLineStagger;
+    _skipNextLineStagger = false;
     final useLineStagger =
         previous >= 0 &&
         next >= 0 &&
         (next - previous).abs() <= 10 &&
         !_userScrollLocked &&
-        !_selectionBlurSuppressed &&
+        !skipLineStagger &&
         !MediaQuery.disableAnimationsOf(context);
     setState(() => _activeIndex = next);
     _lineLayoutStopwatch
@@ -193,7 +207,7 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
   /// and fire a one-shot timer exactly at the next line boundary.
   void _scheduleLineAdvance() {
     _lineAdvanceTimer?.cancel();
-    if (!_playing.value) return;
+    if (!_playing.value || _buffering.value) return;
     final lines = widget.lyrics.lines;
     final nextIndex = _activeIndex + 1;
     if (_activeIndex < 0 || nextIndex >= lines.length) return;
@@ -201,7 +215,7 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
     final waitMs = math.max(0, lines[nextIndex].startMs - nowMs);
     _lineAdvanceTimer = Timer(Duration(milliseconds: waitMs), () {
       if (!mounted) return;
-      if (ref.read(playerControllerProvider).buffering) {
+      if (_buffering.value) {
         // Playback is stalled, so extrapolated time is running ahead of the
         // real position. Advancing now would flip the line early and snap
         // back on the next anchor; wait for a real anchor instead.
@@ -214,6 +228,20 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
       );
       _scheduleLineAdvance();
     });
+  }
+
+  void _reanchorPlaybackClock(
+    Duration position, {
+    bool? playing,
+    bool? buffering,
+  }) {
+    _anchorAge
+      ..stop()
+      ..reset();
+    _anchorMs.value = position.inMilliseconds;
+    if ((playing ?? _playing.value) && !(buffering ?? _buffering.value)) {
+      _anchorAge.start();
+    }
   }
 
   bool _handleScrollNotification(ScrollNotification notification) {
@@ -317,11 +345,9 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
         });
         _scheduleLyricStaggerReset();
       }
-      // The focus style change keeps animating row heights for the next
-      // ~300 ms. Starting the spring tracker at target == offset pins the
-      // active line to its anchor while that relayout settles; it only
-      // moves as the layout does.
-      _startLyricScroll();
+      // Exact stagger path ends here: the list has already been relocated and
+      // each visible row owns the inverse shift animation. Running the normal
+      // list-follow spring as well makes two independent Y motions compete.
     });
   }
 
@@ -687,6 +713,7 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
                   showTranslation: widget.showTranslation,
                   anchorMs: _anchorMs,
                   playing: _playing,
+                  buffering: _buffering,
                   onSelect: () => _selectLine(index),
                   onSeek: () {
                     _selectLine(index);

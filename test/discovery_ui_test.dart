@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -30,6 +31,7 @@ import 'package:cy_shine_music/features/search/search_controller.dart';
 import 'package:cy_shine_music/features/search/search_page.dart';
 import 'package:cy_shine_music/features/search/search_toolbar_state.dart';
 import 'package:cy_shine_music/features/shell/widgets/discovery_category_fab.dart';
+import 'package:cy_shine_music/router.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -69,6 +71,167 @@ void main() {
     container.invalidate(featuredPlaylistsProvider(MusicSource.kw));
     await tester.pumpAndSettle();
     expect(_cardPositions(tester, MusicSource.kw, 9), before);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('opening an online playlist never fades through the shell', (
+    tester,
+  ) async {
+    await _useViewport(tester, const Size(390, 844));
+    final prefs = await _freshPreferences();
+    final fake = _FakeDiscoveryApi(delayDetail: true);
+    final audioHandler = PlayerAudioHandler();
+    final router = createAppRouter();
+    final container = ProviderContainer(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        musicApiProvider.overrideWithValue(fake),
+        playerAudioHandlerProvider.overrideWithValue(audioHandler),
+      ],
+    );
+    addTearDown(() {
+      container.dispose();
+      router.dispose();
+      unawaited(audioHandler.disposeHandler());
+    });
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            useMaterial3: true,
+            colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+          ),
+          builder: (context, child) =>
+              AppToastOverlay(child: child ?? const SizedBox.shrink()),
+          routerConfig: router,
+        ),
+      ),
+    );
+    for (var frame = 0; frame < 12; frame++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    await tester.tap(find.byKey(const ValueKey('discovery-card-kw:1')));
+    for (var frame = 0; frame < 6; frame++) {
+      await tester.pump(const Duration(milliseconds: 1));
+      if (find.byType(OnlinePlaylistDetailPage).evaluate().isNotEmpty) break;
+    }
+    await tester.pump();
+    _expectOnlineDetailFullyOpaque(tester);
+
+    await tester.pump(const Duration(milliseconds: 80));
+    _expectOnlineDetailFullyOpaque(tester);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('artwork theme reuses its resolved color after remounting', (
+    tester,
+  ) async {
+    const probeKey = ValueKey('artwork-theme-color-probe');
+    final baseScheme = ColorScheme.fromSeed(seedColor: Colors.teal);
+    final artwork = MemoryImage(
+      base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAAXNSR0IArs4c6QAA'
+        'AARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAASSURBVBhXY7ij'
+        'rPsfhKEM3f8ATTgIrTbBk9sAAAAASUVORK5CYII=',
+      ),
+    );
+
+    Widget app({required bool showArtworkTheme}) {
+      return MaterialApp(
+        theme: ThemeData(useMaterial3: true, colorScheme: baseScheme),
+        home: showArtworkTheme
+            ? PlaylistArtworkTheme(
+                artworkProvider: artwork,
+                cacheKey: 'test:resolved-artwork-remount',
+                child: Builder(
+                  builder: (context) => ColoredBox(
+                    key: probeKey,
+                    color: Theme.of(context).colorScheme.primary,
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+              )
+            : const SizedBox.shrink(),
+      );
+    }
+
+    Color probeColor() => tester.widget<ColoredBox>(find.byKey(probeKey)).color;
+
+    await tester.pumpWidget(app(showArtworkTheme: true));
+    for (var frame = 0; frame < 20; frame++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      if (probeColor() != baseScheme.primary) break;
+    }
+    await tester.pump(const Duration(milliseconds: 600));
+    final artworkColor = probeColor();
+    expect(artworkColor, isNot(baseScheme.primary));
+
+    await tester.pumpWidget(app(showArtworkTheme: false));
+    await tester.pump();
+    await tester.pumpWidget(app(showArtworkTheme: true));
+
+    expect(probeColor(), artworkColor);
+    await tester.pump();
+    expect(probeColor(), artworkColor);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('online detail remembers discovery artwork without route extra', (
+    tester,
+  ) async {
+    await _useViewport(tester, const Size(390, 844));
+    final fake = _FakeDiscoveryApi(delayDetail: true);
+    final container = ProviderContainer(
+      overrides: [musicApiProvider.overrideWithValue(fake)],
+    );
+    addTearDown(container.dispose);
+    const coverUrl = 'https://img.test/discovery-cover.jpg';
+    const page = OnlinePlaylistDetailPage(
+      source: MusicSource.kw,
+      playlistId: '1',
+    );
+
+    await tester.pumpWidget(
+      _appWithContainer(
+        container,
+        const OnlinePlaylistDetailPage(
+          source: MusicSource.kw,
+          playlistId: '1',
+          summary: PlaylistSummary(
+            id: '1',
+            name: '发现页歌单',
+            source: MusicSource.kw,
+            coverUrl: coverUrl,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    final firstProvider = tester
+        .widget<PlaylistArtworkTheme>(find.byType(PlaylistArtworkTheme))
+        .artworkProvider;
+    expect(firstProvider, isA<CachedNetworkImageProvider>());
+
+    await tester.pumpWidget(
+      _appWithContainer(container, const SizedBox.shrink()),
+    );
+    await tester.pump();
+    await tester.pumpWidget(_appWithContainer(container, page));
+    await tester.pump();
+
+    final restoredProvider = tester
+        .widget<PlaylistArtworkTheme>(find.byType(PlaylistArtworkTheme))
+        .artworkProvider;
+    expect(restoredProvider, firstProvider);
+    await tester.pump(const Duration(seconds: 6));
+    await tester.pump();
     expect(tester.takeException(), isNull);
   });
 
@@ -929,6 +1092,18 @@ Map<String, Offset> _cardPositions(
         find.byKey(ValueKey('discovery-card-${source.code}:$index')),
       ),
   };
+}
+
+void _expectOnlineDetailFullyOpaque(WidgetTester tester) {
+  final detail = find.byType(OnlinePlaylistDetailPage);
+  expect(detail, findsOneWidget);
+  final fades = find.ancestor(
+    of: detail,
+    matching: find.byType(FadeTransition),
+  );
+  for (final fade in tester.widgetList<FadeTransition>(fades)) {
+    expect(fade.opacity.value, closeTo(1, 0.001));
+  }
 }
 
 Future<SharedPreferences> _freshPreferences() async {

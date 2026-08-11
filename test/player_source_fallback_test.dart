@@ -355,6 +355,7 @@ class _ScriptedResolver implements MusicUrlResolver {
     required MusicSourceUrlConsumer<T> use,
     Set<String> excludedSourceIds = const <String>{},
     bool Function()? isCancelled,
+    bool Function(Object error)? shouldFallbackOnConsumerError,
   }) async {
     requestedQualities.add(quality);
     final failures = <MusicSourceAttemptFailure>[];

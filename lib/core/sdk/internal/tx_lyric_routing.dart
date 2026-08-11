@@ -29,7 +29,10 @@ int? txResolveIntegerSongId(MusicInfo info) {
 // Strip the wrapper to get just the QRC-format body. crypt:0 (and trans
 // either way) ships plain content, so we pass it through.
 final _lyricContentExp = RegExp(
-  r'''LyricContent=(["'])([\s\S]*?)\1''',
+  // QQ sometimes leaves literal quotes inside LyricContent unescaped, such
+  // as Bradford "Brad" Delson. Only the quote closing the self-closing QRC
+  // tag is an attribute boundary.
+  r'''LyricContent=(["'])([\s\S]*?)\1\s*/>''',
   dotAll: true,
 );
 

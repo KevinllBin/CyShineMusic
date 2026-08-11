@@ -19,6 +19,11 @@ const List<MusicSource> kDiscoverySources = <MusicSource>[
   MusicSource.mg,
 ];
 
+typedef OnlinePlaylistIdentity = ({MusicSource source, String id});
+
+final onlinePlaylistSummaryCacheProvider =
+    Provider<Map<OnlinePlaylistIdentity, PlaylistSummary>>((ref) => {});
+
 String onlinePlaylistArtworkHeroTag(MusicSource source, String playlistId) {
   return 'online-playlist-artwork:${source.code}:$playlistId';
 }

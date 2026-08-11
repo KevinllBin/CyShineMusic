@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:just_audio/just_audio.dart' show ProcessingState;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:cy_shine_music/core/models/enums.dart';
@@ -85,6 +86,19 @@ void main() {
       );
       expect(find.byKey(const ValueKey('player-wide-layout')), findsNothing);
       expect(find.byType(PageView), findsOneWidget);
+      final pager = find.byKey(const ValueKey('player-compact-pager'));
+      expect(
+        find.byKey(const ValueKey('player-compact-pager-edge-guard')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('player-compact-album-clip')),
+        findsOneWidget,
+      );
+      expect(tester.widget<PageView>(pager).clipBehavior, Clip.hardEdge);
+      final edgeNotification = OverscrollIndicatorNotification(leading: false);
+      edgeNotification.dispatch(tester.element(pager));
+      expect(edgeNotification.accepted, isFalse);
 
       // Track metadata belongs to the header on every compact page and must
       // not be repeated below the cover.
@@ -431,11 +445,190 @@ void main() {
     final viewport = find.byType(KaraokeLyricsView);
     final edgeFade = find.byKey(const ValueKey('karaoke-lyrics-edge-fade'));
     final list = find.byKey(const ValueKey('karaoke-lyrics-list'));
+    expect(
+      find.byKey(const ValueKey('player-compact-lyrics-clip')),
+      findsOneWidget,
+    );
     expect(edgeFade, findsOneWidget);
     expect(list, findsOneWidget);
     expect(tester.getRect(edgeFade), tester.getRect(viewport));
     expect(tester.getRect(list), tester.getRect(viewport));
     expect(tester.widget<ShaderMask>(edgeFade).blendMode, BlendMode.dstIn);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('lyric stagger keeps the relocated scroll offset stable', (
+    tester,
+  ) async {
+    final lyrics = _timedLyrics(14);
+    final controller = await _pumpLyricsPanel(
+      tester,
+      PlayerState(
+        lyrics: lyrics,
+        position: const Duration(milliseconds: 15000),
+      ),
+    );
+    final scrollPosition = _lyricsScrollPosition(tester);
+    final initialOffset = scrollPosition.pixels;
+
+    expect(_lyricFocusScale(tester, 15000), closeTo(1, 0.0001));
+    expect(_lyricFocusScale(tester, 18000), closeTo(0.95, 0.0001));
+
+    controller.setStateForTest(
+      controller.state.copyWith(position: const Duration(milliseconds: 18000)),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final relocatedOffset = scrollPosition.pixels;
+    expect(relocatedOffset, isNot(closeTo(initialOffset, 0.01)));
+
+    for (final interval in const [
+      Duration(milliseconds: 100),
+      Duration(milliseconds: 150),
+      Duration(milliseconds: 200),
+      Duration(milliseconds: 250),
+    ]) {
+      await tester.pump(interval);
+      expect(scrollPosition.pixels, closeTo(relocatedOffset, 0.001));
+    }
+
+    expect(_lyricFocusScale(tester, 15000), closeTo(0.95, 0.0001));
+    expect(_lyricFocusScale(tester, 18000), closeTo(1, 0.0001));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('word-timed lyric keeps its layout height across focus changes', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
+
+    const longLine = KaraokeLyricLine(
+      startMs: 3000,
+      endMs: 6000,
+      text: '春风穿过旧山河星光落在长街上我们走向晨曦里月色停在窗台前',
+      words: [
+        KaraokeWordTiming(text: '春风穿过旧山河', startMs: 3000, endMs: 3700),
+        KaraokeWordTiming(text: '星光落在长街上', startMs: 3700, endMs: 4400),
+        KaraokeWordTiming(text: '我们走向晨曦里', startMs: 4400, endMs: 5100),
+        KaraokeWordTiming(text: '月色停在窗台前', startMs: 5100, endMs: 5800),
+      ],
+    );
+    const lyrics = KaraokeLyrics([
+      KaraokeLyricLine(startMs: 0, endMs: 3000, text: '前一句'),
+      longLine,
+      KaraokeLyricLine(startMs: 6000, endMs: 9000, text: '后一句'),
+    ]);
+    final controller = await _pumpLyricsPanel(
+      tester,
+      const PlayerState(lyrics: lyrics),
+    );
+    final longLineFinder = find.byKey(const ValueKey('lyric-stagger-3000'));
+    final inactiveHeight = tester.getSize(longLineFinder).height;
+    expect(inactiveHeight, greaterThan(100));
+
+    controller.setStateForTest(
+      controller.state.copyWith(position: const Duration(milliseconds: 3500)),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 700));
+
+    expect(
+      tester.getSize(longLineFinder).height,
+      closeTo(inactiveHeight, 0.001),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('word progress keeps elapsed time when a new line activates', (
+    tester,
+  ) async {
+    const lyrics = KaraokeLyrics([
+      KaraokeLyricLine(
+        startMs: 0,
+        endMs: 1000,
+        text: '前一句',
+        words: [KaraokeWordTiming(text: '前一句', startMs: 0, endMs: 1000)],
+      ),
+      KaraokeLyricLine(
+        startMs: 1000,
+        endMs: 3000,
+        text: '新一句',
+        words: [KaraokeWordTiming(text: '新一句', startMs: 1000, endMs: 2000)],
+      ),
+    ]);
+    final controller = await _pumpLyricsPanel(
+      tester,
+      const PlayerState(lyrics: lyrics, position: Duration(milliseconds: 990)),
+    );
+
+    controller.setStateForTest(controller.state.copyWith(playing: true));
+    await tester.pump();
+    // No position anchor is published here. The line-advance timer activates
+    // the second row from wall-clock elapsed time after the 990 ms anchor.
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 80)),
+    );
+    await tester.pump(const Duration(milliseconds: 10));
+    await tester.pump();
+
+    expect(_activeWordProgress(tester, 1000), greaterThan(0.02));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('word progress pauses while buffering and resumes afterwards', (
+    tester,
+  ) async {
+    const lyrics = KaraokeLyrics([
+      KaraokeLyricLine(
+        startMs: 0,
+        endMs: 6000,
+        text: '缓冲中的逐字歌词',
+        words: [KaraokeWordTiming(text: '缓冲中的逐字歌词', startMs: 0, endMs: 5000)],
+      ),
+    ]);
+    final controller = await _pumpLyricsPanel(
+      tester,
+      const PlayerState(lyrics: lyrics, position: Duration(milliseconds: 1000)),
+    );
+
+    controller.setStateForTest(controller.state.copyWith(playing: true));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    controller.setStateForTest(
+      controller.state.copyWith(
+        position: const Duration(milliseconds: 1200),
+        processingState: ProcessingState.buffering,
+      ),
+    );
+    await tester.pump();
+
+    final bufferedProgress = _activeWordProgress(tester, 0);
+    expect(bufferedProgress, closeTo(0.24, 0.001));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
+    await tester.pump();
+    expect(_activeWordProgress(tester, 0), closeTo(bufferedProgress, 0.0001));
+
+    controller.setStateForTest(
+      controller.state.copyWith(processingState: ProcessingState.ready),
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
+    await tester.pump();
+
+    expect(
+      _activeWordProgress(tester, 0),
+      greaterThan(bufferedProgress + 0.01),
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -628,6 +821,42 @@ Future<_SeededPlayerController> _pumpPlayer(
   controller.setStateForTest(initialState);
   await _pumpUi(tester);
   return controller;
+}
+
+KaraokeLyrics _timedLyrics(int count) {
+  return KaraokeLyrics([
+    for (var index = 0; index < count; index++)
+      KaraokeLyricLine(
+        startMs: index * 3000,
+        endMs: (index + 1) * 3000,
+        text: '第${index + 1}句歌词用于测试平稳切换',
+      ),
+  ]);
+}
+
+ScrollPosition _lyricsScrollPosition(WidgetTester tester) {
+  final scrollable = find.descendant(
+    of: find.byKey(const ValueKey('karaoke-lyrics-list')),
+    matching: find.byType(Scrollable),
+  );
+  return tester.state<ScrollableState>(scrollable).position;
+}
+
+double _lyricFocusScale(WidgetTester tester, int startMs) {
+  final transform = tester.widget<Transform>(
+    find.byKey(ValueKey('lyric-focus-scale-$startMs')),
+  );
+  return transform.transform.storage.first;
+}
+
+double _activeWordProgress(WidgetTester tester, int lineStartMs) {
+  final progressAlign = find.descendant(
+    of: find.byKey(ValueKey('lyric-focus-scale-$lineStartMs')),
+    matching: find.byWidgetPredicate(
+      (widget) => widget is Align && widget.widthFactor != null,
+    ),
+  );
+  return tester.widget<Align>(progressAlign).widthFactor!;
 }
 
 ThemeData _theme() {
