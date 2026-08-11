@@ -256,8 +256,10 @@ class _AppRefreshIndicatorState extends State<AppRefreshIndicator>
             bottom: !_indicatorAtTop! ? widget.edgeOffset : null,
             left: 0,
             right: 0,
-            child: SizeTransition(
-              axisAlignment: _indicatorAtTop! ? 1 : -1,
+            child: _RefreshIndicatorSizeTransition(
+              alignment: _indicatorAtTop!
+                  ? AlignmentDirectional.bottomStart
+                  : AlignmentDirectional.topStart,
               sizeFactor: _positionFactor,
               child: Padding(
                 padding: _indicatorAtTop!
@@ -292,6 +294,31 @@ class _AppRefreshIndicatorState extends State<AppRefreshIndicator>
             ),
           ),
       ],
+    );
+  }
+}
+
+class _RefreshIndicatorSizeTransition extends AnimatedWidget {
+  const _RefreshIndicatorSizeTransition({
+    required Animation<double> sizeFactor,
+    required this.alignment,
+    required this.child,
+  }) : super(listenable: sizeFactor);
+
+  Animation<double> get sizeFactor => listenable as Animation<double>;
+
+  final AlignmentGeometry alignment;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRect(
+      child: Align(
+        key: const ValueKey('app-refresh-indicator-reveal'),
+        alignment: alignment,
+        heightFactor: sizeFactor.value < 0.0 ? 0.0 : sizeFactor.value,
+        child: child,
+      ),
     );
   }
 }

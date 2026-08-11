@@ -28,9 +28,11 @@ void main() {
     await gesture.moveBy(const Offset(0, 40));
     await tester.pump();
 
-    final reveal = tester.widget<SizeTransition>(find.byType(SizeTransition));
-    expect(reveal.sizeFactor.value, greaterThan(0));
-    expect(reveal.sizeFactor.value, lessThan(1));
+    final reveal = tester.widget<Align>(
+      find.byKey(const ValueKey('app-refresh-indicator-reveal')),
+    );
+    expect(reveal.heightFactor, greaterThan(0));
+    expect(reveal.heightFactor, lessThan(1));
     expect(find.bySemanticsLabel('下拉刷新'), findsOneWidget);
 
     await gesture.up();
