@@ -107,7 +107,10 @@ class LocalPlaylistNotifier extends Notifier<List<LocalPlaylist>> {
     return addTracks(playlistId, entries);
   }
 
-  Future<LocalPlaylist> importOnline(PlaylistInfo online) async {
+  Future<LocalPlaylist> importOnline(
+    PlaylistInfo online, {
+    bool synchronizeTracks = false,
+  }) async {
     final sourceCode = online.source.code;
     final originId = online.id.trim();
     final importedTracks = online.tracks
@@ -122,11 +125,13 @@ class LocalPlaylistNotifier extends Notifier<List<LocalPlaylist>> {
 
     if (existingIndex >= 0) {
       final current = state[existingIndex];
-      final merged = _mergeTrackLists(current.tracks, importedTracks);
+      final tracks = synchronizeTracks
+          ? _synchronizeTrackLists(current.tracks, importedTracks)
+          : _mergeTrackLists(current.tracks, importedTracks).tracks;
       final updated = LocalPlaylist(
         id: current.id,
         name: current.name,
-        tracks: merged.tracks,
+        tracks: tracks,
         createdAt: current.createdAt,
         updatedAt: DateTime.now(),
         originPlaylistId: originId,
@@ -486,6 +491,21 @@ _TrackMergeResult _mergeTrackLists(
     added: added,
     changed: changed,
   );
+}
+
+List<PlaylistTrack> _synchronizeTrackLists(
+  Iterable<PlaylistTrack> current,
+  Iterable<PlaylistTrack> incoming,
+) {
+  final currentByKey = {for (final track in current) track.identityKey: track};
+  final synchronized = <PlaylistTrack>[];
+  final seen = <String>{};
+  for (final track in incoming) {
+    if (!seen.add(track.identityKey)) continue;
+    final existing = currentByKey[track.identityKey];
+    synchronized.add(existing?.mergePreferLocal(track) ?? track);
+  }
+  return List<PlaylistTrack>.unmodifiable(synchronized);
 }
 
 bool _sameTrackSnapshot(PlaylistTrack left, PlaylistTrack right) {

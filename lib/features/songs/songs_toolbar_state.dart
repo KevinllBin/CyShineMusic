@@ -36,6 +36,8 @@ class SongsToolbarState {
     this.onSearch,
     this.onShuffle,
     this.onOpenHistory,
+    this.onUpdatePlaylist,
+    this.updatingPlaylist = false,
     this.onToggleBatch,
     this.onToggleSelectAll,
   });
@@ -52,6 +54,8 @@ class SongsToolbarState {
   final VoidCallback? onSearch;
   final VoidCallback? onShuffle;
   final VoidCallback? onOpenHistory;
+  final VoidCallback? onUpdatePlaylist;
+  final bool updatingPlaylist;
   final VoidCallback? onToggleBatch;
   final VoidCallback? onToggleSelectAll;
 
@@ -68,6 +72,8 @@ class SongsToolbarState {
     required int selectedCount,
     required bool allSelected,
     required bool batchMode,
+    required bool canUpdatePlaylist,
+    required bool updatingPlaylist,
   }) {
     return identical(this.owner, owner) &&
         this.libraryTitle == libraryTitle &&
@@ -75,7 +81,9 @@ class SongsToolbarState {
         this.songCount == songCount &&
         this.selectedCount == selectedCount &&
         this.allSelected == allSelected &&
-        this.batchMode == batchMode;
+        this.batchMode == batchMode &&
+        (onUpdatePlaylist != null) == canUpdatePlaylist &&
+        this.updatingPlaylist == updatingPlaylist;
   }
 }
 

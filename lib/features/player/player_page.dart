@@ -134,6 +134,13 @@ class _NowPlayingBody extends ConsumerStatefulWidget {
 
 class _NowPlayingBodyState extends ConsumerState<_NowPlayingBody> {
   late final PageController _pageController;
+  int? _compactPagerPointer;
+  Offset _compactPagerPointerDelta = Offset.zero;
+  bool _compactPagerHorizontalDrag = false;
+  bool _compactPagerScrolling = false;
+
+  bool get _compactPagerMoving =>
+      _compactPagerHorizontalDrag || _compactPagerScrolling;
 
   @override
   void initState() {
@@ -158,6 +165,61 @@ class _NowPlayingBodyState extends ConsumerState<_NowPlayingBody> {
       duration: AppMotion.long,
       curve: AppMotion.emphasized,
     );
+  }
+
+  bool _handleCompactPagerScroll(ScrollNotification notification) {
+    if (notification.depth != 0) return false;
+    if (notification is ScrollStartNotification &&
+        notification.dragDetails == null) {
+      _setCompactPagerScrolling(true);
+    } else if (notification is ScrollEndNotification) {
+      _setCompactPagerScrolling(false);
+    }
+    return false;
+  }
+
+  void _handleCompactPagerPointerDown(PointerDownEvent event) {
+    if (_compactPagerPointer != null) return;
+    _compactPagerPointer = event.pointer;
+    _compactPagerPointerDelta = Offset.zero;
+  }
+
+  void _handleCompactPagerPointerMove(PointerMoveEvent event) {
+    if (_compactPagerPointer != event.pointer || _compactPagerHorizontalDrag) {
+      return;
+    }
+    _compactPagerPointerDelta += event.delta;
+    if (_compactPagerPointerDelta.dx.abs() >= 4 &&
+        _compactPagerPointerDelta.dx.abs() >
+            _compactPagerPointerDelta.dy.abs()) {
+      _setCompactPagerHorizontalDrag(true);
+    }
+  }
+
+  void _handleCompactPagerPointerEnd(PointerEvent event) {
+    if (_compactPagerPointer != event.pointer) return;
+    _compactPagerPointer = null;
+    _compactPagerPointerDelta = Offset.zero;
+    if (_compactPagerHorizontalDrag && _pageController.hasClients) {
+      final page = _pageController.page;
+      _compactPagerScrolling =
+          page != null && (page - page.roundToDouble()).abs() > 0.001;
+    }
+    _setCompactPagerHorizontalDrag(false);
+  }
+
+  void _setCompactPagerHorizontalDrag(bool value) {
+    if (_compactPagerHorizontalDrag == value) return;
+    final wasMoving = _compactPagerMoving;
+    _compactPagerHorizontalDrag = value;
+    if (wasMoving != _compactPagerMoving) setState(() {});
+  }
+
+  void _setCompactPagerScrolling(bool value) {
+    if (_compactPagerScrolling == value) return;
+    final wasMoving = _compactPagerMoving;
+    _compactPagerScrolling = value;
+    if (wasMoving != _compactPagerMoving) setState(() {});
   }
 
   @override
@@ -217,22 +279,35 @@ class _NowPlayingBodyState extends ConsumerState<_NowPlayingBody> {
                     }
                     return false;
                   },
-                  child: PageView(
-                    key: const ValueKey('player-compact-pager'),
-                    controller: _pageController,
-                    clipBehavior: Clip.hardEdge,
-                    children: [
-                      ClipRect(
-                        key: const ValueKey('player-compact-album-clip'),
+                  child: Listener(
+                    key: const ValueKey('player-compact-pager-pointer-guard'),
+                    behavior: HitTestBehavior.translucent,
+                    onPointerDown: _handleCompactPagerPointerDown,
+                    onPointerMove: _handleCompactPagerPointerMove,
+                    onPointerUp: _handleCompactPagerPointerEnd,
+                    onPointerCancel: _handleCompactPagerPointerEnd,
+                    child: NotificationListener<ScrollNotification>(
+                      onNotification: _handleCompactPagerScroll,
+                      child: PageView(
+                        key: const ValueKey('player-compact-pager'),
+                        controller: _pageController,
                         clipBehavior: Clip.hardEdge,
-                        child: AlbumPage(onOpenLyrics: _openLyricsPage),
+                        children: [
+                          ClipRect(
+                            key: const ValueKey('player-compact-album-clip'),
+                            clipBehavior: Clip.hardEdge,
+                            child: AlbumPage(onOpenLyrics: _openLyricsPage),
+                          ),
+                          ClipRect(
+                            key: const ValueKey('player-compact-lyrics-clip'),
+                            clipBehavior: Clip.hardEdge,
+                            child: LyricsPanel(
+                              edgeFadeEnabled: !_compactPagerMoving,
+                            ),
+                          ),
+                        ],
                       ),
-                      const ClipRect(
-                        key: ValueKey('player-compact-lyrics-clip'),
-                        clipBehavior: Clip.hardEdge,
-                        child: LyricsPanel(),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),

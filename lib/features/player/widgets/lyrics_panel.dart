@@ -8,7 +8,9 @@ import 'player_palette.dart';
 import 'track_change_switcher.dart';
 
 class LyricsPanel extends ConsumerStatefulWidget {
-  const LyricsPanel({super.key});
+  const LyricsPanel({super.key, this.edgeFadeEnabled = true});
+
+  final bool edgeFadeEnabled;
 
   @override
   ConsumerState<LyricsPanel> createState() => _LyricsPanelState();
@@ -62,6 +64,7 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
               key: ValueKey('lyrics-view-$lyricsKey'),
               lyrics: vm.lyrics,
               showTranslation: hasTranslation && _showTranslation,
+              edgeFadeEnabled: widget.edgeFadeEnabled,
             ),
           ),
           if (hasTranslation)

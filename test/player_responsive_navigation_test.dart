@@ -413,7 +413,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('lyrics fade before the viewport clips their top and bottom', (
+  testWidgets('lyrics keep their fade but drop it before a pager drag', (
     tester,
   ) async {
     const lyrics = KaraokeLyrics([
@@ -421,7 +421,7 @@ void main() {
       KaraokeLyricLine(startMs: 3000, endMs: 6000, text: '第二句歌词'),
       KaraokeLyricLine(startMs: 6000, endMs: 9000, text: '第三句歌词'),
     ]);
-    await _pumpPlayer(
+    final controller = await _pumpPlayer(
       tester,
       size: const Size(390, 844),
       track: const PlayerTrack(
@@ -454,6 +454,37 @@ void main() {
     expect(tester.getRect(edgeFade), tester.getRect(viewport));
     expect(tester.getRect(list), tester.getRect(viewport));
     expect(tester.widget<ShaderMask>(edgeFade).blendMode, BlendMode.dstIn);
+    expect(
+      find.descendant(of: viewport, matching: find.byType(ImageFiltered)),
+      findsWidgets,
+    );
+
+    final gesture = await tester.startGesture(tester.getCenter(viewport));
+    await tester.pump();
+    expect(edgeFade, findsOneWidget);
+    await gesture.moveBy(const Offset(8, 0));
+    await tester.pump();
+    expect(
+      find.descendant(of: viewport, matching: find.byType(ShaderMask)),
+      findsNothing,
+    );
+    await gesture.moveBy(const Offset(72, 0));
+    await tester.pump();
+    expect(
+      find.descendant(of: viewport, matching: find.byType(ShaderMask)),
+      findsNothing,
+    );
+    controller.setStateForTest(
+      controller.state.copyWith(position: const Duration(milliseconds: 3500)),
+    );
+    await tester.pump();
+    expect(
+      find.descendant(of: viewport, matching: find.byType(ShaderMask)),
+      findsNothing,
+    );
+    await gesture.up();
+    await _pumpUi(tester);
+    expect(edgeFade, findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

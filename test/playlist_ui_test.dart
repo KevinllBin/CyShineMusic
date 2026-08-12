@@ -455,6 +455,62 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('management only offers update for online playlists', (
+    tester,
+  ) async {
+    await _useCompactViewport(tester);
+    final online = _playlist(
+      id: 'online',
+      name: '收藏的榜单',
+      tracks: [PlaylistTrack.fromMusicInfo(_playlistMusic('old', '旧歌曲'))],
+      originPlaylistId: '3778678',
+      originSourceCode: MusicSource.wy.code,
+    );
+    final local = _playlist(id: 'local', name: '本地新建');
+    final prefs = await _prefsWith([online, local]);
+    final api = _FakeMusicApi(
+      PlaylistInfo(
+        id: '3778678',
+        name: '线上榜单',
+        source: MusicSource.wy,
+        tracks: [_playlistMusic('old', '新歌名'), _playlistMusic('new', '新歌曲')],
+      ),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        musicApiProvider.overrideWithValue(api),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      _testAppWithContainer(container, const PlaylistManagementPage()),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('歌单选项').first);
+    await tester.pumpAndSettle();
+    expect(find.text('更新歌单'), findsOneWidget);
+    await tester.tap(find.text('更新歌单'));
+    await tester.pumpAndSettle();
+
+    final refreshed = container
+        .read(localPlaylistsProvider)
+        .firstWhere((playlist) => playlist.id == online.id);
+    expect(refreshed.tracks, hasLength(2));
+    expect(refreshed.tracks.first.name, '新歌名');
+
+    await tester.tap(find.byTooltip('歌单选项').last);
+    await tester.pumpAndSettle();
+    expect(find.text('更新歌单'), findsNothing);
+    expect(find.text('重命名'), findsOneWidget);
+    expect(find.text('删除'), findsOneWidget);
+    await tester.tapAt(const Offset(1, 1));
+    await tester.pump(const Duration(seconds: 4));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('playlist batch download exits selection immediately', (
     tester,
   ) async {
@@ -773,6 +829,8 @@ LocalPlaylist _playlist({
   required String id,
   required String name,
   List<PlaylistTrack> tracks = const [],
+  String? originPlaylistId,
+  String? originSourceCode,
 }) {
   final now = DateTime.utc(2026, 7, 20);
   return LocalPlaylist(
@@ -781,6 +839,8 @@ LocalPlaylist _playlist({
     tracks: tracks,
     createdAt: now,
     updatedAt: now,
+    originPlaylistId: originPlaylistId,
+    originSourceCode: originSourceCode,
   );
 }
 

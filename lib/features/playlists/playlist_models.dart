@@ -246,9 +246,19 @@ class LocalPlaylist {
   final String? creator;
   final String? description;
 
-  bool get isOnlineImport =>
-      originPlaylistId?.isNotEmpty == true &&
-      originSourceCode?.isNotEmpty == true;
+  String? get onlinePlaylistId {
+    final value = originPlaylistId?.trim();
+    return value == null || value.isEmpty ? null : value;
+  }
+
+  MusicSource? get onlineSource {
+    final code = originSourceCode?.trim();
+    if (code == null || code.isEmpty) return null;
+    final source = MusicSource.tryFromCode(code);
+    return source == null || source == MusicSource.all ? null : source;
+  }
+
+  bool get isOnlineImport => onlinePlaylistId != null && onlineSource != null;
 
   LocalPlaylist copyWith({
     String? name,

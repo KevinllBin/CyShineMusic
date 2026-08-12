@@ -6,9 +6,9 @@ import 'package:flutter/material.dart';
 
 /// A cached, static frame of the light-mode flowing backdrop.
 ///
-/// The renderer draws this composition into a tiny bitmap first, blurs that bitmap,
-/// and then scales it back up. Keeping the blur out of the live scene avoids
-/// rerasterizing the full-screen filter while lyrics animate.
+/// The renderer draws this composition once at a reduced screen resolution and
+/// lets [RawImage] fill the viewport. Keeping the blur out of the live scene
+/// avoids rerasterizing the full-screen filter while lyrics animate.
 class FlowingLightBackground extends StatefulWidget {
   const FlowingLightBackground({
     super.key,
@@ -133,12 +133,23 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground> {
         final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
         final physicalWidth = math.max(1, (width * devicePixelRatio).round());
         final physicalHeight = math.max(1, (height * devicePixelRatio).round());
-        final scale = devicePixelRatio * 160 >= 420 ? 32 : 20;
+        final compositionScale = devicePixelRatio * 160 >= 420 ? 32 : 20;
         final spec = _FlowingLightRenderSpec(
-          bufferWidth: math.max(1, (physicalWidth / scale + 58).ceil()),
-          bufferHeight: math.max(1, (physicalHeight / scale + 58).ceil()),
-          scale: scale,
-          devicePixelRatio: devicePixelRatio,
+          // Preserve the old tiny-canvas composition and blur, then bake its
+          // visible crop into this safe quarter-resolution texture. The UI no
+          // longer has to transform a tiny GPU texture by 20-32x.
+          bufferWidth: math.max(1, (physicalWidth / 4).ceil()),
+          bufferHeight: math.max(1, (physicalHeight / 4).ceil()),
+          compositionWidth: math.max(
+            1,
+            (physicalWidth / compositionScale + 58).ceil(),
+          ),
+          compositionHeight: math.max(
+            1,
+            (physicalHeight / compositionScale + 58).ceil(),
+          ),
+          visibleCompositionWidth: physicalWidth / compositionScale,
+          visibleCompositionHeight: physicalHeight / compositionScale,
           dark: widget.brightness == Brightness.dark,
         );
         if (_requestedSpec != spec) {
@@ -154,18 +165,13 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground> {
             children: [
               ColoredBox(color: widget.backgroundColor),
               if (image != null)
-                Center(
-                  child: Transform.scale(
-                    scale: spec.scale.toDouble(),
-                    child: RawImage(
-                      key: const ValueKey('flowing-light-image'),
-                      image: image,
-                      width: image.width / spec.devicePixelRatio,
-                      height: image.height / spec.devicePixelRatio,
-                      fit: BoxFit.fill,
-                      filterQuality: FilterQuality.low,
-                    ),
-                  ),
+                RawImage(
+                  key: const ValueKey('flowing-light-image'),
+                  image: image,
+                  width: double.infinity,
+                  height: double.infinity,
+                  fit: BoxFit.fill,
+                  filterQuality: FilterQuality.low,
                 ),
             ],
           ),
@@ -180,15 +186,19 @@ class _FlowingLightRenderSpec {
   const _FlowingLightRenderSpec({
     required this.bufferWidth,
     required this.bufferHeight,
-    required this.scale,
-    required this.devicePixelRatio,
+    required this.compositionWidth,
+    required this.compositionHeight,
+    required this.visibleCompositionWidth,
+    required this.visibleCompositionHeight,
     required this.dark,
   });
 
   final int bufferWidth;
   final int bufferHeight;
-  final int scale;
-  final double devicePixelRatio;
+  final int compositionWidth;
+  final int compositionHeight;
+  final double visibleCompositionWidth;
+  final double visibleCompositionHeight;
   final bool dark;
 
   @override
@@ -196,14 +206,23 @@ class _FlowingLightRenderSpec {
     return other is _FlowingLightRenderSpec &&
         bufferWidth == other.bufferWidth &&
         bufferHeight == other.bufferHeight &&
-        scale == other.scale &&
-        devicePixelRatio == other.devicePixelRatio &&
+        compositionWidth == other.compositionWidth &&
+        compositionHeight == other.compositionHeight &&
+        visibleCompositionWidth == other.visibleCompositionWidth &&
+        visibleCompositionHeight == other.visibleCompositionHeight &&
         dark == other.dark;
   }
 
   @override
-  int get hashCode =>
-      Object.hash(bufferWidth, bufferHeight, scale, devicePixelRatio, dark);
+  int get hashCode => Object.hash(
+    bufferWidth,
+    bufferHeight,
+    compositionWidth,
+    compositionHeight,
+    visibleCompositionWidth,
+    visibleCompositionHeight,
+    dark,
+  );
 }
 
 Future<ui.Image> _renderFlowingLightFrame(
@@ -211,8 +230,8 @@ Future<ui.Image> _renderFlowingLightFrame(
   _FlowingLightRenderSpec spec,
 ) async {
   final averageColor = await _sampleFiveByFiveAverage(source);
-  final width = spec.bufferWidth.toDouble();
-  final height = spec.bufferHeight.toDouble();
+  final width = spec.compositionWidth.toDouble();
+  final height = spec.compositionHeight.toDouble();
   final bounds = Rect.fromLTWH(0, 0, width, height);
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder)..clipRect(bounds);
@@ -270,10 +289,53 @@ Future<ui.Image> _renderFlowingLightFrame(
   canvas.restore();
 
   final picture = recorder.endRecording();
+  ui.Image composition;
   try {
-    return await picture.toImage(spec.bufferWidth, spec.bufferHeight);
+    composition = await picture.toImage(
+      spec.compositionWidth,
+      spec.compositionHeight,
+    );
   } finally {
     picture.dispose();
+  }
+
+  try {
+    final horizontalInset = math.max(
+      0.0,
+      (spec.compositionWidth - spec.visibleCompositionWidth) / 2,
+    );
+    final verticalInset = math.max(
+      0.0,
+      (spec.compositionHeight - spec.visibleCompositionHeight) / 2,
+    );
+    final sourceRect = Rect.fromLTRB(
+      horizontalInset,
+      verticalInset,
+      spec.compositionWidth - horizontalInset,
+      spec.compositionHeight - verticalInset,
+    );
+    final outputBounds = Rect.fromLTWH(
+      0,
+      0,
+      spec.bufferWidth.toDouble(),
+      spec.bufferHeight.toDouble(),
+    );
+    final outputRecorder = ui.PictureRecorder();
+    final outputCanvas = Canvas(outputRecorder)..clipRect(outputBounds);
+    outputCanvas.drawImageRect(
+      composition,
+      sourceRect,
+      outputBounds,
+      Paint()..filterQuality = FilterQuality.medium,
+    );
+    final outputPicture = outputRecorder.endRecording();
+    try {
+      return await outputPicture.toImage(spec.bufferWidth, spec.bufferHeight);
+    } finally {
+      outputPicture.dispose();
+    }
+  } finally {
+    composition.dispose();
   }
 }
 

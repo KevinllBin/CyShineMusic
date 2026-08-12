@@ -22,10 +22,12 @@ class KaraokeLyricsView extends ConsumerStatefulWidget {
     super.key,
     required this.lyrics,
     required this.showTranslation,
+    this.edgeFadeEnabled = true,
   });
 
   final KaraokeLyrics lyrics;
   final bool showTranslation;
+  final bool edgeFadeEnabled;
 
   @override
   ConsumerState<KaraokeLyricsView> createState() => _KaraokeLyricsViewState();
@@ -655,76 +657,82 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
   Widget build(BuildContext context) {
     final controller = ref.read(playerControllerProvider.notifier);
     final lines = widget.lyrics.lines;
+    final lyricsList = NotificationListener<ScrollNotification>(
+      onNotification: _handleScrollNotification,
+      child: ListView.builder(
+        key: const ValueKey('karaoke-lyrics-list'),
+        controller: _controller,
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(0, 104, 0, 94),
+        itemCount: lines.length,
+        itemBuilder: (context, index) {
+          final line = lines[index];
+          final active = index == _activeIndex;
+          final distance = _activeIndex < 0
+              ? index
+              : (index - _activeIndex).abs();
+          return StaggeredLyricLine(
+            // The key sits OUTSIDE the stagger Transform on purpose: line
+            // measurements (_activeLineCenterInViewport and friends) start
+            // at this render object, and localToGlobal excludes the start
+            // object's own paint transform. That keeps the spring tracker
+            // reading pure *layout* positions — if it saw the stagger
+            // offset too, it would fight the wave and yank the whole list
+            // (large visible jitter on every line advance).
+            key: _lineKeys.putIfAbsent(index, GlobalKey.new),
+            lineStartMs: line.startMs,
+            index: index,
+            generation: _lyricStaggerGeneration,
+            shiftPx: _lyricStaggerShiftPx,
+            visibleStartIndex: _lyricStaggerVisibleStartIndex,
+            child: LyricLineTile(
+              line: line,
+              active: active,
+              selected: index == _selectedIndex,
+              distance: distance,
+              blurSuppressed: _blurSuppressed,
+              showTranslation: widget.showTranslation,
+              anchorMs: _anchorMs,
+              playing: _playing,
+              buffering: _buffering,
+              onSelect: () => _selectLine(index),
+              onSeek: () {
+                _selectLine(index);
+                controller.seek(Duration(milliseconds: line.startMs));
+              },
+            ),
+          );
+        },
+      ),
+    );
     return SizedBox.expand(
       key: _viewportKey,
-      child: ShaderMask(
-        key: const ValueKey('karaoke-lyrics-edge-fade'),
-        blendMode: BlendMode.dstIn,
-        shaderCallback: (bounds) {
-          final edgeStop = bounds.height <= 0
-              ? 0.0
-              : math.min(_kLyricEdgeFadeExtent / bounds.height, 0.18);
-          return LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: const [
-              Colors.transparent,
-              Colors.white,
-              Colors.white,
-              Colors.transparent,
-            ],
-            stops: [0, edgeStop, 1 - edgeStop, 1],
-          ).createShader(bounds);
-        },
-        child: NotificationListener<ScrollNotification>(
-          onNotification: _handleScrollNotification,
-          child: ListView.builder(
-            key: const ValueKey('karaoke-lyrics-list'),
-            controller: _controller,
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(0, 104, 0, 94),
-            itemCount: lines.length,
-            itemBuilder: (context, index) {
-              final line = lines[index];
-              final active = index == _activeIndex;
-              final distance = _activeIndex < 0
-                  ? index
-                  : (index - _activeIndex).abs();
-              return StaggeredLyricLine(
-                // The key sits OUTSIDE the stagger Transform on purpose: line
-                // measurements (_activeLineCenterInViewport and friends) start
-                // at this render object, and localToGlobal excludes the start
-                // object's own paint transform. That keeps the spring tracker
-                // reading pure *layout* positions — if it saw the stagger
-                // offset too, it would fight the wave and yank the whole list
-                // (large visible jitter on every line advance).
-                key: _lineKeys.putIfAbsent(index, GlobalKey.new),
-                lineStartMs: line.startMs,
-                index: index,
-                generation: _lyricStaggerGeneration,
-                shiftPx: _lyricStaggerShiftPx,
-                visibleStartIndex: _lyricStaggerVisibleStartIndex,
-                child: LyricLineTile(
-                  line: line,
-                  active: active,
-                  selected: index == _selectedIndex,
-                  distance: distance,
-                  blurSuppressed: _blurSuppressed,
-                  showTranslation: widget.showTranslation,
-                  anchorMs: _anchorMs,
-                  playing: _playing,
-                  buffering: _buffering,
-                  onSelect: () => _selectLine(index),
-                  onSeek: () {
-                    _selectLine(index);
-                    controller.seek(Duration(milliseconds: line.startMs));
-                  },
-                ),
-              );
-            },
-          ),
-        ),
-      ),
+      // Keep the original fade while the lyrics page is fully settled. The
+      // compact pager disables it before moving the page, so Xiaomi GPUs never
+      // have to transform this full-viewport shader surface.
+      child: widget.edgeFadeEnabled
+          ? ShaderMask(
+              key: const ValueKey('karaoke-lyrics-edge-fade'),
+              blendMode: BlendMode.dstIn,
+              shaderCallback: (bounds) {
+                final edgeStop = bounds.height <= 0
+                    ? 0.0
+                    : math.min(_kLyricEdgeFadeExtent / bounds.height, 0.18);
+                return LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: const [
+                    Colors.transparent,
+                    Colors.white,
+                    Colors.white,
+                    Colors.transparent,
+                  ],
+                  stops: [0, edgeStop, 1 - edgeStop, 1],
+                ).createShader(bounds);
+              },
+              child: lyricsList,
+            )
+          : lyricsList,
     );
   }
 }

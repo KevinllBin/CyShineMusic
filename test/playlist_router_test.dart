@@ -7,6 +7,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:cy_shine_music/core/storage/settings_store.dart';
+import 'package:cy_shine_music/core/api/music_api.dart';
+import 'package:cy_shine_music/core/models/enums.dart';
+import 'package:cy_shine_music/core/models/music_info.dart';
+import 'package:cy_shine_music/core/models/playlist_info.dart';
 import 'package:cy_shine_music/features/downloads/download_history_entry.dart';
 import 'package:cy_shine_music/features/player/player_audio_handler.dart';
 import 'package:cy_shine_music/features/player/lyric_parser.dart';
@@ -213,6 +217,76 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('songs playlist overflow updates online playlists only', (
+    tester,
+  ) async {
+    await _usePhoneViewport(tester);
+    final online = _playlist(
+      id: 'online',
+      name: '在线收藏',
+      tracks: [PlaylistTrack.fromMusicInfo(_playlistMusic('old', '旧歌曲'))],
+      originPlaylistId: '3778678',
+      originSourceCode: MusicSource.wy.code,
+    );
+    final local = _playlist(id: 'local', name: '本地新建');
+    final prefs = await _prefsWith([online, local]);
+    final audioHandler = PlayerAudioHandler();
+    final api = _PlaylistRefreshMusicApi(
+      PlaylistInfo(
+        id: '3778678',
+        name: '线上榜单',
+        source: MusicSource.wy,
+        tracks: [_playlistMusic('old', '新歌名'), _playlistMusic('new', '新歌曲')],
+      ),
+    );
+    final router = createAppRouter(initialLocation: '/songs');
+    addTearDown(() {
+      router.dispose();
+      unawaited(audioHandler.disposeHandler());
+    });
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          playerAudioHandlerProvider.overrideWithValue(audioHandler),
+          musicApiProvider.overrideWithValue(api),
+        ],
+        child: MaterialApp.router(
+          theme: ThemeData(
+            useMaterial3: true,
+            colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+          ),
+          routerConfig: router,
+        ),
+      ),
+    );
+    await _pumpUi(tester);
+
+    await tester.tap(find.byIcon(Icons.arrow_drop_down_rounded));
+    await _pumpUi(tester);
+    await tester.tap(find.text('在线收藏'));
+    await _pumpUi(tester);
+    await tester.tap(find.byTooltip('更多歌曲操作'));
+    await _pumpUi(tester);
+    expect(find.text('更新歌单'), findsOneWidget);
+    await tester.tap(find.text('更新歌单'));
+    await _pumpUi(tester);
+    expect(api.inputs, ['3778678']);
+    expect(find.text('新歌曲'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.arrow_drop_down_rounded));
+    await _pumpUi(tester);
+    await tester.tap(find.text('本地新建'));
+    await _pumpUi(tester);
+    await tester.tap(find.byTooltip('更多歌曲操作'));
+    await _pumpUi(tester);
+    expect(find.text('更新歌单'), findsNothing);
+    await tester.tapAt(const Offset(1, 1));
+    await tester.pump(const Duration(seconds: 4));
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'library radio menu limits long names and scrolls many playlists',
@@ -472,6 +546,13 @@ void main() {
           .widget<FlowingLightBackground>(find.byType(FlowingLightBackground))
           .brightness,
       Brightness.dark,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(FlowingLightBackground),
+        matching: find.byType(Transform),
+      ),
+      findsNothing,
     );
     final topQueueIcon = find.descendant(
       of: find.byTooltip('本地歌曲'),
@@ -833,6 +914,8 @@ LocalPlaylist _playlist({
   required String id,
   required String name,
   List<PlaylistTrack> tracks = const [],
+  String? originPlaylistId,
+  String? originSourceCode,
 }) {
   final now = DateTime.utc(2026, 7, 20);
   return LocalPlaylist(
@@ -841,5 +924,41 @@ LocalPlaylist _playlist({
     tracks: tracks,
     createdAt: now,
     updatedAt: now,
+    originPlaylistId: originPlaylistId,
+    originSourceCode: originSourceCode,
   );
+}
+
+MusicInfo _playlistMusic(String id, String name) {
+  return MusicInfo.fromJson({
+    'id': id,
+    'name': name,
+    'singer': '在线歌手',
+    'source': MusicSource.wy.code,
+    'interval': '03:30',
+    'meta': {
+      'songId': id,
+      'albumName': '在线专辑',
+      'qualitys': [
+        {'type': Quality.k320.code, 'size': '1024'},
+      ],
+    },
+  });
+}
+
+class _PlaylistRefreshMusicApi extends MusicApi {
+  _PlaylistRefreshMusicApi(this.result);
+
+  final PlaylistInfo result;
+  final List<String> inputs = <String>[];
+
+  @override
+  Future<PlaylistInfo> parsePlaylist({
+    required String input,
+    MusicSource source = MusicSource.all,
+    int? maxTracks,
+  }) async {
+    inputs.add(input);
+    return result;
+  }
 }

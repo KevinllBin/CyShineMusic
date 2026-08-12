@@ -6,6 +6,7 @@ import '../../core/models/enums.dart';
 import '../../core/ui/app_toast.dart';
 import '../../theme/app_motion.dart';
 import 'lx_playlist_import.dart';
+import 'online_playlist_updater.dart';
 import 'playlist_cover_resolver.dart';
 import 'playlist_name_dialog.dart';
 import 'playlist_models.dart';
@@ -24,6 +25,7 @@ class _PlaylistManagementPageState
     extends ConsumerState<PlaylistManagementPage> {
   bool _importingLx = false;
   String? _lxImportProgress;
+  final Set<String> _updatingPlaylistIds = <String>{};
 
   @override
   Widget build(BuildContext context) {
@@ -74,6 +76,10 @@ class _PlaylistManagementPageState
                         onOpen: () =>
                             context.go(_managementDetailLocation(playlist.id)),
                         onRename: () => _renamePlaylist(context, ref, playlist),
+                        onUpdate: playlist.isOnlineImport
+                            ? () => _updatePlaylist(playlist)
+                            : null,
+                        updating: _updatingPlaylistIds.contains(playlist.id),
                         onDelete: () => _deletePlaylist(context, ref, playlist),
                       ),
                     ),
@@ -195,6 +201,30 @@ class _PlaylistManagementPageState
       if (context.mounted) {
         showAppToast(context, error.message, type: AppToastType.warning);
       }
+    }
+  }
+
+  Future<void> _updatePlaylist(LocalPlaylist playlist) async {
+    if (_updatingPlaylistIds.contains(playlist.id)) return;
+    setState(() => _updatingPlaylistIds.add(playlist.id));
+    try {
+      final result = await ref
+          .read(onlinePlaylistUpdaterProvider)
+          .update(
+            playlist: playlist,
+            store: ref.read(localPlaylistsProvider.notifier),
+          );
+      if (!mounted) return;
+      showAppToast(
+        context,
+        onlinePlaylistUpdateMessage(result),
+        type: AppToastType.success,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      showAppToast(context, '更新歌单失败：$error', type: AppToastType.error);
+    } finally {
+      if (mounted) setState(() => _updatingPlaylistIds.remove(playlist.id));
     }
   }
 
@@ -379,19 +409,23 @@ String _managementDetailLocation(String playlistId) {
   ).toString();
 }
 
-enum _PlaylistMenuAction { rename, delete }
+enum _PlaylistMenuAction { update, rename, delete }
 
 class _PlaylistManagementTile extends StatelessWidget {
   const _PlaylistManagementTile({
     required this.playlist,
     required this.onOpen,
     required this.onRename,
+    required this.onUpdate,
+    required this.updating,
     required this.onDelete,
   });
 
   final LocalPlaylist playlist;
   final VoidCallback onOpen;
   final VoidCallback onRename;
+  final VoidCallback? onUpdate;
+  final bool updating;
   final VoidCallback onDelete;
 
   @override
@@ -455,14 +489,33 @@ class _PlaylistManagementTile extends StatelessWidget {
                   tooltip: '歌单选项',
                   onSelected: (action) {
                     switch (action) {
+                      case _PlaylistMenuAction.update:
+                        onUpdate?.call();
                       case _PlaylistMenuAction.rename:
                         onRename();
                       case _PlaylistMenuAction.delete:
                         onDelete();
                     }
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(
+                  itemBuilder: (_) => [
+                    if (onUpdate != null)
+                      PopupMenuItem(
+                        value: _PlaylistMenuAction.update,
+                        enabled: !updating,
+                        child: ListTile(
+                          leading: updating
+                              ? const SizedBox.square(
+                                  dimension: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.2,
+                                  ),
+                                )
+                              : const Icon(Icons.refresh_rounded),
+                          title: Text(updating ? '正在更新' : '更新歌单'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    const PopupMenuItem(
                       value: _PlaylistMenuAction.rename,
                       child: ListTile(
                         leading: Icon(Icons.edit_outlined),
@@ -470,7 +523,7 @@ class _PlaylistManagementTile extends StatelessWidget {
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
-                    PopupMenuItem(
+                    const PopupMenuItem(
                       value: _PlaylistMenuAction.delete,
                       child: ListTile(
                         leading: Icon(Icons.delete_outline_rounded),

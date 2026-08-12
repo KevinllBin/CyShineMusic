@@ -4,12 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:cy_shine_music/core/api/music_api.dart';
 import 'package:cy_shine_music/core/models/enums.dart';
 import 'package:cy_shine_music/core/models/music_info.dart';
 import 'package:cy_shine_music/core/models/playlist_info.dart';
 import 'package:cy_shine_music/core/storage/settings_store.dart';
 import 'package:cy_shine_music/features/downloads/download_history_store.dart';
 import 'package:cy_shine_music/features/playlists/lx_playlist_import.dart';
+import 'package:cy_shine_music/features/playlists/online_playlist_updater.dart';
 import 'package:cy_shine_music/features/playlists/playlist_models.dart';
 import 'package:cy_shine_music/features/playlists/playlist_store.dart';
 
@@ -134,6 +136,84 @@ void main() {
         );
       },
     );
+
+    test('updates an online playlist from its saved origin', () async {
+      final notifier = container.read(localPlaylistsProvider.notifier);
+      final imported = await notifier.importOnline(
+        PlaylistInfo(
+          id: '3778678',
+          name: '热歌榜',
+          source: MusicSource.wy,
+          tracks: [
+            _music('1', '旧歌名'),
+            _music('removed', '线上已移除'),
+            _music('3', '移到前面的歌曲'),
+          ],
+        ),
+      );
+      await notifier.rename(imported.id, '我的榜单');
+      await notifier.attachDownload(
+        music: _music('1', '旧歌名'),
+        quality: Quality.flac,
+        localPath: r'D:\Music\song-1.flac',
+      );
+      final api = _RecordingPlaylistMusicApi(
+        PlaylistInfo(
+          id: '3778678',
+          name: '线上新名称',
+          source: MusicSource.wy,
+          tracks: [
+            _music('3', '移到前面的歌曲'),
+            _music('1', '更新后的歌名'),
+            _music('2', '新增歌曲'),
+          ],
+        ),
+      );
+
+      final result = await OnlinePlaylistUpdater(
+        api,
+      ).update(playlist: notifier.byId(imported.id)!, store: notifier);
+
+      expect(api.inputs, ['3778678']);
+      expect(api.sources, [MusicSource.wy]);
+      expect(api.maxTracks, [isNull]);
+      expect(result.addedTrackCount, 1);
+      expect(result.removedTrackCount, 1);
+      expect(result.playlist.name, '我的榜单');
+      expect(result.playlist.tracks.map((track) => track.musicId), [
+        '3',
+        '1',
+        '2',
+      ]);
+      expect(result.playlist.tracks[1].name, '更新后的歌名');
+      expect(result.playlist.tracks[1].localPath, r'D:\Music\song-1.flac');
+      expect(onlinePlaylistUpdateMessage(result), '歌单已更新，新增 1 首，移除 1 首，共 3 首');
+    });
+
+    test('rejects playlists without a valid online origin', () async {
+      final notifier = container.read(localPlaylistsProvider.notifier);
+      final local = await notifier.create('本地歌单');
+      final api = _RecordingPlaylistMusicApi(
+        const PlaylistInfo(
+          id: 'unused',
+          name: '不会请求',
+          source: MusicSource.wy,
+          tracks: [],
+        ),
+      );
+
+      await expectLater(
+        OnlinePlaylistUpdater(api).update(playlist: local, store: notifier),
+        throwsA(
+          isA<PlaylistStoreException>().having(
+            (error) => error.message,
+            'message',
+            '只有在线歌单可以更新',
+          ),
+        ),
+      );
+      expect(api.inputs, isEmpty);
+    });
 
     test(
       'imports multiple LX playlists with unique names and dedupes',
@@ -503,4 +583,25 @@ MusicInfo _music(String id, String name) {
       ],
     },
   });
+}
+
+class _RecordingPlaylistMusicApi extends MusicApi {
+  _RecordingPlaylistMusicApi(this.result);
+
+  final PlaylistInfo result;
+  final List<String> inputs = <String>[];
+  final List<MusicSource> sources = <MusicSource>[];
+  final List<int?> maxTracks = <int?>[];
+
+  @override
+  Future<PlaylistInfo> parsePlaylist({
+    required String input,
+    MusicSource source = MusicSource.all,
+    int? maxTracks,
+  }) async {
+    inputs.add(input);
+    sources.add(source);
+    this.maxTracks.add(maxTracks);
+    return result;
+  }
 }
