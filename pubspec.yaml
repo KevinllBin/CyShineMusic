@@ -38,6 +38,8 @@ dependencies:
   just_audio: ^0.10.6
   toastification: ^3.2.0
   package_info_plus: ^9.0.1
+  pub_semver: ^2.2.0
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

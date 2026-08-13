@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cy_shine_music/core/models/enums.dart';
 import 'package:cy_shine_music/core/models/music_info.dart';
 import 'package:cy_shine_music/core/storage/settings_store.dart';
+import 'package:cy_shine_music/core/ui/app_toast.dart';
 import 'package:cy_shine_music/features/player/player_audio_handler.dart';
 import 'package:cy_shine_music/features/player/player_controller.dart';
 import 'package:cy_shine_music/features/player/lyric_parser.dart';
@@ -17,6 +18,7 @@ import 'package:cy_shine_music/features/player/player_page.dart';
 import 'package:cy_shine_music/features/player/widgets/album_cluster.dart';
 import 'package:cy_shine_music/features/player/widgets/karaoke_lyrics_view.dart';
 import 'package:cy_shine_music/features/player/widgets/lyrics_panel.dart';
+import 'package:cy_shine_music/features/playlists/playlist_store.dart';
 import 'package:cy_shine_music/features/shell/shell_route_utils.dart';
 import 'package:cy_shine_music/router.dart';
 
@@ -79,6 +81,13 @@ void main() {
           remoteUrl: 'https://audio.example/remote-song.mp3',
         ),
       );
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(PlayerPage)),
+      );
+      final playlist = await container
+          .read(localPlaylistsProvider.notifier)
+          .create('在线收藏');
+      final music = _remoteMusic();
 
       expect(
         find.byKey(const ValueKey('player-compact-pager')),
@@ -134,6 +143,42 @@ void main() {
             .enabled,
         isTrue,
       );
+      expect(
+        tester
+            .widget<ListTile>(
+              find.byKey(const ValueKey('player-cover-action-playlist')),
+            )
+            .enabled,
+        isTrue,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('player-cover-action-playlist')),
+      );
+      await _pumpUi(tester);
+
+      expect(find.text('添加歌曲到'), findsOneWidget);
+      await tester.tap(find.text('在线收藏'));
+      await _pumpUi(tester);
+
+      final storedPlaylist = container
+          .read(localPlaylistsProvider)
+          .singleWhere((candidate) => candidate.id == playlist.id);
+      expect(storedPlaylist.tracks, hasLength(1));
+      final storedTrack = storedPlaylist.tracks.single;
+      expect(storedTrack.musicId, music.id);
+      expect(storedTrack.name, music.name);
+      expect(storedTrack.singer, music.singer);
+      expect(storedTrack.albumName, music.albumName);
+      expect(storedTrack.source, music.source);
+      expect(storedTrack.qualityCode, music.bestQuality.code);
+      expect(storedTrack.localPath, isNull);
+      expect(storedTrack.picUrl, music.meta.picUrl);
+      expect(storedTrack.musicJson, music.toJson());
+      expect(storedTrack.musicInfo?.toJson(), music.toJson());
+
+      await tester.tap(find.byKey(const ValueKey('player-cover-menu-button')));
+      await _pumpUi(tester);
 
       await tester.tap(
         find.byKey(const ValueKey('player-cover-action-quality')),
@@ -203,6 +248,14 @@ void main() {
       tester
           .widget<ListTile>(
             find.byKey(const ValueKey('player-cover-action-quality')),
+          )
+          .enabled,
+      isFalse,
+    );
+    expect(
+      tester
+          .widget<ListTile>(
+            find.byKey(const ValueKey('player-cover-action-playlist')),
           )
           .enabled,
       isFalse,
@@ -839,6 +892,8 @@ Future<_SeededPlayerController> _pumpPlayer(
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         theme: _theme(),
+        builder: (context, child) =>
+            AppToastOverlay(child: child ?? const SizedBox.shrink()),
         home: PlayerPage(
           returnLocation: '/songs',
           progress: const AlwaysStoppedAnimation<double>(1),

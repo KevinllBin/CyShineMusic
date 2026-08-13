@@ -19,6 +19,7 @@ import 'core/music_sources/music_source_controller.dart';
 import 'features/player/player_controller.dart';
 import 'features/songs/local_song_scan_cache.dart';
 import 'features/startup/startup_gate.dart';
+import 'features/update/app_update_prompt.dart';
 import 'router.dart';
 import 'theme/app_motion.dart';
 import 'theme/app_theme.dart';
@@ -57,54 +58,66 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp> {
     });
   }
 
-  Future<void> _checkPermission() async {
+  Future<void> _onStartupReady() async {
+    final canCheckForUpdate = await _checkPermission();
+    if (!canCheckForUpdate) return;
+    final context = rootNavigatorKey.currentContext;
+    if (context == null || !context.mounted) return;
+    await checkForAppUpdate(context, ref);
+  }
+
+  Future<bool> _checkPermission() async {
     final granted = await PermissionService.hasExternalStorageWrite();
     await AppLogger.write('app', 'startup permission status granted=$granted');
-    if (granted) return;
+    if (granted) return true;
     // Wait one frame so the router has a chance to mount its home screen.
     await Future<void>.delayed(const Duration(milliseconds: 50));
     final ctx = rootNavigatorKey.currentContext;
-    if (ctx == null || !ctx.mounted) return;
-    await _showPermissionDialog(ctx);
+    if (ctx == null || !ctx.mounted) return false;
+    final shouldRequest = await _showPermissionDialog(ctx);
+    if (!shouldRequest) return true;
+
+    final ok = await PermissionService.ensureExternalStorageWrite();
+    await AppLogger.write(
+      'app',
+      'startup permission user-triggered granted=$ok',
+    );
+    final root = rootNavigatorKey.currentContext;
+    if (root == null || !root.mounted) return false;
+    showAppToast(
+      root,
+      ok ? '已授予存储权限' : '未授权，可在「设置→打开系统应用设置」手动开启',
+      type: ok ? AppToastType.success : AppToastType.warning,
+    );
+    // Requesting all-files access can switch to system UI. Avoid showing an
+    // update dialog behind it; the next cold start will check normally.
+    return false;
   }
 
-  Future<void> _showPermissionDialog(BuildContext context) async {
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        icon: const Icon(Icons.folder_shared_outlined, size: 36),
-        title: const Text('需要存储权限'),
-        content: const Text(
-          '为了把下载好的音乐保存到「音乐」目录，'
-          '需要授予「所有文件访问」权限。\n\n',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('稍后再说'),
+  Future<bool> _showPermissionDialog(BuildContext context) async {
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            icon: const Icon(Icons.folder_shared_outlined, size: 36),
+            title: const Text('需要存储权限'),
+            content: const Text(
+              '为了把下载好的音乐保存到「音乐」目录，'
+              '需要授予「所有文件访问」权限。\n\n',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('稍后再说'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('去授权'),
+              ),
+            ],
           ),
-          FilledButton(
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              final ok = await PermissionService.ensureExternalStorageWrite();
-              await AppLogger.write(
-                'app',
-                'startup permission user-triggered granted=$ok',
-              );
-              final root = rootNavigatorKey.currentContext;
-              if (root == null || !root.mounted) return;
-              showAppToast(
-                root,
-                ok ? '已授予存储权限' : '未授权，可在「设置→打开系统应用设置」手动开启',
-                type: ok ? AppToastType.success : AppToastType.warning,
-              );
-            },
-            child: const Text('去授权'),
-          ),
-        ],
-      ),
-    );
+        ) ??
+        false;
   }
 
   @override
@@ -195,7 +208,7 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp> {
               builder: (context, child) {
                 return AppToastOverlay(
                   child: StartupGate(
-                    onReady: _checkPermission,
+                    onReady: _onStartupReady,
                     child: child ?? const SizedBox.shrink(),
                   ),
                 );

@@ -96,6 +96,77 @@ void main() {
       expect(restored.tracks.last.musicId, 'song-2');
     });
 
+    test('adds online music, deduplicates by source and id, and restores a '
+        'playable snapshot', () async {
+      final notifier = container.read(localPlaylistsProvider.notifier);
+      final playlist = await notifier.create('在线单曲');
+      final firstSnapshot = _music(
+        'shared-id',
+        '旧歌名',
+        picUrl: 'https://example.com/old.jpg',
+        providerToken: 'old-token',
+        hash: 'old-hash',
+      );
+      final updatedSnapshot = _music(
+        'shared-id',
+        '更新后的歌名',
+        picUrl: 'https://example.com/new.jpg',
+        providerToken: 'new-token',
+        hash: 'new-hash',
+      );
+      final sameIdFromAnotherSource = _music(
+        'shared-id',
+        'QQ 同 ID 歌曲',
+        source: MusicSource.tx,
+        providerToken: 'qq-token',
+        hash: 'qq-hash',
+      );
+
+      expect(await notifier.addMusic(playlist.id, firstSnapshot), 1);
+      expect(
+        await notifier.addMusics(playlist.id, [
+          updatedSnapshot,
+          sameIdFromAnotherSource,
+          updatedSnapshot,
+        ]),
+        1,
+      );
+
+      final stored = notifier.byId(playlist.id)!;
+      expect(stored.tracks, hasLength(2));
+      final storedWy = stored.tracks.singleWhere(
+        (track) => track.sourceCode == MusicSource.wy.code,
+      );
+      final storedTx = stored.tracks.singleWhere(
+        (track) => track.sourceCode == MusicSource.tx.code,
+      );
+      expect(storedWy.identityKey, 'music:${MusicSource.wy.code}:shared-id');
+      expect(storedTx.identityKey, 'music:${MusicSource.tx.code}:shared-id');
+      expect(storedWy.name, '更新后的歌名');
+      expect(storedWy.localPath, isNull);
+      expect(storedWy.picUrl, 'https://example.com/new.jpg');
+      expect(storedWy.musicInfo?.toJson(), updatedSnapshot.toJson());
+
+      container.dispose();
+      container = _containerWith(prefs);
+      final restored = container.read(localPlaylistsProvider).single;
+      final restoredWy = restored.tracks.singleWhere(
+        (track) => track.sourceCode == MusicSource.wy.code,
+      );
+      final restoredMusic = restoredWy.musicInfo;
+      expect(restored.tracks, hasLength(2));
+      expect(restoredWy.localPath, isNull);
+      expect(restoredMusic?.toJson(), updatedSnapshot.toJson());
+      expect(restoredMusic?.raw['providerToken'], 'new-token');
+      expect(restoredMusic?.meta.hash, 'new-hash');
+      expect(restoredMusic?.meta.picUrl, 'https://example.com/new.jpg');
+
+      final queueEntry = restoredWy.toQueueEntry(playlistId: playlist.id);
+      expect(queueEntry, isNotNull);
+      expect(queueEntry!.savedPath, isNull);
+      expect(queueEntry.musicInfo?.toJson(), updatedSnapshot.toJson());
+    });
+
     test(
       'imports an online playlist and merges the same source and id',
       () async {
@@ -567,17 +638,26 @@ DownloadHistoryEntry _historyEntry({
   );
 }
 
-MusicInfo _music(String id, String name) {
+MusicInfo _music(
+  String id,
+  String name, {
+  MusicSource source = MusicSource.wy,
+  String? picUrl,
+  String? providerToken,
+  String? hash,
+}) {
   return MusicInfo.fromJson({
     'id': id,
     'name': name,
     'singer': '在线歌手',
-    'source': MusicSource.wy.code,
+    'source': source.code,
     'interval': '03:30',
+    'providerToken': ?providerToken,
     'meta': {
       'songId': id,
       'albumName': '在线专辑',
-      'picUrl': 'https://example.com/$id.jpg',
+      'picUrl': picUrl ?? 'https://example.com/$id.jpg',
+      'hash': ?hash,
       'qualitys': [
         {'type': Quality.k320.code, 'size': '1024'},
       ],

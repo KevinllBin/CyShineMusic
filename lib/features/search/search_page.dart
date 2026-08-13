@@ -19,6 +19,8 @@ import '../discovery/discovery_content.dart';
 import '../discovery/discovery_controller.dart';
 import '../music_sources/music_source_action_guard.dart';
 import '../player/player_controller.dart';
+import '../playlists/playlist_browser_sheet.dart';
+import '../playlists/playlist_store.dart';
 import 'search_controller.dart';
 import 'search_toolbar_state.dart';
 import 'widgets/quality_picker_sheet.dart';
@@ -196,6 +198,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                   scrollController: _resultsScrollController,
                   onTapItem: _openPicker,
                   onPlayItem: _play,
+                  onAddToPlaylist: _selectPlaylistForMusic,
                 ),
               ),
             ] else
@@ -217,6 +220,37 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     if (!available || !mounted) return;
     context.go('/player', extra: '/');
     await ref.read(playerControllerProvider.notifier).playFromMusic(music);
+  }
+
+  Future<void> _selectPlaylistForMusic(MusicInfo music) async {
+    final destination = await showPlaylistBrowserSheet(
+      context,
+      mode: PlaylistBrowserMode.addSongs,
+    );
+    if (!mounted || destination == null) return;
+
+    const prefix = '/playlists/';
+    if (!destination.startsWith(prefix)) return;
+    final playlistId = destination.substring(prefix.length);
+    final store = ref.read(localPlaylistsProvider.notifier);
+    final playlist = store.byId(playlistId);
+    if (playlist == null) {
+      showAppToast(context, '歌单不存在或已被删除', type: AppToastType.warning);
+      return;
+    }
+
+    try {
+      final added = await store.addMusic(playlistId, music);
+      if (!mounted) return;
+      showAppToast(
+        context,
+        added == 0 ? '歌曲已在「${playlist.name}」中' : '已添加到「${playlist.name}」',
+        type: added == 0 ? AppToastType.info : AppToastType.success,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      showAppToast(context, '添加到歌单失败：$error', type: AppToastType.error);
+    }
   }
 
   void _returnToDiscovery() {
@@ -739,12 +773,14 @@ class _ResultsArea extends StatelessWidget {
     required this.scrollController,
     required this.onTapItem,
     required this.onPlayItem,
+    required this.onAddToPlaylist,
   });
 
   final SearchState state;
   final ScrollController scrollController;
   final ValueChanged<MusicInfo> onTapItem;
   final ValueChanged<MusicInfo> onPlayItem;
+  final ValueChanged<MusicInfo> onAddToPlaylist;
 
   @override
   Widget build(BuildContext context) {
@@ -789,6 +825,7 @@ class _ResultsArea extends StatelessWidget {
           music: music,
           onTapItem: onTapItem,
           onPlayItem: onPlayItem,
+          onAddToPlaylist: onAddToPlaylist,
         );
       },
     );
@@ -919,11 +956,13 @@ class _ResultTile extends ConsumerWidget {
     required this.music,
     required this.onTapItem,
     required this.onPlayItem,
+    required this.onAddToPlaylist,
   });
 
   final MusicInfo music;
   final ValueChanged<MusicInfo> onTapItem;
   final ValueChanged<MusicInfo> onPlayItem;
+  final ValueChanged<MusicInfo> onAddToPlaylist;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -936,6 +975,7 @@ class _ResultTile extends ConsumerWidget {
       music: music,
       onDownload: () => onTapItem(music),
       onPlay: () => onPlayItem(music),
+      onAddToPlaylist: () => onAddToPlaylist(music),
       downloadTask: task,
     );
   }

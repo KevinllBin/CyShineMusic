@@ -18,6 +18,7 @@ import '../../core/ui/app_toast.dart';
 import '../../theme/dynamic_color_status.dart';
 import '../shell/shell_toolbar_visibility.dart';
 import '../songs/local_song_scan_cache.dart';
+import '../update/app_update_prompt.dart';
 import 'widgets/color_picker_sheet.dart';
 import 'widgets/settings_action.dart';
 import 'widgets/settings_menu.dart';
@@ -328,6 +329,26 @@ class SettingsPage extends ConsumerWidget {
                               onChanged: (value) => ref
                                   .read(settingsProvider.notifier)
                                   .setUseDynamicColor(value),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 30),
+                        SettingsCard(
+                          title: '关于',
+                          children: [
+                            SettingsAction(
+                              key: const ValueKey('check-update-setting'),
+                              icon: Icons.system_update_alt_rounded,
+                              title: '检查更新',
+                              subtitle: '当前版本：$versionLabel',
+                              trailing: Symbols.chevron_right,
+                              onTap: () => unawaited(
+                                checkForAppUpdate(
+                                  context,
+                                  ref,
+                                  showFeedback: true,
+                                ),
+                              ),
                             ),
                           ],
                         ),

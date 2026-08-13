@@ -5,11 +5,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/music_info.dart';
 import '../../../core/storage/settings_store.dart';
+import '../../../core/ui/app_toast.dart';
+import '../../playlists/playlist_browser_sheet.dart';
+import '../../playlists/playlist_store.dart';
 import '../../search/widgets/quality_picker_sheet.dart';
 import '../player_controller.dart';
 import 'player_quality_sheet.dart';
 
-enum _PlayerCoverResult { download, quality }
+enum _PlayerCoverResult { addToPlaylist, download, quality }
 
 Future<void> showPlayerCoverActionsSheet(
   BuildContext context,
@@ -32,12 +35,51 @@ Future<void> showPlayerCoverActionsSheet(
   );
   if (result == null || !context.mounted) return;
   switch (result) {
+    case _PlayerCoverResult.addToPlaylist:
+      if (music != null) {
+        await _addCurrentMusicToPlaylist(context, ref, music);
+      }
     case _PlayerCoverResult.download:
       if (music != null && !track.isLocal) {
         await showQualityPickerSheet(context, music);
       }
     case _PlayerCoverResult.quality:
       await showPlaybackQualitySheet(context, ref, track: track);
+  }
+}
+
+Future<void> _addCurrentMusicToPlaylist(
+  BuildContext context,
+  WidgetRef ref,
+  MusicInfo music,
+) async {
+  final destination = await showPlaylistBrowserSheet(
+    context,
+    mode: PlaylistBrowserMode.addSongs,
+  );
+  if (!context.mounted || destination == null) return;
+
+  const prefix = '/playlists/';
+  if (!destination.startsWith(prefix)) return;
+  final playlistId = destination.substring(prefix.length);
+  final store = ref.read(localPlaylistsProvider.notifier);
+  final playlist = store.byId(playlistId);
+  if (playlist == null) {
+    showAppToast(context, '歌单不存在或已被删除', type: AppToastType.warning);
+    return;
+  }
+
+  try {
+    final added = await store.addMusic(playlistId, music);
+    if (!context.mounted) return;
+    showAppToast(
+      context,
+      added == 0 ? '歌曲已在「${playlist.name}」中' : '已添加到「${playlist.name}」',
+      type: added == 0 ? AppToastType.info : AppToastType.success,
+    );
+  } catch (error) {
+    if (!context.mounted) return;
+    showAppToast(context, '添加到歌单失败：$error', type: AppToastType.error);
   }
 }
 
@@ -67,6 +109,15 @@ class _PlayerCoverActionsSheet extends ConsumerWidget {
     final canSwitchQuality =
         !track.isLocal && !loading && qualityOptions.length > 1;
     final actions = <_PlayerCoverAction>[
+      _PlayerCoverAction(
+        id: 'playlist',
+        icon: Icons.playlist_add_rounded,
+        title: '添加到歌单',
+        subtitle: music == null ? '当前歌曲缺少可保存的歌曲信息' : '选择歌单并立即添加当前歌曲',
+        enabled: music != null,
+        onTap: () =>
+            Navigator.of(context).pop(_PlayerCoverResult.addToPlaylist),
+      ),
       _PlayerCoverAction(
         id: 'download',
         icon: Icons.download_rounded,

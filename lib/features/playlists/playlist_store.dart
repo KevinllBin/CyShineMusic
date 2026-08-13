@@ -107,6 +107,14 @@ class LocalPlaylistNotifier extends Notifier<List<LocalPlaylist>> {
     return addTracks(playlistId, entries);
   }
 
+  Future<int> addMusic(String playlistId, MusicInfo music) {
+    return addMusics(playlistId, [music]);
+  }
+
+  Future<int> addMusics(String playlistId, Iterable<MusicInfo> musics) {
+    return _mergeTracks(playlistId, musics.map(PlaylistTrack.fromMusicInfo));
+  }
+
   Future<LocalPlaylist> importOnline(
     PlaylistInfo online, {
     bool synchronizeTracks = false,
