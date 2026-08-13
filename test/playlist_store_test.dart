@@ -134,6 +134,8 @@ void main() {
 
       final stored = notifier.byId(playlist.id)!;
       expect(stored.tracks, hasLength(2));
+      expect(stored.tracks.first.sourceCode, MusicSource.tx.code);
+      expect(stored.tracks.last.sourceCode, MusicSource.wy.code);
       final storedWy = stored.tracks.singleWhere(
         (track) => track.sourceCode == MusicSource.wy.code,
       );
@@ -228,6 +230,25 @@ void main() {
         quality: Quality.flac,
         localPath: r'D:\Music\song-1.flac',
       );
+      await notifier.addMusic(
+        imported.id,
+        _music('manual-1', '第一首手动添加的歌曲', source: MusicSource.tx),
+      );
+      await notifier.addMusic(
+        imported.id,
+        _music('manual-2', '第二首手动添加的歌曲', source: MusicSource.kg),
+      );
+      expect(notifier.byId(imported.id)!.tracks.map((track) => track.musicId), [
+        'manual-2',
+        'manual-1',
+        '1',
+        'removed',
+        '3',
+      ]);
+
+      container.dispose();
+      container = _containerWith(prefs);
+      final restoredNotifier = container.read(localPlaylistsProvider.notifier);
       final api = _RecordingPlaylistMusicApi(
         PlaylistInfo(
           id: '3778678',
@@ -241,9 +262,10 @@ void main() {
         ),
       );
 
-      final result = await OnlinePlaylistUpdater(
-        api,
-      ).update(playlist: notifier.byId(imported.id)!, store: notifier);
+      final result = await OnlinePlaylistUpdater(api).update(
+        playlist: restoredNotifier.byId(imported.id)!,
+        store: restoredNotifier,
+      );
 
       expect(api.inputs, ['3778678']);
       expect(api.sources, [MusicSource.wy]);
@@ -252,14 +274,64 @@ void main() {
       expect(result.removedTrackCount, 1);
       expect(result.playlist.name, '我的榜单');
       expect(result.playlist.tracks.map((track) => track.musicId), [
+        'manual-2',
+        'manual-1',
         '3',
         '1',
         '2',
       ]);
-      expect(result.playlist.tracks[1].name, '更新后的歌名');
-      expect(result.playlist.tracks[1].localPath, r'D:\Music\song-1.flac');
-      expect(onlinePlaylistUpdateMessage(result), '歌单已更新，新增 1 首，移除 1 首，共 3 首');
+      expect(result.playlist.tracks[3].name, '更新后的歌名');
+      expect(result.playlist.tracks[3].localPath, r'D:\Music\song-1.flac');
+      expect(onlinePlaylistUpdateMessage(result), '歌单已更新，新增 1 首，移除 1 首，共 5 首');
     });
+
+    test(
+      'first update of a legacy online playlist preserves unmatched songs',
+      () async {
+        final legacy = LocalPlaylist(
+          id: 'legacy-online',
+          name: '旧版在线歌单',
+          tracks: [
+            PlaylistTrack.fromMusicInfo(_music('1', '旧版线上歌曲')),
+            PlaylistTrack.fromMusicInfo(_music('manual', '旧版手动添加歌曲')),
+          ],
+          createdAt: DateTime.utc(2026, 1, 1),
+          updatedAt: DateTime.utc(2026, 1, 2),
+          originPlaylistId: '3778678',
+          originSourceCode: MusicSource.wy.code,
+        );
+        SharedPreferences.setMockInitialValues({
+          localPlaylistsStorageKey: [jsonEncode(legacy.toJson())],
+        });
+        prefs = await SharedPreferences.getInstance();
+        container.dispose();
+        container = _containerWith(prefs);
+        final notifier = container.read(localPlaylistsProvider.notifier);
+        final api = _RecordingPlaylistMusicApi(
+          PlaylistInfo(
+            id: '3778678',
+            name: '线上歌单',
+            source: MusicSource.wy,
+            tracks: [_music('1', '更新后的线上歌曲'), _music('2', '线上新增歌曲')],
+          ),
+        );
+
+        final result = await OnlinePlaylistUpdater(
+          api,
+        ).update(playlist: notifier.byId(legacy.id)!, store: notifier);
+
+        expect(result.playlist.tracks.map((track) => track.musicId), [
+          'manual',
+          '1',
+          '2',
+        ]);
+        expect(result.playlist.tracks[1].name, '更新后的线上歌曲');
+        expect(result.playlist.onlineTrackIds, [
+          'music:${MusicSource.wy.code}:1',
+          'music:${MusicSource.wy.code}:2',
+        ]);
+      },
+    );
 
     test('rejects playlists without a valid online origin', () async {
       final notifier = container.read(localPlaylistsProvider.notifier);
