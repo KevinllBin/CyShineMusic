@@ -230,6 +230,7 @@ class LocalPlaylist {
     required this.updatedAt,
     this.originPlaylistId,
     this.originSourceCode,
+    this.onlineTrackIds,
     this.coverUrl,
     this.creator,
     this.description,
@@ -242,6 +243,7 @@ class LocalPlaylist {
   final DateTime updatedAt;
   final String? originPlaylistId;
   final String? originSourceCode;
+  final List<String>? onlineTrackIds;
   final String? coverUrl;
   final String? creator;
   final String? description;
@@ -264,6 +266,7 @@ class LocalPlaylist {
     String? name,
     List<PlaylistTrack>? tracks,
     DateTime? updatedAt,
+    List<String>? onlineTrackIds,
   }) {
     return LocalPlaylist(
       id: id,
@@ -273,6 +276,7 @@ class LocalPlaylist {
       updatedAt: updatedAt ?? this.updatedAt,
       originPlaylistId: originPlaylistId,
       originSourceCode: originSourceCode,
+      onlineTrackIds: onlineTrackIds ?? this.onlineTrackIds,
       coverUrl: coverUrl,
       creator: creator,
       description: description,
@@ -288,6 +292,7 @@ class LocalPlaylist {
     'updatedAt': updatedAt.toIso8601String(),
     if (originPlaylistId != null) 'originPlaylistId': originPlaylistId,
     if (originSourceCode != null) 'originSource': originSourceCode,
+    if (onlineTrackIds != null) 'onlineTrackIds': onlineTrackIds,
     if (coverUrl != null) 'coverUrl': coverUrl,
     if (creator != null) 'creator': creator,
     if (description != null) 'description': description,
@@ -324,6 +329,7 @@ class LocalPlaylist {
       originSourceCode: _nonEmpty(
         _stringOrNull(json['originSource'] ?? json['originSourceCode']),
       ),
+      onlineTrackIds: _stringListOrNull(json['onlineTrackIds']),
       coverUrl: _nonEmpty(_stringOrNull(json['coverUrl'])),
       creator: _nonEmpty(_stringOrNull(json['creator'])),
       description: _nonEmpty(_stringOrNull(json['description'])),
@@ -353,6 +359,18 @@ String _string(Object? value, {String fallback = ''}) {
 }
 
 String? _stringOrNull(Object? value) => value is String ? value : null;
+
+List<String>? _stringListOrNull(Object? value) {
+  if (value is! List) return null;
+  final values = <String>[];
+  final seen = <String>{};
+  for (final item in value) {
+    if (item is! String) continue;
+    final normalized = item.trim();
+    if (normalized.isNotEmpty && seen.add(normalized)) values.add(normalized);
+  }
+  return List<String>.unmodifiable(values);
+}
 
 String? _nonEmpty(String? value) {
   final trimmed = value?.trim();

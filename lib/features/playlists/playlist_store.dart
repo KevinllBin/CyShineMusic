@@ -124,6 +124,7 @@ class LocalPlaylistNotifier extends Notifier<List<LocalPlaylist>> {
     final importedTracks = online.tracks
         .map(PlaylistTrack.fromMusicInfo)
         .toList(growable: false);
+    final onlineTrackIds = _uniqueTrackIds(importedTracks);
     final existingIndex = state.indexWhere(
       (playlist) =>
           originId.isNotEmpty &&
@@ -134,8 +135,15 @@ class LocalPlaylistNotifier extends Notifier<List<LocalPlaylist>> {
     if (existingIndex >= 0) {
       final current = state[existingIndex];
       final tracks = synchronizeTracks
-          ? _synchronizeTrackLists(current.tracks, importedTracks)
+          ? _synchronizeTrackLists(
+              current.tracks,
+              importedTracks,
+              previousOnlineTrackIds: current.onlineTrackIds,
+            )
           : _mergeTrackLists(current.tracks, importedTracks).tracks;
+      final storedOnlineTrackIds = synchronizeTracks
+          ? onlineTrackIds
+          : _mergeOnlineTrackIds(current.onlineTrackIds, onlineTrackIds);
       final updated = LocalPlaylist(
         id: current.id,
         name: current.name,
@@ -144,6 +152,7 @@ class LocalPlaylistNotifier extends Notifier<List<LocalPlaylist>> {
         updatedAt: DateTime.now(),
         originPlaylistId: originId,
         originSourceCode: sourceCode,
+        onlineTrackIds: storedOnlineTrackIds,
         coverUrl: _nonEmpty(online.coverUrl) ?? current.coverUrl,
         creator: _nonEmpty(online.creator) ?? current.creator,
         description: _nonEmpty(online.description) ?? current.description,
@@ -163,6 +172,7 @@ class LocalPlaylistNotifier extends Notifier<List<LocalPlaylist>> {
       updatedAt: now,
       originPlaylistId: originId.isEmpty ? null : originId,
       originSourceCode: sourceCode,
+      onlineTrackIds: onlineTrackIds,
       coverUrl: _nonEmpty(online.coverUrl),
       creator: _nonEmpty(online.creator),
       description: _nonEmpty(online.description),
@@ -365,7 +375,11 @@ class LocalPlaylistNotifier extends Notifier<List<LocalPlaylist>> {
     final index = state.indexWhere((playlist) => playlist.id == playlistId);
     if (index < 0) return 0;
     final current = state[index];
-    final merged = _mergeTrackLists(current.tracks, candidates);
+    final merged = _mergeTrackLists(
+      current.tracks,
+      candidates,
+      prependNew: true,
+    );
     if (!merged.changed) return 0;
 
     final next = [...state];
@@ -469,9 +483,11 @@ List<LocalPlaylist> _decodeStoredPlaylists(Object? stored) {
 
 _TrackMergeResult _mergeTrackLists(
   Iterable<PlaylistTrack> current,
-  Iterable<PlaylistTrack> incoming,
-) {
+  Iterable<PlaylistTrack> incoming, {
+  bool prependNew = false,
+}) {
   final tracks = current.toList();
+  final currentLength = tracks.length;
   final indexByKey = <String, int>{
     for (var index = 0; index < tracks.length; index++)
       tracks[index].identityKey: index,
@@ -494,8 +510,14 @@ _TrackMergeResult _mergeTrackLists(
       }
     }
   }
+  final orderedTracks = prependNew && added > 0
+      ? <PlaylistTrack>[
+          ...tracks.skip(currentLength),
+          ...tracks.take(currentLength),
+        ]
+      : tracks;
   return _TrackMergeResult(
-    List<PlaylistTrack>.unmodifiable(tracks),
+    List<PlaylistTrack>.unmodifiable(orderedTracks),
     added: added,
     changed: changed,
   );
@@ -503,17 +525,71 @@ _TrackMergeResult _mergeTrackLists(
 
 List<PlaylistTrack> _synchronizeTrackLists(
   Iterable<PlaylistTrack> current,
-  Iterable<PlaylistTrack> incoming,
-) {
-  final currentByKey = {for (final track in current) track.identityKey: track};
+  Iterable<PlaylistTrack> incoming, {
+  Iterable<String>? previousOnlineTrackIds,
+}) {
+  final currentTracks = current.toList(growable: false);
+  final currentByKey = {
+    for (final track in currentTracks) track.identityKey: track,
+  };
+  final incomingTracks = incoming.toList(growable: false);
+  final incomingTrackIds = {
+    for (final track in incomingTracks) track.identityKey,
+  };
+  final previousOnlineIds = previousOnlineTrackIds?.toSet();
   final synchronized = <PlaylistTrack>[];
-  final seen = <String>{};
-  for (final track in incoming) {
-    if (!seen.add(track.identityKey)) continue;
-    final existing = currentByKey[track.identityKey];
-    synchronized.add(existing?.mergePreferLocal(track) ?? track);
+  final indexByKey = <String, int>{};
+
+  // Songs outside the previous remote snapshot were added locally. Keep them
+  // above the freshly synchronized online tracks. Old stored playlists do not
+  // have a snapshot; for their first update, conservatively retain any song
+  // that cannot be matched to the latest remote response.
+  for (final track in currentTracks) {
+    final key = track.identityKey;
+    final locallyAdded = previousOnlineIds == null
+        ? !incomingTrackIds.contains(key)
+        : !previousOnlineIds.contains(key);
+    if (!locallyAdded || indexByKey.containsKey(key)) continue;
+    indexByKey[key] = synchronized.length;
+    synchronized.add(track);
+  }
+
+  for (final track in incomingTracks) {
+    final key = track.identityKey;
+    final existing = currentByKey[key];
+    final refreshed = existing?.mergePreferLocal(track) ?? track;
+    final synchronizedIndex = indexByKey[key];
+    if (synchronizedIndex == null) {
+      indexByKey[key] = synchronized.length;
+      synchronized.add(refreshed);
+    } else {
+      synchronized[synchronizedIndex] = synchronized[synchronizedIndex]
+          .mergePreferLocal(refreshed);
+    }
   }
   return List<PlaylistTrack>.unmodifiable(synchronized);
+}
+
+List<String> _uniqueTrackIds(Iterable<PlaylistTrack> tracks) {
+  final ids = <String>[];
+  final seen = <String>{};
+  for (final track in tracks) {
+    if (seen.add(track.identityKey)) ids.add(track.identityKey);
+  }
+  return List<String>.unmodifiable(ids);
+}
+
+List<String> _mergeOnlineTrackIds(
+  Iterable<String>? current,
+  Iterable<String> incoming,
+) {
+  if (current == null) return List<String>.unmodifiable(incoming);
+  final ids = <String>[];
+  final seen = <String>{};
+  for (final id in [...current, ...incoming]) {
+    if (seen.add(id)) ids.add(id);
+  }
+  return List<String>.unmodifiable(ids);
 }
 
 bool _sameTrackSnapshot(PlaylistTrack left, PlaylistTrack right) {
