@@ -151,25 +151,21 @@ class SearchResultTile extends StatelessWidget {
                   ),
                   const SizedBox(width: 4),
                   if (onAddToPlaylist != null)
-                    IconButton(
+                    ExpressiveDownloadButton(
                       key: ValueKey(
                         'search-result-add-to-playlist-${music.id}',
                       ),
-                      tooltip: '添加到歌单',
+                      isLoading: false,
                       onPressed: onAddToPlaylist,
-                      icon: const Icon(Icons.playlist_add_rounded),
-                      style: IconButton.styleFrom(
-                        minimumSize: const Size.square(40),
-                        maximumSize: const Size.square(40),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        backgroundColor: scheme.secondaryContainer.withValues(
-                          alpha: 0.72,
-                        ),
-                        foregroundColor: scheme.onSecondaryContainer,
-                      ),
+                      tooltip: '添加到歌单',
+                      size: 36,
+                      tapTargetSize: 40,
+                      tonal: true,
+                      idleIcon: Icons.playlist_add_rounded,
                     ),
                   if (onAddToPlaylist != null) const SizedBox(width: 2),
                   ExpressiveDownloadButton(
+                    key: ValueKey('search-result-download-${music.id}'),
                     isLoading: busy,
                     isDone: done,
                     progress: task?.fraction,

@@ -85,8 +85,23 @@ void main() {
       final addToPlaylistButton = find.byKey(
         const ValueKey('search-result-add-to-playlist-page-1-song-01'),
       );
+      final downloadButton = find.byKey(
+        const ValueKey('search-result-download-page-1-song-01'),
+      );
       expect(addToPlaylistButton, findsOneWidget);
+      expect(downloadButton, findsOneWidget);
       expect(tester.getSize(addToPlaylistButton), const Size.square(40));
+      expect(tester.getSize(downloadButton), const Size.square(40));
+      final addAction = tester.widget<ExpressiveDownloadButton>(
+        addToPlaylistButton,
+      );
+      final downloadAction = tester.widget<ExpressiveDownloadButton>(
+        downloadButton,
+      );
+      expect(addAction.size, downloadAction.size);
+      expect(addAction.tapTargetSize, downloadAction.tapTargetSize);
+      expect(addAction.tonal, downloadAction.tonal);
+      expect(addAction.idleIcon, Icons.playlist_add_rounded);
       expect(
         find.descendant(
           of: addToPlaylistButton,
@@ -95,32 +110,39 @@ void main() {
         findsOneWidget,
       );
       expect(find.byTooltip('添加到歌单'), findsWidgets);
-      final downloadButton = tester.widget<ExpressiveDownloadButton>(
-        find.byType(ExpressiveDownloadButton).first,
+      expect(downloadAction.size, 36);
+      expect(downloadAction.tapTargetSize, 40);
+      final addIcon = tester.widget<Icon>(
+        find.descendant(
+          of: addToPlaylistButton,
+          matching: find.byIcon(Icons.playlist_add_rounded),
+        ),
       );
-      expect(downloadButton.size, 36);
-      expect(downloadButton.tapTargetSize, 40);
-      expect(
-        tester.getSize(find.byType(ExpressiveDownloadButton).first),
-        const Size.square(40),
+      final downloadIcon = tester.widget<Icon>(
+        find.descendant(
+          of: downloadButton,
+          matching: find.byIcon(Symbols.download_rounded),
+        ),
       );
+      expect(addIcon.size, downloadIcon.size);
+      expect(addIcon.icon?.fontFamily, 'MaterialIcons');
       expect(
         find.descendant(
-          of: find.byType(ExpressiveDownloadButton).first,
+          of: downloadButton,
           matching: find.byIcon(Symbols.download_rounded),
         ),
         findsOneWidget,
       );
       expect(
         find.descendant(
-          of: find.byType(ExpressiveDownloadButton).first,
+          of: downloadButton,
           matching: find.byIcon(Icons.arrow_downward_rounded),
         ),
         findsNothing,
       );
       expect(
         find.descendant(
-          of: find.byType(ExpressiveDownloadButton).first,
+          of: downloadButton,
           matching: find.byIcon(Symbols.download_2_rounded),
         ),
         findsNothing,

@@ -189,6 +189,7 @@ void main() {
     expect(find.text('音源管理'), findsOneWidget);
     expect(find.text('批量下载音质'), findsOneWidget);
     expect(find.text('扫描文件夹'), findsOneWidget);
+    expect(find.text('浏览U盘'), findsNWidgets(2));
     expect(find.text('检查更新'), findsOneWidget);
     expect(find.byIcon(Icons.folder_outlined), findsOneWidget);
     expect(find.text('URL 解析服务器'), findsNothing);

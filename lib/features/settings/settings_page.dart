@@ -288,22 +288,45 @@ class SettingsPage extends ConsumerWidget {
                               padding: const EdgeInsets.fromLTRB(4, 12, 8, 0),
                               child: Align(
                                 alignment: Alignment.centerLeft,
-                                child: FilledButton.tonalIcon(
-                                  onPressed: () =>
-                                      _resetLocalMusicDir(context, ref),
-                                  icon: const Icon(
-                                    Icons.sync_rounded,
-                                    size: 18,
-                                  ),
-                                  label: const Text('恢复为下载位置'),
-                                  style: FilledButton.styleFrom(
-                                    minimumSize: const Size(0, 40),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 20,
-                                      vertical: 10,
+                                child: Wrap(
+                                  spacing: 10,
+                                  runSpacing: 8,
+                                  children: [
+                                    FilledButton.tonalIcon(
+                                      onPressed: () =>
+                                          _resetLocalMusicDir(context, ref),
+                                      icon: const Icon(
+                                        Icons.sync_rounded,
+                                        size: 18,
+                                      ),
+                                      label: const Text('恢复为下载位置'),
+                                      style: FilledButton.styleFrom(
+                                        minimumSize: const Size(0, 40),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 20,
+                                          vertical: 10,
+                                        ),
+                                        shape: const StadiumBorder(),
+                                      ),
                                     ),
-                                    shape: const StadiumBorder(),
-                                  ),
+                                    FilledButton.tonalIcon(
+                                      onPressed: () =>
+                                          _browseLocalMusicDir(context, ref),
+                                      icon: const Icon(
+                                        Icons.storage_rounded,
+                                        size: 18,
+                                      ),
+                                      label: const Text('浏览U盘'),
+                                      style: FilledButton.styleFrom(
+                                        minimumSize: const Size(0, 40),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 20,
+                                          vertical: 10,
+                                        ),
+                                        shape: const StadiumBorder(),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -526,21 +549,49 @@ class SettingsPage extends ConsumerWidget {
     }
 
     String? path;
-    if (Platform.isAndroid) {
+    try {
+      path = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: '选择扫描文件夹',
+        lockParentWindow: true,
+      );
+    } on PlatformException catch (_) {
+      if (!context.mounted) return;
       path = await _showStorageFolderPicker(
         context,
         ref,
         title: '选择扫描文件夹',
         initialPath: ref.read(settingsProvider).localMusicDir,
       );
-    } else {
-      path = await FilePicker.platform.getDirectoryPath(
-        dialogTitle: '选择扫描文件夹',
-        lockParentWindow: true,
-      );
     }
     if (!context.mounted || path == null || path.isEmpty) return;
 
+    await _applyLocalMusicDir(context, ref, path);
+  }
+
+  Future<void> _browseLocalMusicDir(BuildContext context, WidgetRef ref) async {
+    final ok = await PermissionService.ensureExternalStorageRead();
+    if (!context.mounted) return;
+    if (!ok) {
+      showAppToast(context, '未授予存储权限，将无法读取本地音乐', type: AppToastType.warning);
+      return;
+    }
+
+    final path = await _showStorageFolderPicker(
+      context,
+      ref,
+      title: '从U盘选择扫描文件夹',
+      initialPath: ref.read(settingsProvider).localMusicDir,
+    );
+    if (!context.mounted || path == null || path.isEmpty) return;
+
+    await _applyLocalMusicDir(context, ref, path);
+  }
+
+  Future<void> _applyLocalMusicDir(
+    BuildContext context,
+    WidgetRef ref,
+    String path,
+  ) async {
     if (!await _validateReadableDirectory(context, path)) return;
     await ref.read(settingsProvider.notifier).setLocalMusicDir(path);
     unawaited(ref.read(localSongScanCacheProvider).refresh(directory: path));
