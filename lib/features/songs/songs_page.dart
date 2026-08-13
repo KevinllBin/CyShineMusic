@@ -684,7 +684,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     final normalized = playlistId?.trim();
     final nextId = normalized == null || normalized.isEmpty ? null : normalized;
     if (ref.read(songsLibraryPlaylistIdProvider) == nextId) return;
-    ref.read(songsLibraryPlaylistIdProvider.notifier).state = nextId;
+    ref.read(songsLibraryPlaylistIdProvider.notifier).select(nextId);
     setState(() {
       _selectedIds.clear();
       _batchMode = false;
@@ -962,7 +962,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
               ref.read(songsLibraryPlaylistIdProvider) != selectedPlaylistId) {
             return;
           }
-          ref.read(songsLibraryPlaylistIdProvider.notifier).state = null;
+          ref.read(songsLibraryPlaylistIdProvider.notifier).select(null);
         });
       }
     }

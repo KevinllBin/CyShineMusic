@@ -506,7 +506,12 @@ void main() {
     expect(list, findsOneWidget);
     expect(tester.getRect(edgeFade), tester.getRect(viewport));
     expect(tester.getRect(list), tester.getRect(viewport));
-    expect(tester.widget<ShaderMask>(edgeFade).blendMode, BlendMode.dstIn);
+    final fadeRenderObject = tester.renderObject<RenderBox>(edgeFade);
+    final lyricsListElement = tester.element(list);
+    expect(
+      tester.widget<LyricsPanel>(find.byType(LyricsPanel)).edgeFadeEnabled,
+      isTrue,
+    );
     expect(
       find.descendant(of: viewport, matching: find.byType(ImageFiltered)),
       findsWidgets,
@@ -517,29 +522,83 @@ void main() {
     expect(edgeFade, findsOneWidget);
     await gesture.moveBy(const Offset(8, 0));
     await tester.pump();
+    expect(edgeFade, findsOneWidget);
+    expect(tester.renderObject<RenderBox>(edgeFade), same(fadeRenderObject));
+    expect(tester.element(list), same(lyricsListElement));
     expect(
-      find.descendant(of: viewport, matching: find.byType(ShaderMask)),
-      findsNothing,
+      tester.widget<LyricsPanel>(find.byType(LyricsPanel)).edgeFadeEnabled,
+      isFalse,
     );
     await gesture.moveBy(const Offset(72, 0));
     await tester.pump();
+    expect(tester.element(list), same(lyricsListElement));
     expect(
-      find.descendant(of: viewport, matching: find.byType(ShaderMask)),
-      findsNothing,
+      tester.widget<LyricsPanel>(find.byType(LyricsPanel)).edgeFadeEnabled,
+      isFalse,
     );
     controller.setStateForTest(
       controller.state.copyWith(position: const Duration(milliseconds: 3500)),
     );
     await tester.pump();
+    expect(tester.element(list), same(lyricsListElement));
     expect(
-      find.descendant(of: viewport, matching: find.byType(ShaderMask)),
-      findsNothing,
+      tester.widget<LyricsPanel>(find.byType(LyricsPanel)).edgeFadeEnabled,
+      isFalse,
     );
     await gesture.up();
     await _pumpUi(tester);
     expect(edgeFade, findsOneWidget);
+    expect(tester.renderObject<RenderBox>(edgeFade), same(fadeRenderObject));
+    expect(tester.element(list), same(lyricsListElement));
+    expect(
+      tester.widget<LyricsPanel>(find.byType(LyricsPanel)).edgeFadeEnabled,
+      isTrue,
+    );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'lyrics keep the current-line scroll position across page swipes',
+    (tester) async {
+      final lyrics = _timedLyrics(14);
+      await _pumpPlayer(
+        tester,
+        size: const Size(390, 844),
+        track: const PlayerTrack(
+          id: 'tx:lyrics-page-position',
+          kind: PlayerTrackKind.remote,
+          title: '歌词位置测试',
+          artist: '测试歌手',
+          album: '测试专辑',
+          sourceLabel: 'QQ',
+          qualityLabel: '320k',
+        ),
+        lyrics: lyrics,
+        position: const Duration(milliseconds: 18000),
+      );
+      final pager = find.byKey(const ValueKey('player-compact-pager'));
+      await tester.drag(pager, const Offset(-360, 0));
+      await _pumpUi(tester);
+
+      final scrollPosition = _lyricsScrollPosition(tester);
+      final initialOffset = scrollPosition.pixels;
+      expect(initialOffset, greaterThan(0));
+
+      await tester.drag(pager, const Offset(360, 0));
+      await _pumpUi(tester);
+      await tester.drag(pager, const Offset(-360, 0));
+      await _pumpUi(tester);
+
+      final restoredPosition = _lyricsScrollPosition(tester);
+      expect(restoredPosition.pixels, greaterThan(0));
+      expect(restoredPosition.pixels, closeTo(initialOffset, 0.01));
+      expect(
+        find.byKey(const ValueKey('lyric-focus-scale-18000')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('lyric stagger keeps the relocated scroll offset stable', (
     tester,

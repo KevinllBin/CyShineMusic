@@ -1,5 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../core/storage/settings_store.dart';
+
+const String songsLibraryPlaylistIdStorageKey = 'songs_library_playlist_id_v1';
 
 enum SongSortMode {
   title('title', '标题', Icons.sort_by_alpha_rounded),
@@ -87,9 +93,37 @@ class SongsToolbarState {
   }
 }
 
-/// The library selected from the Songs header. It intentionally survives the
-/// dedicated search route so search operates on the same visible collection.
-final songsLibraryPlaylistIdProvider = StateProvider<String?>((ref) => null);
+/// The library selected from the Songs header. It survives both the dedicated
+/// search route and an App restart so Songs reopens the last visible
+/// collection.
+class SongsLibraryPlaylistIdNotifier extends Notifier<String?> {
+  late final _prefs = ref.read(sharedPreferencesProvider);
+
+  @override
+  String? build() =>
+      _normalize(_prefs.getString(songsLibraryPlaylistIdStorageKey));
+
+  void select(String? playlistId) {
+    final nextId = _normalize(playlistId);
+    if (state == nextId) return;
+    state = nextId;
+    if (nextId == null) {
+      unawaited(_prefs.remove(songsLibraryPlaylistIdStorageKey));
+    } else {
+      unawaited(_prefs.setString(songsLibraryPlaylistIdStorageKey, nextId));
+    }
+  }
+
+  static String? _normalize(String? playlistId) {
+    final normalized = playlistId?.trim();
+    return normalized == null || normalized.isEmpty ? null : normalized;
+  }
+}
+
+final songsLibraryPlaylistIdProvider =
+    NotifierProvider<SongsLibraryPlaylistIdNotifier, String?>(
+      SongsLibraryPlaylistIdNotifier.new,
+    );
 
 final songsToolbarStateProvider = StateProvider<SongsToolbarState>(
   (ref) => const SongsToolbarState(),

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -709,30 +710,113 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
       key: _viewportKey,
       // Keep the original fade while the lyrics page is fully settled. The
       // compact pager disables it before moving the page, so Xiaomi GPUs never
-      // have to transform this full-viewport shader surface.
-      child: widget.edgeFadeEnabled
-          ? ShaderMask(
-              key: const ValueKey('karaoke-lyrics-edge-fade'),
-              blendMode: BlendMode.dstIn,
-              shaderCallback: (bounds) {
-                final edgeStop = bounds.height <= 0
-                    ? 0.0
-                    : math.min(_kLyricEdgeFadeExtent / bounds.height, 0.18);
-                return LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: const [
-                    Colors.transparent,
-                    Colors.white,
-                    Colors.white,
-                    Colors.transparent,
-                  ],
-                  stops: [0, edgeStop, 1 - edgeStop, 1],
-                ).createShader(bounds);
-              },
-              child: lyricsList,
-            )
-          : lyricsList,
+      // have to transform this full-viewport shader surface. The render object
+      // itself never changes type, so disabling the fade cannot detach the
+      // ListView or reset its ScrollController position.
+      child: _ToggleableLyricEdgeFade(
+        key: const ValueKey('karaoke-lyrics-edge-fade'),
+        enabled: widget.edgeFadeEnabled,
+        fadeExtent: _kLyricEdgeFadeExtent,
+        child: lyricsList,
+      ),
     );
+  }
+}
+
+class _ToggleableLyricEdgeFade extends SingleChildRenderObjectWidget {
+  const _ToggleableLyricEdgeFade({
+    super.key,
+    required this.enabled,
+    required this.fadeExtent,
+    required super.child,
+  });
+
+  final bool enabled;
+  final double fadeExtent;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    return _RenderToggleableLyricEdgeFade(
+      enabled: enabled,
+      fadeExtent: fadeExtent,
+    );
+  }
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderToggleableLyricEdgeFade renderObject,
+  ) {
+    renderObject
+      ..enabled = enabled
+      ..fadeExtent = fadeExtent;
+  }
+}
+
+class _RenderToggleableLyricEdgeFade extends RenderProxyBox {
+  _RenderToggleableLyricEdgeFade({
+    required bool enabled,
+    required double fadeExtent,
+  }) : _enabled = enabled,
+       _fadeExtent = fadeExtent;
+
+  bool _enabled;
+  double _fadeExtent;
+
+  bool get enabled => _enabled;
+
+  set enabled(bool value) {
+    if (_enabled == value) return;
+    _enabled = value;
+    markNeedsPaint();
+  }
+
+  set fadeExtent(double value) {
+    if (_fadeExtent == value) return;
+    _fadeExtent = value;
+    markNeedsPaint();
+  }
+
+  @override
+  ShaderMaskLayer? get layer => super.layer as ShaderMaskLayer?;
+
+  @override
+  // Keep the compositing requirement stable while toggling the mask. This
+  // mirrors Flutter's built-in filter render objects and avoids changing the
+  // ancestor layer structure in the middle of a horizontal pager gesture.
+  bool get alwaysNeedsCompositing => child != null;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (child == null) {
+      layer = null;
+      return;
+    }
+    if (!_enabled) {
+      layer = null;
+      super.paint(context, offset);
+      return;
+    }
+
+    assert(needsCompositing);
+    final edgeStop = size.height <= 0
+        ? 0.0
+        : math.min(_fadeExtent / size.height, 0.18);
+    layer ??= ShaderMaskLayer();
+    layer!
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: const [
+          Colors.transparent,
+          Colors.white,
+          Colors.white,
+          Colors.transparent,
+        ],
+        stops: [0, edgeStop, 1 - edgeStop, 1],
+      ).createShader(Offset.zero & size)
+      ..maskRect = offset & size
+      ..blendMode = BlendMode.dstIn;
+    context.pushLayer(layer!, super.paint, offset);
   }
 }
