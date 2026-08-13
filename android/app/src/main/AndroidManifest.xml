@@ -19,7 +19,7 @@
         tools:ignore="ScopedStorage"/>
 
     <application
-        android:label="栖弦"
+        android:label="${appLabel}"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="true"

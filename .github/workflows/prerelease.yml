@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   build:
-    name: Build manual arm64 prerelease APK
+    name: Build manual prerelease APKs
     runs-on: ubuntu-latest
 
     steps:
@@ -67,6 +67,28 @@ jobs:
           echo "ARM64_APK_NAME=CyShineMusic-${safe_ref}-v${app_version}-${short_sha}-arm64-v8a.apk" >> "$GITHUB_ENV"
           echo "V7A_APK_NAME=CyShineMusic-${safe_ref}-v${app_version}-${short_sha}-armeabi-v7a.apk" >> "$GITHUB_ENV"
 
+      - name: Prepare dev signing
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.DEV_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.DEV_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.DEV_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.DEV_KEY_PASSWORD }}
+        run: |
+          if [[ -z "$KEYSTORE_BASE64" || -z "$STORE_PASSWORD" || -z "$KEY_ALIAS" || -z "$KEY_PASSWORD" ]]; then
+            echo "Missing one or more DEV_* signing secrets."
+            exit 1
+          fi
+
+          mkdir -p android/signing
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > android/signing/dev-release.jks
+          cat > android/signing/dev.properties <<EOF
+          storeFile=dev-release.jks
+          storePassword=${STORE_PASSWORD}
+          keyAlias=${KEY_ALIAS}
+          keyPassword=${KEY_PASSWORD}
+          EOF
+
       - name: Install dependencies
         run: flutter pub get
 
@@ -77,6 +99,8 @@ jobs:
         run: flutter test
 
       - name: Build arm64 APK
+        env:
+          APP_CHANNEL: dev
         run: flutter build apk --target-platform=android-arm64
 
       - name: Prepare arm64 artifact
@@ -84,6 +108,8 @@ jobs:
         run: cp build/app/outputs/flutter-apk/app-release.apk "$ARM64_APK_NAME"
 
       - name: Build armeabi-v7a APK
+        env:
+          APP_CHANNEL: dev
         run: flutter build apk --release --target-platform=android-arm
 
       - name: Prepare armeabi-v7a artifact

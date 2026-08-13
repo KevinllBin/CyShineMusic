@@ -229,6 +229,8 @@ class SongsHeader extends StatelessWidget {
             onOpenHistory: state.onOpenHistory,
             searchLabel: state.searchLabel,
             onSearch: state.onSearch,
+            onUpdatePlaylist: state.onUpdatePlaylist,
+            updatingPlaylist: state.updatingPlaylist,
           ),
         ],
       ),
@@ -266,11 +268,15 @@ class _LibraryOverflowMenu extends StatelessWidget {
     this.onOpenHistory,
     this.searchLabel = '搜索本地歌曲',
     this.onSearch,
+    this.onUpdatePlaylist,
+    this.updatingPlaylist = false,
   });
 
   final VoidCallback? onOpenHistory;
   final String searchLabel;
   final VoidCallback? onSearch;
+  final VoidCallback? onUpdatePlaylist;
+  final bool updatingPlaylist;
 
   @override
   Widget build(BuildContext context) {
@@ -300,6 +306,17 @@ class _LibraryOverflowMenu extends StatelessWidget {
                 },
           child: Text(searchLabel),
         ),
+        if (onUpdatePlaylist != null)
+          MenuItemButton(
+            leadingIcon: updatingPlaylist
+                ? const SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2.2),
+                  )
+                : const Icon(Icons.refresh_rounded, size: 20),
+            onPressed: updatingPlaylist ? null : onUpdatePlaylist,
+            child: Text(updatingPlaylist ? '正在更新' : '更新歌单'),
+          ),
         MenuItemButton(
           leadingIcon: const Icon(Icons.history_rounded, size: 20),
           onPressed: onOpenHistory ?? () => context.go('/downloads'),

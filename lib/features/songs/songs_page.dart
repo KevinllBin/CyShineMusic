@@ -12,12 +12,14 @@ import '../../core/services/embedded_artwork_cache.dart';
 import '../../core/services/tagger.dart';
 import '../../core/storage/settings_store.dart';
 import '../../core/ui/app_toast.dart';
+import '../../core/ui/app_refresh_indicator.dart';
 import '../../theme/app_motion.dart';
 import '../downloads/download_history_store.dart';
 import '../music_sources/music_source_action_guard.dart';
 import '../player/player_controller.dart';
 import '../playlists/playlist_browser_sheet.dart';
 import '../playlists/playlist_models.dart';
+import '../playlists/online_playlist_updater.dart';
 import '../playlists/resolved_playlist_track.dart';
 import '../playlists/playlist_store.dart';
 import '../shell/shell_toolbar_visibility.dart';
@@ -56,6 +58,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
   List<DownloadHistoryEntry> _visibleSongs = const [];
   Map<String, PlaylistTrack> _visiblePlaylistTracks = const {};
   final Set<String> _selectedIds = <String>{};
+  final Set<String> _updatingPlaylistIds = <String>{};
   final Map<String, EmbeddedAudioTags?> _tagCache = {};
   final Map<String, DateTime> _tagModifiedAt = {};
   final Set<String> _tagLoadingKeys = <String>{};
@@ -653,11 +656,35 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     context.go('/songs/search');
   }
 
+  Future<void> _updatePlaylist(LocalPlaylist playlist) async {
+    if (_updatingPlaylistIds.contains(playlist.id)) return;
+    setState(() => _updatingPlaylistIds.add(playlist.id));
+    try {
+      final result = await ref
+          .read(onlinePlaylistUpdaterProvider)
+          .update(
+            playlist: playlist,
+            store: ref.read(localPlaylistsProvider.notifier),
+          );
+      if (!mounted) return;
+      showAppToast(
+        context,
+        onlinePlaylistUpdateMessage(result),
+        type: AppToastType.success,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      showAppToast(context, '更新歌单失败：$error', type: AppToastType.error);
+    } finally {
+      if (mounted) setState(() => _updatingPlaylistIds.remove(playlist.id));
+    }
+  }
+
   void _selectLibraryPlaylist(String? playlistId) {
     final normalized = playlistId?.trim();
     final nextId = normalized == null || normalized.isEmpty ? null : normalized;
     if (ref.read(songsLibraryPlaylistIdProvider) == nextId) return;
-    ref.read(songsLibraryPlaylistIdProvider.notifier).state = nextId;
+    ref.read(songsLibraryPlaylistIdProvider.notifier).select(nextId);
     setState(() {
       _selectedIds.clear();
       _batchMode = false;
@@ -871,8 +898,13 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     required String? activePlaylistId,
     required int songCount,
     required int selectedCount,
+    required LocalPlaylist? activePlaylist,
   }) {
     final allSelected = songCount > 0 && selectedCount == songCount;
+    final canUpdatePlaylist = activePlaylist?.isOnlineImport == true;
+    final updatingPlaylist =
+        activePlaylist != null &&
+        _updatingPlaylistIds.contains(activePlaylist.id);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final current = ref.read(songsToolbarStateProvider);
@@ -884,6 +916,8 @@ class _SongsPageState extends ConsumerState<SongsPage> {
         selectedCount: selectedCount,
         allSelected: allSelected,
         batchMode: _batchMode,
+        canUpdatePlaylist: canUpdatePlaylist,
+        updatingPlaylist: updatingPlaylist,
       )) {
         return;
       }
@@ -900,6 +934,10 @@ class _SongsPageState extends ConsumerState<SongsPage> {
         onSearch: _openSearch,
         onShuffle: _shuffleVisibleSongs,
         onOpenHistory: _openHistory,
+        onUpdatePlaylist: canUpdatePlaylist
+            ? () => _updatePlaylist(activePlaylist!)
+            : null,
+        updatingPlaylist: updatingPlaylist,
         onToggleBatch: _toggleBatchMode,
         onToggleSelectAll: _toggleVisibleSelection,
       );
@@ -924,7 +962,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
               ref.read(songsLibraryPlaylistIdProvider) != selectedPlaylistId) {
             return;
           }
-          ref.read(songsLibraryPlaylistIdProvider.notifier).state = null;
+          ref.read(songsLibraryPlaylistIdProvider.notifier).select(null);
         });
       }
     }
@@ -965,6 +1003,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
       activePlaylistId: selectedPlaylist?.id,
       songCount: songs.length,
       selectedCount: selectedCount,
+      activePlaylist: selectedPlaylist,
     );
 
     final libraryView = CustomScrollView(
@@ -1095,7 +1134,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
           : null,
       body: _batchMode || playlistMode
           ? libraryView
-          : RefreshIndicator(
+          : AppRefreshIndicator(
               onRefresh: _scanLocalMusicFolder,
               child: libraryView,
             ),

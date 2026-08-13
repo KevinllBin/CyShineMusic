@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 import '../../downloads/download_progress.dart';
 import '../../shell/player_pull_scope.dart';
@@ -76,7 +77,7 @@ class TopChromeRow extends ConsumerWidget {
             ),
             const SizedBox(width: 12),
             _ChromeIconButton(
-              icon: Icons.queue_music_rounded,
+              icon: Symbols.library_music_rounded,
               tooltip: '本地歌曲',
               onPressed: onOpenSongs,
               badge: busy,

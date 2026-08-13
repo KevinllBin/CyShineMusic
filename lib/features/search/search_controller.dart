@@ -9,6 +9,7 @@ import '../../core/models/enums.dart';
 import '../../core/models/search_response.dart';
 import '../../core/services/app_logger.dart';
 import '../../core/storage/settings_store.dart';
+import '../discovery/discovery_controller.dart';
 
 class SearchQuery {
   const SearchQuery({
@@ -27,6 +28,16 @@ class SearchQuery {
         source: source ?? this.source,
         page: page ?? this.page,
       );
+
+  @override
+  bool operator ==(Object other) =>
+      other is SearchQuery &&
+      other.keyword == keyword &&
+      other.source == source &&
+      other.page == page;
+
+  @override
+  int get hashCode => Object.hash(keyword, source, page);
 }
 
 class SearchState {
@@ -76,18 +87,32 @@ class SearchState {
 
 class SearchController extends Notifier<SearchState> {
   Object? _activeRequest;
+  final Map<SearchQuery, SearchResponse> _responseCache =
+      <SearchQuery, SearchResponse>{};
+  final Map<SearchQuery, Future<SearchResponse>> _inFlight =
+      <SearchQuery, Future<SearchResponse>>{};
 
   @override
   SearchState build() {
-    ref.onDispose(() => _activeRequest = null);
+    ref.onDispose(() {
+      _activeRequest = null;
+      _responseCache.clear();
+      _inFlight.clear();
+    });
     ref.listen<Set<MusicSource>>(
       settingsProvider.select((settings) => settings.enabledSearchSources),
       (previous, next) {
         _activeRequest = Object();
-        final activeSource =
-            state.source != MusicSource.all && !next.contains(state.source)
-            ? MusicSource.all
-            : state.source;
+        _responseCache.removeWhere(
+          (query, _) =>
+              query.source == MusicSource.all ||
+              (query.source != MusicSource.all && !next.contains(query.source)),
+        );
+        final activeSource = state.isSearchActive
+            ? _sourceEnabled(state.source, next)
+                  ? state.source
+                  : _defaultSearchSource(next)
+            : _defaultSearchSource(next);
         final keyword = state.keyword;
         state = state.copyWith(
           source: activeSource,
@@ -101,7 +126,13 @@ class SearchController extends Notifier<SearchState> {
         }
       },
     );
-    return const SearchState();
+    ref.listen<MusicSource>(selectedDiscoverySourceProvider, (previous, next) {
+      if (state.isSearchActive) return;
+      final source = _defaultSearchSource();
+      if (state.source == source) return;
+      state = state.copyWith(source: source);
+    });
+    return SearchState(source: _defaultSearchSource());
   }
 
   void setSource(MusicSource source) {
@@ -125,6 +156,13 @@ class SearchController extends Notifier<SearchState> {
       return;
     }
 
+    final activeSource = source ?? state.source;
+    final query = SearchQuery(
+      keyword: cleaned,
+      source: activeSource,
+      page: page,
+    );
+
     // Identity-only marker: the underlying SDK fan-out doesn't accept a
     // CancelToken, so we just stamp each call with a fresh Object() and
     // discard the result if a newer call has started since.
@@ -133,49 +171,75 @@ class SearchController extends Notifier<SearchState> {
 
     state = state.copyWith(
       keyword: cleaned,
-      source: source ?? state.source,
+      source: activeSource,
       page: page,
-      loading: true,
+      loading: false,
       error: null,
       searchActive: true,
     );
 
-    final activeSource = source ?? state.source;
-    await AppLogger.write(
-      'search',
-      'START keyword="$cleaned" source=${activeSource.code} page=$page '
-          'adapter=${currentNetworkAdapterLabel()}',
+    final cached = _responseCache[query];
+    if (cached != null) {
+      state = state.copyWith(response: cached);
+      return;
+    }
+
+    state = state.copyWith(loading: true);
+    final existing = _inFlight[query];
+    final future =
+        existing ??
+        Future<SearchResponse>.sync(
+          () => ref
+              .read(musicApiProvider)
+              .searchMusic(keyword: cleaned, source: activeSource, page: page),
+        );
+    if (existing == null) {
+      _inFlight[query] = future;
+    }
+    unawaited(
+      AppLogger.write(
+        'search',
+        '${existing == null ? 'START' : 'JOIN'} keyword="$cleaned" '
+            'source=${activeSource.code} page=$page '
+            'adapter=${currentNetworkAdapterLabel()}',
+      ),
     );
     try {
-      final api = ref.read(musicApiProvider);
-      final result = await api.searchMusic(
-        keyword: cleaned,
-        source: activeSource,
-        page: page,
-      );
+      final result = await future;
+      _responseCache[query] = result;
       if (!identical(request, _activeRequest)) return;
-      await AppLogger.write(
-        'search',
-        'OK keyword="$cleaned" source=${activeSource.code} '
-            'page=$page count=${result.list.length}',
+      unawaited(
+        AppLogger.write(
+          'search',
+          'OK keyword="$cleaned" source=${activeSource.code} '
+              'page=$page count=${result.list.length}',
+        ),
       );
       state = state.copyWith(loading: false, response: result, error: null);
     } on DioException catch (e) {
       if (!identical(request, _activeRequest)) return;
-      await AppLogger.write(
-        'search',
-        'FAIL keyword="$cleaned" source=${activeSource.code} '
-            'page=$page error=$e',
+      unawaited(
+        AppLogger.write(
+          'search',
+          'FAIL keyword="$cleaned" source=${activeSource.code} '
+              'page=$page error=$e',
+        ),
       );
       state = state.copyWith(loading: false, error: describeDioError(e));
     } catch (e) {
       if (!identical(request, _activeRequest)) return;
-      await AppLogger.write(
-        'search',
-        'FAIL keyword="$cleaned" source=${activeSource.code} '
-            'page=$page error=$e',
+      unawaited(
+        AppLogger.write(
+          'search',
+          'FAIL keyword="$cleaned" source=${activeSource.code} '
+              'page=$page error=$e',
+        ),
       );
       state = state.copyWith(loading: false, error: e.toString());
+    } finally {
+      if (existing == null && identical(_inFlight[query], future)) {
+        _inFlight.remove(query);
+      }
     }
   }
 
@@ -185,7 +249,19 @@ class SearchController extends Notifier<SearchState> {
 
   void resetToDiscovery() {
     _activeRequest = Object();
-    state = SearchState(source: state.source);
+    state = SearchState(source: _defaultSearchSource());
+  }
+
+  bool _sourceEnabled(MusicSource source, Set<MusicSource> enabled) =>
+      source == MusicSource.all || enabled.contains(source);
+
+  MusicSource _defaultSearchSource([Set<MusicSource>? enabledSources]) {
+    final enabled =
+        enabledSources ?? ref.read(settingsProvider).enabledSearchSources;
+    final discoverySource = ref.read(selectedDiscoverySourceProvider);
+    return enabled.contains(discoverySource)
+        ? discoverySource
+        : MusicSource.all;
   }
 }
 

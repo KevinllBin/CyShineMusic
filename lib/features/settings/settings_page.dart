@@ -18,6 +18,7 @@ import '../../core/ui/app_toast.dart';
 import '../../theme/dynamic_color_status.dart';
 import '../shell/shell_toolbar_visibility.dart';
 import '../songs/local_song_scan_cache.dart';
+import '../update/app_update_prompt.dart';
 import 'widgets/color_picker_sheet.dart';
 import 'widgets/settings_action.dart';
 import 'widgets/settings_menu.dart';
@@ -156,6 +157,33 @@ class SettingsPage extends ConsumerWidget {
                                   ),
                               ],
                             ),
+                            SettingsSwitchAction(
+                              key: const ValueKey('bluetooth-lyric-setting'),
+                              icon: Icons.bluetooth_audio_rounded,
+                              title: '显示蓝牙歌词',
+                              subtitle: '将当前歌词行作为媒体标题发送到车机或蓝牙设备',
+                              value: settings.bluetoothLyricEnabled,
+                              onChanged: (value) => _setBluetoothLyricEnabled(
+                                context,
+                                ref,
+                                value,
+                              ),
+                            ),
+                            SettingsSwitchAction(
+                              key: const ValueKey(
+                                'bluetooth-full-lyric-setting',
+                              ),
+                              icon: Icons.lyrics_rounded,
+                              title: '显示完整蓝牙歌词',
+                              subtitle: '写入完整 LRC，需接收设备支持',
+                              value: settings.bluetoothFullLyricEnabled,
+                              onChanged: (value) =>
+                                  _setBluetoothFullLyricEnabled(
+                                    context,
+                                    ref,
+                                    value,
+                                  ),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 30),
@@ -260,22 +288,45 @@ class SettingsPage extends ConsumerWidget {
                               padding: const EdgeInsets.fromLTRB(4, 12, 8, 0),
                               child: Align(
                                 alignment: Alignment.centerLeft,
-                                child: FilledButton.tonalIcon(
-                                  onPressed: () =>
-                                      _resetLocalMusicDir(context, ref),
-                                  icon: const Icon(
-                                    Icons.sync_rounded,
-                                    size: 18,
-                                  ),
-                                  label: const Text('恢复为下载位置'),
-                                  style: FilledButton.styleFrom(
-                                    minimumSize: const Size(0, 40),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 20,
-                                      vertical: 10,
+                                child: Wrap(
+                                  spacing: 10,
+                                  runSpacing: 8,
+                                  children: [
+                                    FilledButton.tonalIcon(
+                                      onPressed: () =>
+                                          _resetLocalMusicDir(context, ref),
+                                      icon: const Icon(
+                                        Icons.sync_rounded,
+                                        size: 18,
+                                      ),
+                                      label: const Text('恢复为下载位置'),
+                                      style: FilledButton.styleFrom(
+                                        minimumSize: const Size(0, 40),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 20,
+                                          vertical: 10,
+                                        ),
+                                        shape: const StadiumBorder(),
+                                      ),
                                     ),
-                                    shape: const StadiumBorder(),
-                                  ),
+                                    FilledButton.tonalIcon(
+                                      onPressed: () =>
+                                          _browseLocalMusicDir(context, ref),
+                                      icon: const Icon(
+                                        Icons.storage_rounded,
+                                        size: 18,
+                                      ),
+                                      label: const Text('浏览U盘'),
+                                      style: FilledButton.styleFrom(
+                                        minimumSize: const Size(0, 40),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 20,
+                                          vertical: 10,
+                                        ),
+                                        shape: const StadiumBorder(),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -301,6 +352,26 @@ class SettingsPage extends ConsumerWidget {
                               onChanged: (value) => ref
                                   .read(settingsProvider.notifier)
                                   .setUseDynamicColor(value),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 30),
+                        SettingsCard(
+                          title: '关于',
+                          children: [
+                            SettingsAction(
+                              key: const ValueKey('check-update-setting'),
+                              icon: Icons.system_update_alt_rounded,
+                              title: '检查更新',
+                              subtitle: '当前版本：$versionLabel',
+                              trailing: Symbols.chevron_right,
+                              onTap: () => unawaited(
+                                checkForAppUpdate(
+                                  context,
+                                  ref,
+                                  showFeedback: true,
+                                ),
+                              ),
                             ),
                           ],
                         ),
@@ -347,6 +418,54 @@ class SettingsPage extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _setBluetoothLyricEnabled(
+    BuildContext context,
+    WidgetRef ref,
+    bool value,
+  ) async {
+    if (value) await _ensureBluetoothLyricNotice(context, ref);
+    if (!context.mounted) return;
+    await ref.read(settingsProvider.notifier).setBluetoothLyricEnabled(value);
+  }
+
+  Future<void> _setBluetoothFullLyricEnabled(
+    BuildContext context,
+    WidgetRef ref,
+    bool value,
+  ) async {
+    if (value) await _ensureBluetoothLyricNotice(context, ref);
+    if (!context.mounted) return;
+    await ref
+        .read(settingsProvider.notifier)
+        .setBluetoothFullLyricEnabled(value);
+  }
+
+  Future<void> _ensureBluetoothLyricNotice(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    if (ref.read(settingsProvider).bluetoothLyricNoticeSeen) return;
+    await showDialog<void>(
+      context: context,
+      useRootNavigator: true,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.directions_car_filled_rounded),
+        title: const Text('蓝牙歌词提示'),
+        content: const Text(
+          '蓝牙歌词通过媒体信息兼容发送，不同车机或蓝牙设备的支持情况可能不同。'
+          '\n\n驾车时请勿操作手机，注意道路安全。',
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('我知道了'),
+          ),
+        ],
+      ),
+    );
+    await ref.read(settingsProvider.notifier).markBluetoothLyricNoticeSeen();
   }
 
   Future<void> _resetDownloadDir(BuildContext context, WidgetRef ref) async {
@@ -430,21 +549,49 @@ class SettingsPage extends ConsumerWidget {
     }
 
     String? path;
-    if (Platform.isAndroid) {
+    try {
+      path = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: '选择扫描文件夹',
+        lockParentWindow: true,
+      );
+    } on PlatformException catch (_) {
+      if (!context.mounted) return;
       path = await _showStorageFolderPicker(
         context,
         ref,
         title: '选择扫描文件夹',
         initialPath: ref.read(settingsProvider).localMusicDir,
       );
-    } else {
-      path = await FilePicker.platform.getDirectoryPath(
-        dialogTitle: '选择扫描文件夹',
-        lockParentWindow: true,
-      );
     }
     if (!context.mounted || path == null || path.isEmpty) return;
 
+    await _applyLocalMusicDir(context, ref, path);
+  }
+
+  Future<void> _browseLocalMusicDir(BuildContext context, WidgetRef ref) async {
+    final ok = await PermissionService.ensureExternalStorageRead();
+    if (!context.mounted) return;
+    if (!ok) {
+      showAppToast(context, '未授予存储权限，将无法读取本地音乐', type: AppToastType.warning);
+      return;
+    }
+
+    final path = await _showStorageFolderPicker(
+      context,
+      ref,
+      title: '从U盘选择扫描文件夹',
+      initialPath: ref.read(settingsProvider).localMusicDir,
+    );
+    if (!context.mounted || path == null || path.isEmpty) return;
+
+    await _applyLocalMusicDir(context, ref, path);
+  }
+
+  Future<void> _applyLocalMusicDir(
+    BuildContext context,
+    WidgetRef ref,
+    String path,
+  ) async {
     if (!await _validateReadableDirectory(context, path)) return;
     await ref.read(settingsProvider.notifier).setLocalMusicDir(path);
     unawaited(ref.read(localSongScanCacheProvider).refresh(directory: path));

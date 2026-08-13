@@ -20,6 +20,7 @@ class SearchResultTile extends StatelessWidget {
     required this.music,
     required this.onDownload,
     required this.onPlay,
+    this.onAddToPlaylist,
     this.downloadTask,
     this.coverUrl,
     this.coverLoading = false,
@@ -29,6 +30,7 @@ class SearchResultTile extends StatelessWidget {
   final MusicInfo music;
   final VoidCallback onDownload;
   final VoidCallback onPlay;
+  final VoidCallback? onAddToPlaylist;
   final DownloadTask? downloadTask;
   final String? coverUrl;
   final bool coverLoading;
@@ -148,7 +150,22 @@ class SearchResultTile extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 4),
+                  if (onAddToPlaylist != null)
+                    ExpressiveDownloadButton(
+                      key: ValueKey(
+                        'search-result-add-to-playlist-${music.id}',
+                      ),
+                      isLoading: false,
+                      onPressed: onAddToPlaylist,
+                      tooltip: '添加到歌单',
+                      size: 36,
+                      tapTargetSize: 40,
+                      tonal: true,
+                      idleIcon: Icons.playlist_add_rounded,
+                    ),
+                  if (onAddToPlaylist != null) const SizedBox(width: 2),
                   ExpressiveDownloadButton(
+                    key: ValueKey('search-result-download-${music.id}'),
                     isLoading: busy,
                     isDone: done,
                     progress: task?.fraction,

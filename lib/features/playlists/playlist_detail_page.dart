@@ -410,6 +410,7 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 900),
                     child: PlaylistTrackTile(
+                      playlistId: playlist.id,
                       index: index,
                       item: item,
                       playing: false,

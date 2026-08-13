@@ -1,9 +1,66 @@
+import java.io.File
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+fun currentGitBranch(): String? = runCatching {
+    val process = ProcessBuilder("git", "rev-parse", "--abbrev-ref", "HEAD")
+        .directory(rootProject.projectDir.parentFile)
+        .redirectErrorStream(true)
+        .start()
+    process.inputStream.bufferedReader().use { it.readText() }.trim()
+        .takeIf { process.waitFor() == 0 }
+}.getOrNull()
+
+val appChannel = (
+    providers.gradleProperty("app.channel").orNull
+        ?: System.getenv("APP_CHANNEL")
+        ?: if (currentGitBranch() == "dev") "dev" else "main"
+    ).trim().lowercase()
+require(appChannel == "main" || appChannel == "dev") {
+    "app.channel must be either 'main' or 'dev', but was '$appChannel'."
+}
+
+val isDevChannel = appChannel == "dev"
+val appId = if (isDevChannel) "com.cyshine.music.dev" else "com.cyshine.music"
+val appLabel = if (isDevChannel) "栖弦dev" else "栖弦"
+
+val targetPlatformToAbi = mapOf(
+    "android-arm" to "armeabi-v7a",
+    "android-arm64" to "arm64-v8a",
+)
+val requestedAbis = (project.findProperty("target-platform") as? String)
+    ?.split(",")
+    ?.mapNotNull { targetPlatformToAbi[it.trim()] }
+    ?.toSet()
+    ?.takeIf { it.isNotEmpty() }
+    ?: setOf("arm64-v8a")
+
+val signingPropertiesFile = rootProject.file("signing/$appChannel.properties")
+val signingProperties = Properties().apply {
+    if (signingPropertiesFile.isFile) {
+        signingPropertiesFile.inputStream().use(::load)
+    }
+}
+val signingStoreFile = signingProperties.getProperty("storeFile")
+    ?.takeIf { it.isNotBlank() }
+    ?.let { path ->
+        File(path).let { file ->
+            if (file.isAbsolute) file else signingPropertiesFile.parentFile.resolve(path)
+        }
+    }
+val signingStorePassword = signingProperties.getProperty("storePassword")
+val signingKeyAlias = signingProperties.getProperty("keyAlias")
+val signingKeyPassword = signingProperties.getProperty("keyPassword")
+val releaseSigningReady = signingStoreFile?.isFile == true &&
+    !signingStorePassword.isNullOrBlank() &&
+    !signingKeyAlias.isNullOrBlank() &&
+    !signingKeyPassword.isNullOrBlank()
 
 android {
     namespace = "com.cyshine.music"
@@ -19,23 +76,35 @@ android {
         jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
+    signingConfigs {
+        if (releaseSigningReady) {
+            create("channelRelease") {
+                storeFile = requireNotNull(signingStoreFile)
+                storePassword = signingStorePassword
+                keyAlias = signingKeyAlias
+                keyPassword = signingKeyPassword
+            }
+        }
+    }
+
     defaultConfig {
-        applicationId = "com.cyshine.music"
+        applicationId = appId
         minSdk = flutter.minSdkVersion
         targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["appLabel"] = appLabel
     }
 
     buildTypes {
         release {
             ndk {
                 abiFilters.clear()
-                abiFilters += "arm64-v8a"
+                abiFilters += requestedAbis
             }
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            if (releaseSigningReady) {
+                signingConfig = signingConfigs.getByName("channelRelease")
+            }
             // jaudiotagger inside flutter_audio_tagger uses reflection to find
             // frame-body copy constructors. When R8 minifies the release
             // build, those classes get renamed (`a2.f` etc.) and the
@@ -51,6 +120,18 @@ android {
                 "proguard-rules.pro",
             )
         }
+    }
+}
+
+gradle.taskGraph.whenReady {
+    val buildsRelease = allTasks.any { task ->
+        task.project == project && task.name.contains("release", ignoreCase = true)
+    }
+    if (buildsRelease && !releaseSigningReady) {
+        throw GradleException(
+            "Missing fixed $appChannel signing configuration. " +
+                "Create ${signingPropertiesFile.path} and its referenced keystore.",
+        )
     }
 }
 

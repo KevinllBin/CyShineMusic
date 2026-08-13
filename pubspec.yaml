@@ -1,7 +1,7 @@
 name: cy_shine_music
 description: "栖弦 - Android music client with custom source support."
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: ^3.11.4
@@ -32,12 +32,14 @@ dependencies:
   dynamic_color: ^1.8.1
   material_color_utilities: 0.13.0
   material_symbols_icons: ^4.2951.0
-  progress_indicator_m3e: 0.1.1
+  material_new_shapes: ^1.0.0
   audio_service: ^0.18.19
   audio_session: ^0.2.4
   just_audio: ^0.10.6
   toastification: ^3.2.0
   package_info_plus: ^9.0.1
+  pub_semver: ^2.2.0
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

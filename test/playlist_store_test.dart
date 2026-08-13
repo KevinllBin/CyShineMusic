@@ -4,11 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:cy_shine_music/core/api/music_api.dart';
 import 'package:cy_shine_music/core/models/enums.dart';
 import 'package:cy_shine_music/core/models/music_info.dart';
 import 'package:cy_shine_music/core/models/playlist_info.dart';
 import 'package:cy_shine_music/core/storage/settings_store.dart';
 import 'package:cy_shine_music/features/downloads/download_history_store.dart';
+import 'package:cy_shine_music/features/playlists/lx_playlist_import.dart';
+import 'package:cy_shine_music/features/playlists/online_playlist_updater.dart';
 import 'package:cy_shine_music/features/playlists/playlist_models.dart';
 import 'package:cy_shine_music/features/playlists/playlist_store.dart';
 
@@ -93,6 +96,77 @@ void main() {
       expect(restored.tracks.last.musicId, 'song-2');
     });
 
+    test('adds online music, deduplicates by source and id, and restores a '
+        'playable snapshot', () async {
+      final notifier = container.read(localPlaylistsProvider.notifier);
+      final playlist = await notifier.create('在线单曲');
+      final firstSnapshot = _music(
+        'shared-id',
+        '旧歌名',
+        picUrl: 'https://example.com/old.jpg',
+        providerToken: 'old-token',
+        hash: 'old-hash',
+      );
+      final updatedSnapshot = _music(
+        'shared-id',
+        '更新后的歌名',
+        picUrl: 'https://example.com/new.jpg',
+        providerToken: 'new-token',
+        hash: 'new-hash',
+      );
+      final sameIdFromAnotherSource = _music(
+        'shared-id',
+        'QQ 同 ID 歌曲',
+        source: MusicSource.tx,
+        providerToken: 'qq-token',
+        hash: 'qq-hash',
+      );
+
+      expect(await notifier.addMusic(playlist.id, firstSnapshot), 1);
+      expect(
+        await notifier.addMusics(playlist.id, [
+          updatedSnapshot,
+          sameIdFromAnotherSource,
+          updatedSnapshot,
+        ]),
+        1,
+      );
+
+      final stored = notifier.byId(playlist.id)!;
+      expect(stored.tracks, hasLength(2));
+      final storedWy = stored.tracks.singleWhere(
+        (track) => track.sourceCode == MusicSource.wy.code,
+      );
+      final storedTx = stored.tracks.singleWhere(
+        (track) => track.sourceCode == MusicSource.tx.code,
+      );
+      expect(storedWy.identityKey, 'music:${MusicSource.wy.code}:shared-id');
+      expect(storedTx.identityKey, 'music:${MusicSource.tx.code}:shared-id');
+      expect(storedWy.name, '更新后的歌名');
+      expect(storedWy.localPath, isNull);
+      expect(storedWy.picUrl, 'https://example.com/new.jpg');
+      expect(storedWy.musicInfo?.toJson(), updatedSnapshot.toJson());
+
+      container.dispose();
+      container = _containerWith(prefs);
+      final restored = container.read(localPlaylistsProvider).single;
+      final restoredWy = restored.tracks.singleWhere(
+        (track) => track.sourceCode == MusicSource.wy.code,
+      );
+      final restoredMusic = restoredWy.musicInfo;
+      expect(restored.tracks, hasLength(2));
+      expect(restoredWy.localPath, isNull);
+      expect(restoredMusic?.toJson(), updatedSnapshot.toJson());
+      expect(restoredMusic?.raw['providerToken'], 'new-token');
+      expect(restoredMusic?.meta.hash, 'new-hash');
+      expect(restoredMusic?.meta.picUrl, 'https://example.com/new.jpg');
+
+      final queueEntry = restoredWy.toQueueEntry(playlistId: playlist.id);
+      expect(queueEntry, isNotNull);
+      expect(queueEntry!.savedPath, isNull);
+      expect(queueEntry.musicInfo?.toJson(), updatedSnapshot.toJson());
+    });
+
     test(
       'imports an online playlist and merges the same source and id',
       () async {
@@ -130,6 +204,176 @@ void main() {
               .firstWhere((track) => track.musicId == '1')
               .name,
           '更新后的歌名',
+        );
+      },
+    );
+
+    test('updates an online playlist from its saved origin', () async {
+      final notifier = container.read(localPlaylistsProvider.notifier);
+      final imported = await notifier.importOnline(
+        PlaylistInfo(
+          id: '3778678',
+          name: '热歌榜',
+          source: MusicSource.wy,
+          tracks: [
+            _music('1', '旧歌名'),
+            _music('removed', '线上已移除'),
+            _music('3', '移到前面的歌曲'),
+          ],
+        ),
+      );
+      await notifier.rename(imported.id, '我的榜单');
+      await notifier.attachDownload(
+        music: _music('1', '旧歌名'),
+        quality: Quality.flac,
+        localPath: r'D:\Music\song-1.flac',
+      );
+      final api = _RecordingPlaylistMusicApi(
+        PlaylistInfo(
+          id: '3778678',
+          name: '线上新名称',
+          source: MusicSource.wy,
+          tracks: [
+            _music('3', '移到前面的歌曲'),
+            _music('1', '更新后的歌名'),
+            _music('2', '新增歌曲'),
+          ],
+        ),
+      );
+
+      final result = await OnlinePlaylistUpdater(
+        api,
+      ).update(playlist: notifier.byId(imported.id)!, store: notifier);
+
+      expect(api.inputs, ['3778678']);
+      expect(api.sources, [MusicSource.wy]);
+      expect(api.maxTracks, [isNull]);
+      expect(result.addedTrackCount, 1);
+      expect(result.removedTrackCount, 1);
+      expect(result.playlist.name, '我的榜单');
+      expect(result.playlist.tracks.map((track) => track.musicId), [
+        '3',
+        '1',
+        '2',
+      ]);
+      expect(result.playlist.tracks[1].name, '更新后的歌名');
+      expect(result.playlist.tracks[1].localPath, r'D:\Music\song-1.flac');
+      expect(onlinePlaylistUpdateMessage(result), '歌单已更新，新增 1 首，移除 1 首，共 3 首');
+    });
+
+    test('rejects playlists without a valid online origin', () async {
+      final notifier = container.read(localPlaylistsProvider.notifier);
+      final local = await notifier.create('本地歌单');
+      final api = _RecordingPlaylistMusicApi(
+        const PlaylistInfo(
+          id: 'unused',
+          name: '不会请求',
+          source: MusicSource.wy,
+          tracks: [],
+        ),
+      );
+
+      await expectLater(
+        OnlinePlaylistUpdater(api).update(playlist: local, store: notifier),
+        throwsA(
+          isA<PlaylistStoreException>().having(
+            (error) => error.message,
+            'message',
+            '只有在线歌单可以更新',
+          ),
+        ),
+      );
+      expect(api.inputs, isEmpty);
+    });
+
+    test(
+      'imports multiple LX playlists with unique names and dedupes',
+      () async {
+        final notifier = container.read(localPlaylistsProvider.notifier);
+        await notifier.create('我的收藏');
+
+        final imported = await notifier.importLxPlaylists([
+          LxPlaylistData(
+            sourceId: 'love',
+            name: '我的收藏',
+            tracks: [_music('1', '旧歌名'), _music('1', '更新后的歌名')],
+          ),
+          const LxPlaylistData(sourceId: 'empty', name: '我的收藏', tracks: []),
+        ]);
+
+        expect(imported.map((playlist) => playlist.name), [
+          '我的收藏 (2)',
+          '我的收藏 (3)',
+        ]);
+        expect(imported.first.id, startsWith('lx-'));
+        expect(imported.first.tracks, hasLength(1));
+        expect(imported.first.tracks.single.name, '更新后的歌名');
+        expect(imported.last.tracks, isEmpty);
+
+        container.dispose();
+        container = _containerWith(prefs);
+        expect(
+          container
+              .read(localPlaylistsProvider)
+              .map((playlist) => playlist.name),
+          ['我的收藏', '我的收藏 (2)', '我的收藏 (3)'],
+        );
+      },
+    );
+
+    test(
+      'persists a resolved cover in both playlist track snapshots',
+      () async {
+        final music = MusicInfo.fromJson({
+          'id': 'kg-cover-1',
+          'name': '缺少封面的歌曲',
+          'singer': '歌手',
+          'source': MusicSource.kg.code,
+          'interval': '03:30',
+          'meta': {
+            'songId': 'kg-cover-1',
+            'albumName': '专辑',
+            'hash': 'hash-1',
+            'qualitys': [
+              {'type': Quality.k320.code, 'size': '1024'},
+            ],
+          },
+        });
+        final notifier = container.read(localPlaylistsProvider.notifier);
+        final imported = await notifier.importLxPlaylists([
+          LxPlaylistData(sourceId: 'love', name: '待补图歌单', tracks: [music]),
+        ]);
+        final track = imported.single.tracks.single;
+
+        expect(
+          await notifier.updateTrackCover(
+            playlistId: imported.single.id,
+            trackId: track.identityKey,
+            picUrl: 'https://img.test/kg-cover-1.jpg',
+          ),
+          isTrue,
+        );
+
+        final updated = notifier.byId(imported.single.id)!.tracks.single;
+        expect(updated.picUrl, 'https://img.test/kg-cover-1.jpg');
+        expect(
+          (updated.musicJson!['meta'] as Map)['picUrl'],
+          'https://img.test/kg-cover-1.jpg',
+        );
+        expect((updated.musicJson!['meta'] as Map)['hash'], 'hash-1');
+        expect(music.meta.picUrl, isNull);
+
+        container.dispose();
+        container = _containerWith(prefs);
+        final restored = container
+            .read(localPlaylistsProvider)
+            .single
+            .tracks
+            .single;
+        expect(restored.picUrl, 'https://img.test/kg-cover-1.jpg');
+        expect(
+          restored.musicInfo?.meta.picUrl,
+          'https://img.test/kg-cover-1.jpg',
         );
       },
     );
@@ -394,20 +638,50 @@ DownloadHistoryEntry _historyEntry({
   );
 }
 
-MusicInfo _music(String id, String name) {
+MusicInfo _music(
+  String id,
+  String name, {
+  MusicSource source = MusicSource.wy,
+  String? picUrl,
+  String? providerToken,
+  String? hash,
+}) {
   return MusicInfo.fromJson({
     'id': id,
     'name': name,
     'singer': '在线歌手',
-    'source': MusicSource.wy.code,
+    'source': source.code,
     'interval': '03:30',
+    'providerToken': ?providerToken,
     'meta': {
       'songId': id,
       'albumName': '在线专辑',
-      'picUrl': 'https://example.com/$id.jpg',
+      'picUrl': picUrl ?? 'https://example.com/$id.jpg',
+      'hash': ?hash,
       'qualitys': [
         {'type': Quality.k320.code, 'size': '1024'},
       ],
     },
   });
+}
+
+class _RecordingPlaylistMusicApi extends MusicApi {
+  _RecordingPlaylistMusicApi(this.result);
+
+  final PlaylistInfo result;
+  final List<String> inputs = <String>[];
+  final List<MusicSource> sources = <MusicSource>[];
+  final List<int?> maxTracks = <int?>[];
+
+  @override
+  Future<PlaylistInfo> parsePlaylist({
+    required String input,
+    MusicSource source = MusicSource.all,
+    int? maxTracks,
+  }) async {
+    inputs.add(input);
+    sources.add(source);
+    this.maxTracks.add(maxTracks);
+    return result;
+  }
 }

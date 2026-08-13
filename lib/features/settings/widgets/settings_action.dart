@@ -169,6 +169,72 @@ class _SettingsActionState extends State<SettingsAction> {
   }
 }
 
+class SettingsSwitchAction extends StatelessWidget {
+  const SettingsSwitchAction({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 14),
+        child: Row(
+          children: [
+            SettingsSymbolBubble(icon: icon),
+            const SizedBox(width: 18),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: scheme.onSurface,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      height: 1.16,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: scheme.outline,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      height: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Switch(value: value, onChanged: onChanged),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class DebugModeRow extends StatelessWidget {
   const DebugModeRow({super.key, required this.value, required this.onChanged});
 
@@ -177,44 +243,12 @@ class DebugModeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Row(
-      children: [
-        const SettingsSymbolBubble(icon: Icons.bug_report_outlined),
-        const SizedBox(width: 18),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '调试模式',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: scheme.onSurface,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                  height: 1.16,
-                ),
-              ),
-              const SizedBox(height: 5),
-              Text(
-                value ? '已开启，可进入日志控制台' : '开启后显示终端式实时日志',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: scheme.outline,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  height: 1.2,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 12),
-        Switch(value: value, onChanged: onChanged),
-      ],
+    return SettingsSwitchAction(
+      icon: Icons.bug_report_outlined,
+      title: '调试模式',
+      subtitle: value ? '已开启，可进入日志控制台' : '开启后显示终端式实时日志',
+      value: value,
+      onChanged: onChanged,
     );
   }
 }

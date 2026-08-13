@@ -16,6 +16,7 @@ class ExpressiveDownloadButton extends StatefulWidget {
     this.size = 48,
     this.tapTargetSize,
     this.tonal = false,
+    this.idleIcon = Symbols.download_rounded,
   }) : assert(size > 0),
        assert(tapTargetSize == null || tapTargetSize > 0);
 
@@ -27,6 +28,7 @@ class ExpressiveDownloadButton extends StatefulWidget {
   final double size;
   final double? tapTargetSize;
   final bool tonal;
+  final IconData idleIcon;
 
   @override
   State<ExpressiveDownloadButton> createState() =>
@@ -113,6 +115,7 @@ class _ExpressiveDownloadButtonState extends State<ExpressiveDownloadButton>
                   circularButtonMode: true,
                   foregroundColor: foregroundColor,
                   secondaryColor: scheme.primary,
+                  idleIcon: widget.idleIcon,
                 ),
               ),
             ),

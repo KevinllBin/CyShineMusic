@@ -9,6 +9,8 @@ import 'package:cy_shine_music/core/models/music_info.dart';
 import 'package:cy_shine_music/core/storage/settings_store.dart';
 import 'package:cy_shine_music/features/search/widgets/source_filter_chips.dart';
 import 'package:cy_shine_music/features/settings/settings_page.dart';
+import 'package:cy_shine_music/features/settings/widgets/settings_action.dart';
+import 'package:cy_shine_music/features/settings/widgets/settings_style.dart';
 import 'package:cy_shine_music/theme/app_theme.dart';
 
 void main() {
@@ -31,9 +33,129 @@ void main() {
       expect(settings.enabledSearchSources, isNot(contains(MusicSource.mg)));
       expect(settings.onlinePlaybackQuality, OnlinePlaybackQuality.highest);
       expect(settings.batchDownloadQuality, OnlinePlaybackQuality.highest);
+      expect(settings.showMiniLyrics, isTrue);
+      expect(settings.bluetoothLyricEnabled, isFalse);
+      expect(settings.bluetoothFullLyricEnabled, isFalse);
+      expect(settings.bluetoothLyricNoticeSeen, isFalse);
       expect(settings.localMusicDir, settings.downloadDir);
     },
   );
+
+  test('player lyric preferences persist', () async {
+    final prefs = await SharedPreferences.getInstance();
+    final container = _settingsContainer(prefs);
+    final notifier = container.read(settingsProvider.notifier);
+
+    await notifier.setShowMiniLyrics(false);
+    await notifier.setBluetoothLyricEnabled(true);
+    await notifier.setBluetoothFullLyricEnabled(true);
+    await notifier.markBluetoothLyricNoticeSeen();
+    container.dispose();
+
+    final restored = _settingsContainer(prefs);
+    addTearDown(restored.dispose);
+    final settings = restored.read(settingsProvider);
+    expect(settings.showMiniLyrics, isFalse);
+    expect(settings.bluetoothLyricEnabled, isTrue);
+    expect(settings.bluetoothFullLyricEnabled, isTrue);
+    expect(settings.bluetoothLyricNoticeSeen, isTrue);
+  });
+
+  testWidgets('bluetooth lyric warning is shown only on first enable', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(430, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final prefs = await SharedPreferences.getInstance();
+    final container = _settingsContainer(prefs);
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(theme: AppTheme.light(), home: const SettingsPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final row = find.byKey(const ValueKey('bluetooth-lyric-setting'));
+    final toggle = find.descendant(of: row, matching: find.byType(Switch));
+    await tester.ensureVisible(toggle);
+    await tester.pumpAndSettle();
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(find.text('蓝牙歌词提示'), findsOneWidget);
+    await tester.tap(find.text('我知道了'));
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).bluetoothLyricEnabled, isTrue);
+    expect(container.read(settingsProvider).bluetoothLyricNoticeSeen, isTrue);
+
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(find.text('蓝牙歌词提示'), findsNothing);
+    expect(container.read(settingsProvider).bluetoothLyricEnabled, isTrue);
+  });
+
+  testWidgets('switch settings align with actions and keep vertical spacing', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(
+          body: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SettingsAction(
+                key: const ValueKey('reference-setting-action'),
+                icon: Icons.search_rounded,
+                title: '参考设置项',
+                subtitle: '参考说明',
+                onTap: () {},
+              ),
+              SettingsSwitchAction(
+                key: const ValueKey('first-switch-setting'),
+                icon: Icons.bluetooth_audio_rounded,
+                title: '显示蓝牙歌词',
+                subtitle: '蓝牙歌词说明',
+                value: false,
+                onChanged: (_) {},
+              ),
+              SettingsSwitchAction(
+                key: const ValueKey('second-switch-setting'),
+                icon: Icons.lyrics_rounded,
+                title: '显示完整蓝牙歌词',
+                subtitle: '完整歌词说明',
+                value: false,
+                onChanged: (_) {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    Finder bubbleWithin(Key key) => find.descendant(
+      of: find.byKey(key),
+      matching: find.byType(SettingsSymbolBubble),
+    );
+
+    final referenceRect = tester.getRect(
+      bubbleWithin(const ValueKey('reference-setting-action')),
+    );
+    final firstRect = tester.getRect(
+      bubbleWithin(const ValueKey('first-switch-setting')),
+    );
+    final secondRect = tester.getRect(
+      bubbleWithin(const ValueKey('second-switch-setting')),
+    );
+    expect(firstRect.left, referenceRect.left);
+    expect(secondRect.left, referenceRect.left);
+    expect(secondRect.top - firstRect.bottom, greaterThanOrEqualTo(24));
+    expect(tester.takeException(), isNull);
+  });
 
   test('legacy resolver setting is removed', () async {
     SharedPreferences.setMockInitialValues({
@@ -67,6 +189,8 @@ void main() {
     expect(find.text('音源管理'), findsOneWidget);
     expect(find.text('批量下载音质'), findsOneWidget);
     expect(find.text('扫描文件夹'), findsOneWidget);
+    expect(find.text('浏览U盘'), findsNWidgets(2));
+    expect(find.text('检查更新'), findsOneWidget);
     expect(find.byIcon(Icons.folder_outlined), findsOneWidget);
     expect(find.text('URL 解析服务器'), findsNothing);
     expect(find.text('解析服务器健康检查'), findsNothing);

@@ -4,9 +4,15 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:cy_shine_music/core/storage/settings_store.dart';
+import 'package:cy_shine_music/core/api/music_api.dart';
+import 'package:cy_shine_music/core/models/enums.dart';
+import 'package:cy_shine_music/core/models/music_info.dart';
+import 'package:cy_shine_music/core/models/playlist_info.dart';
+import 'package:cy_shine_music/features/downloads/download_history_entry.dart';
 import 'package:cy_shine_music/features/player/player_audio_handler.dart';
 import 'package:cy_shine_music/features/player/lyric_parser.dart';
 import 'package:cy_shine_music/features/player/player_controller.dart';
@@ -213,6 +219,76 @@ void main() {
     },
   );
 
+  testWidgets('songs playlist overflow updates online playlists only', (
+    tester,
+  ) async {
+    await _usePhoneViewport(tester);
+    final online = _playlist(
+      id: 'online',
+      name: '在线收藏',
+      tracks: [PlaylistTrack.fromMusicInfo(_playlistMusic('old', '旧歌曲'))],
+      originPlaylistId: '3778678',
+      originSourceCode: MusicSource.wy.code,
+    );
+    final local = _playlist(id: 'local', name: '本地新建');
+    final prefs = await _prefsWith([online, local]);
+    final audioHandler = PlayerAudioHandler();
+    final api = _PlaylistRefreshMusicApi(
+      PlaylistInfo(
+        id: '3778678',
+        name: '线上榜单',
+        source: MusicSource.wy,
+        tracks: [_playlistMusic('old', '新歌名'), _playlistMusic('new', '新歌曲')],
+      ),
+    );
+    final router = createAppRouter(initialLocation: '/songs');
+    addTearDown(() {
+      router.dispose();
+      unawaited(audioHandler.disposeHandler());
+    });
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          playerAudioHandlerProvider.overrideWithValue(audioHandler),
+          musicApiProvider.overrideWithValue(api),
+        ],
+        child: MaterialApp.router(
+          theme: ThemeData(
+            useMaterial3: true,
+            colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+          ),
+          routerConfig: router,
+        ),
+      ),
+    );
+    await _pumpUi(tester);
+
+    await tester.tap(find.byIcon(Icons.arrow_drop_down_rounded));
+    await _pumpUi(tester);
+    await tester.tap(find.text('在线收藏'));
+    await _pumpUi(tester);
+    await tester.tap(find.byTooltip('更多歌曲操作'));
+    await _pumpUi(tester);
+    expect(find.text('更新歌单'), findsOneWidget);
+    await tester.tap(find.text('更新歌单'));
+    await _pumpUi(tester);
+    expect(api.inputs, ['3778678']);
+    expect(find.text('新歌曲'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.arrow_drop_down_rounded));
+    await _pumpUi(tester);
+    await tester.tap(find.text('本地新建'));
+    await _pumpUi(tester);
+    await tester.tap(find.byTooltip('更多歌曲操作'));
+    await _pumpUi(tester);
+    expect(find.text('更新歌单'), findsNothing);
+    await tester.tapAt(const Offset(1, 1));
+    await tester.pump(const Duration(seconds: 4));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'library radio menu limits long names and scrolls many playlists',
     (tester) async {
@@ -372,6 +448,57 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('playback queue opens centered on the current track', (
+    tester,
+  ) async {
+    await _usePhoneViewport(tester);
+    final prefs = await _prefsWith(const []);
+    final audioHandler = PlayerAudioHandler();
+    final router = createAppRouter(initialLocation: '/player');
+    addTearDown(() {
+      router.dispose();
+      unawaited(audioHandler.disposeHandler());
+    });
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          playerAudioHandlerProvider.overrideWithValue(audioHandler),
+          playerControllerProvider.overrideWith(_TestPlayerController.new),
+        ],
+        child: MaterialApp.router(
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            useMaterial3: true,
+            colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+          ),
+          routerConfig: router,
+        ),
+      ),
+    );
+    await _pumpUi(tester);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(PlayerPage)),
+    );
+    final controller =
+        container.read(playerControllerProvider.notifier)
+            as _TestPlayerController;
+    controller.seedPlayingQueue(count: 30, currentIndex: 20);
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('播放列表，共 30 首'));
+    await _pumpUi(tester);
+
+    final list = find.byKey(const ValueKey('playback-queue-list'));
+    final current = find.byKey(const ValueKey('playback-queue-entry-20'));
+    expect(list, findsOneWidget);
+    expect(current, findsOneWidget);
+    expect(tester.getCenter(current).dy, closeTo(tester.getCenter(list).dy, 1));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('player applies dark backdrop and dark-theme foreground', (
     tester,
   ) async {
@@ -421,9 +548,16 @@ void main() {
           .brightness,
       Brightness.dark,
     );
+    expect(
+      find.descendant(
+        of: find.byType(FlowingLightBackground),
+        matching: find.byType(Transform),
+      ),
+      findsNothing,
+    );
     final topQueueIcon = find.descendant(
       of: find.byTooltip('本地歌曲'),
-      matching: find.byIcon(Icons.queue_music_rounded),
+      matching: find.byIcon(Symbols.library_music_rounded),
     );
     expect(tester.widget<Icon>(topQueueIcon).color, darkScheme.onSurface);
     expect(tester.takeException(), isNull);
@@ -675,6 +809,41 @@ class _TestPlayerController extends PlayerController {
     );
   }
 
+  void seedPlayingQueue({required int count, required int currentIndex}) {
+    final queue = List<DownloadHistoryEntry>.generate(
+      count,
+      (index) => DownloadHistoryEntry(
+        id: 'queue-$index',
+        musicId: 'queue-$index',
+        name: '队列歌曲 ${index + 1}',
+        singer: '测试歌手',
+        albumName: '测试专辑',
+        sourceCode: 'wy',
+        qualityCode: 'flac',
+        status: DownloadHistoryStatus.completed,
+        createdAt: DateTime.utc(2026, 8, 10),
+      ),
+    );
+    final current = queue[currentIndex];
+    state = PlayerState(
+      track: PlayerTrack(
+        id: current.id,
+        kind: PlayerTrackKind.remote,
+        title: current.name,
+        artist: current.singer,
+        album: current.albumName,
+        sourceLabel: '网易云音乐',
+        qualityLabel: 'FLAC',
+      ),
+      playing: true,
+      duration: const Duration(minutes: 3),
+      queue: queue,
+      queueIndex: currentIndex,
+      canPlayPrevious: true,
+      canPlayNext: true,
+    );
+  }
+
   void seedLyricsTrack() {
     final lines = List<KaraokeLyricLine>.generate(18, (index) {
       final startMs = index * 3000;
@@ -746,6 +915,8 @@ LocalPlaylist _playlist({
   required String id,
   required String name,
   List<PlaylistTrack> tracks = const [],
+  String? originPlaylistId,
+  String? originSourceCode,
 }) {
   final now = DateTime.utc(2026, 7, 20);
   return LocalPlaylist(
@@ -754,5 +925,41 @@ LocalPlaylist _playlist({
     tracks: tracks,
     createdAt: now,
     updatedAt: now,
+    originPlaylistId: originPlaylistId,
+    originSourceCode: originSourceCode,
   );
+}
+
+MusicInfo _playlistMusic(String id, String name) {
+  return MusicInfo.fromJson({
+    'id': id,
+    'name': name,
+    'singer': '在线歌手',
+    'source': MusicSource.wy.code,
+    'interval': '03:30',
+    'meta': {
+      'songId': id,
+      'albumName': '在线专辑',
+      'qualitys': [
+        {'type': Quality.k320.code, 'size': '1024'},
+      ],
+    },
+  });
+}
+
+class _PlaylistRefreshMusicApi extends MusicApi {
+  _PlaylistRefreshMusicApi(this.result);
+
+  final PlaylistInfo result;
+  final List<String> inputs = <String>[];
+
+  @override
+  Future<PlaylistInfo> parsePlaylist({
+    required String input,
+    MusicSource source = MusicSource.all,
+    int? maxTracks,
+  }) async {
+    inputs.add(input);
+    return result;
+  }
 }

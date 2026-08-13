@@ -5,16 +5,30 @@ import 'package:go_router/go_router.dart';
 import '../../core/models/enums.dart';
 import '../../core/ui/app_toast.dart';
 import '../../theme/app_motion.dart';
+import 'lx_playlist_import.dart';
+import 'online_playlist_updater.dart';
+import 'playlist_cover_resolver.dart';
 import 'playlist_name_dialog.dart';
 import 'playlist_models.dart';
 import 'playlist_store.dart';
 import 'widgets/playlist_artwork.dart';
 
-class PlaylistManagementPage extends ConsumerWidget {
+class PlaylistManagementPage extends ConsumerStatefulWidget {
   const PlaylistManagementPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PlaylistManagementPage> createState() =>
+      _PlaylistManagementPageState();
+}
+
+class _PlaylistManagementPageState
+    extends ConsumerState<PlaylistManagementPage> {
+  bool _importingLx = false;
+  String? _lxImportProgress;
+  final Set<String> _updatingPlaylistIds = <String>{};
+
+  @override
+  Widget build(BuildContext context) {
     final playlists = ref.watch(localPlaylistsProvider);
     return Scaffold(
       body: CustomScrollView(
@@ -33,6 +47,9 @@ class PlaylistManagementPage extends ConsumerWidget {
                     count: playlists.length,
                     onCreate: () => _createPlaylist(context, ref),
                     onImport: () => context.go('/playlists/import'),
+                    onImportLx: _importLxPlaylist,
+                    importingLx: _importingLx,
+                    lxImportProgress: _lxImportProgress,
                   ),
                 ),
               ),
@@ -59,6 +76,10 @@ class PlaylistManagementPage extends ConsumerWidget {
                         onOpen: () =>
                             context.go(_managementDetailLocation(playlist.id)),
                         onRename: () => _renamePlaylist(context, ref, playlist),
+                        onUpdate: playlist.isOnlineImport
+                            ? () => _updatePlaylist(playlist)
+                            : null,
+                        updating: _updatingPlaylistIds.contains(playlist.id),
                         onDelete: () => _deletePlaylist(context, ref, playlist),
                       ),
                     ),
@@ -96,6 +117,69 @@ class PlaylistManagementPage extends ConsumerWidget {
     }
   }
 
+  Future<void> _importLxPlaylist() async {
+    if (_importingLx) return;
+    setState(() => _importingLx = true);
+    try {
+      final picked = await ref.read(lxPlaylistFilePickerProvider)();
+      if (picked == null || !mounted) return;
+
+      final document = parseLxPlaylistFile(picked.bytes, fileName: picked.name);
+      final coverResolution = await resolveLxPlaylistCovers(
+        document.playlists,
+        ref.read(playlistCoverResolverProvider),
+        onProgress: (completed, total) {
+          if (!mounted) return;
+          setState(() => _lxImportProgress = '封面 $completed/$total');
+        },
+      );
+      if (!mounted) return;
+      final imported = await ref
+          .read(localPlaylistsProvider.notifier)
+          .importLxPlaylists(coverResolution.playlists);
+      if (!mounted) return;
+
+      final trackCount = imported.fold<int>(
+        0,
+        (total, playlist) => total + playlist.tracks.length,
+      );
+      final skipped = document.skippedTrackCount;
+      final message = imported.length == 1
+          ? '已导入“${imported.single.name}”，共 $trackCount 首'
+          : '已导入 ${imported.length} 个洛雪歌单，共 $trackCount 首';
+      final coverMessage = coverResolution.resolvedCount > 0
+          ? '，补全 ${coverResolution.resolvedCount} 张封面'
+          : '';
+      final skippedParts = <String>[
+        if (document.skippedPlaylistCount > 0)
+          '${document.skippedPlaylistCount} 个无效歌单',
+        if (skipped > 0) '$skipped 首无效或不支持的歌曲',
+      ];
+      showAppToast(
+        context,
+        skippedParts.isEmpty
+            ? '$message$coverMessage'
+            : '$message$coverMessage，跳过 ${skippedParts.join('、')}',
+        type: AppToastType.success,
+      );
+    } on LxPlaylistImportException catch (error) {
+      if (mounted) {
+        showAppToast(context, error.message, type: AppToastType.warning);
+      }
+    } catch (_) {
+      if (mounted) {
+        showAppToast(context, '读取洛雪歌单文件失败', type: AppToastType.error);
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _importingLx = false;
+          _lxImportProgress = null;
+        });
+      }
+    }
+  }
+
   Future<void> _renamePlaylist(
     BuildContext context,
     WidgetRef ref,
@@ -117,6 +201,30 @@ class PlaylistManagementPage extends ConsumerWidget {
       if (context.mounted) {
         showAppToast(context, error.message, type: AppToastType.warning);
       }
+    }
+  }
+
+  Future<void> _updatePlaylist(LocalPlaylist playlist) async {
+    if (_updatingPlaylistIds.contains(playlist.id)) return;
+    setState(() => _updatingPlaylistIds.add(playlist.id));
+    try {
+      final result = await ref
+          .read(onlinePlaylistUpdaterProvider)
+          .update(
+            playlist: playlist,
+            store: ref.read(localPlaylistsProvider.notifier),
+          );
+      if (!mounted) return;
+      showAppToast(
+        context,
+        onlinePlaylistUpdateMessage(result),
+        type: AppToastType.success,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      showAppToast(context, '更新歌单失败：$error', type: AppToastType.error);
+    } finally {
+      if (mounted) setState(() => _updatingPlaylistIds.remove(playlist.id));
     }
   }
 
@@ -156,11 +264,17 @@ class _ManagementActions extends StatelessWidget {
     required this.count,
     required this.onCreate,
     required this.onImport,
+    required this.onImportLx,
+    required this.importingLx,
+    required this.lxImportProgress,
   });
 
   final int count;
   final VoidCallback onCreate;
   final VoidCallback onImport;
+  final VoidCallback onImportLx;
+  final bool importingLx;
+  final String? lxImportProgress;
 
   @override
   Widget build(BuildContext context) {
@@ -241,6 +355,19 @@ class _ManagementActions extends StatelessWidget {
                 icon: const Icon(Icons.cloud_download_outlined),
                 label: const Text('在线导入'),
               );
+              final lxImportButton = FilledButton.tonalIcon(
+                style: const ButtonStyle(
+                  minimumSize: WidgetStatePropertyAll(Size(72, 48)),
+                ),
+                onPressed: importingLx ? null : onImportLx,
+                icon: importingLx
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.upload_file_rounded),
+                label: Text(importingLx ? lxImportProgress ?? '正在导入' : '洛雪导入'),
+              );
               if (useVerticalLayout) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -248,14 +375,23 @@ class _ManagementActions extends StatelessWidget {
                     createButton,
                     const SizedBox(height: 8),
                     importButton,
+                    const SizedBox(height: 8),
+                    lxImportButton,
                   ],
                 );
               }
-              return Row(
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(child: createButton),
-                  const SizedBox(width: 10),
-                  Expanded(child: importButton),
+                  Row(
+                    children: [
+                      Expanded(child: createButton),
+                      const SizedBox(width: 10),
+                      Expanded(child: importButton),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  lxImportButton,
                 ],
               );
             },
@@ -273,19 +409,23 @@ String _managementDetailLocation(String playlistId) {
   ).toString();
 }
 
-enum _PlaylistMenuAction { rename, delete }
+enum _PlaylistMenuAction { update, rename, delete }
 
 class _PlaylistManagementTile extends StatelessWidget {
   const _PlaylistManagementTile({
     required this.playlist,
     required this.onOpen,
     required this.onRename,
+    required this.onUpdate,
+    required this.updating,
     required this.onDelete,
   });
 
   final LocalPlaylist playlist;
   final VoidCallback onOpen;
   final VoidCallback onRename;
+  final VoidCallback? onUpdate;
+  final bool updating;
   final VoidCallback onDelete;
 
   @override
@@ -349,14 +489,33 @@ class _PlaylistManagementTile extends StatelessWidget {
                   tooltip: '歌单选项',
                   onSelected: (action) {
                     switch (action) {
+                      case _PlaylistMenuAction.update:
+                        onUpdate?.call();
                       case _PlaylistMenuAction.rename:
                         onRename();
                       case _PlaylistMenuAction.delete:
                         onDelete();
                     }
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(
+                  itemBuilder: (_) => [
+                    if (onUpdate != null)
+                      PopupMenuItem(
+                        value: _PlaylistMenuAction.update,
+                        enabled: !updating,
+                        child: ListTile(
+                          leading: updating
+                              ? const SizedBox.square(
+                                  dimension: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.2,
+                                  ),
+                                )
+                              : const Icon(Icons.refresh_rounded),
+                          title: Text(updating ? '正在更新' : '更新歌单'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    const PopupMenuItem(
                       value: _PlaylistMenuAction.rename,
                       child: ListTile(
                         leading: Icon(Icons.edit_outlined),
@@ -364,7 +523,7 @@ class _PlaylistManagementTile extends StatelessWidget {
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
-                    PopupMenuItem(
+                    const PopupMenuItem(
                       value: _PlaylistMenuAction.delete,
                       child: ListTile(
                         leading: Icon(Icons.delete_outline_rounded),

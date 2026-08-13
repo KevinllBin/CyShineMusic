@@ -8,6 +8,7 @@ import '../../core/models/music_info.dart';
 import '../../core/models/playlist_info.dart';
 import '../../core/storage/settings_store.dart';
 import '../downloads/download_history_store.dart';
+import 'lx_playlist_import.dart';
 import 'playlist_models.dart';
 
 const String localPlaylistsStorageKey = 'local_playlists_v1';
@@ -106,7 +107,18 @@ class LocalPlaylistNotifier extends Notifier<List<LocalPlaylist>> {
     return addTracks(playlistId, entries);
   }
 
-  Future<LocalPlaylist> importOnline(PlaylistInfo online) async {
+  Future<int> addMusic(String playlistId, MusicInfo music) {
+    return addMusics(playlistId, [music]);
+  }
+
+  Future<int> addMusics(String playlistId, Iterable<MusicInfo> musics) {
+    return _mergeTracks(playlistId, musics.map(PlaylistTrack.fromMusicInfo));
+  }
+
+  Future<LocalPlaylist> importOnline(
+    PlaylistInfo online, {
+    bool synchronizeTracks = false,
+  }) async {
     final sourceCode = online.source.code;
     final originId = online.id.trim();
     final importedTracks = online.tracks
@@ -121,11 +133,13 @@ class LocalPlaylistNotifier extends Notifier<List<LocalPlaylist>> {
 
     if (existingIndex >= 0) {
       final current = state[existingIndex];
-      final merged = _mergeTrackLists(current.tracks, importedTracks);
+      final tracks = synchronizeTracks
+          ? _synchronizeTrackLists(current.tracks, importedTracks)
+          : _mergeTrackLists(current.tracks, importedTracks).tracks;
       final updated = LocalPlaylist(
         id: current.id,
         name: current.name,
-        tracks: merged.tracks,
+        tracks: tracks,
         createdAt: current.createdAt,
         updatedAt: DateTime.now(),
         originPlaylistId: originId,
@@ -156,6 +170,74 @@ class LocalPlaylistNotifier extends Notifier<List<LocalPlaylist>> {
     state = List<LocalPlaylist>.unmodifiable([...state, imported]);
     await _persist();
     return imported;
+  }
+
+  Future<List<LocalPlaylist>> importLxPlaylists(
+    Iterable<LxPlaylistData> sourcePlaylists,
+  ) async {
+    final values = sourcePlaylists.toList(growable: false);
+    if (values.isEmpty) return const [];
+
+    final next = state.toList();
+    final imported = <LocalPlaylist>[];
+    for (final sourcePlaylist in values) {
+      final now = DateTime.now();
+      final playlist = LocalPlaylist(
+        id: _newId(prefix: 'lx'),
+        name: _uniqueImportedName(sourcePlaylist.name, playlists: next),
+        tracks: _mergeTrackLists(
+          const [],
+          sourcePlaylist.tracks.map(PlaylistTrack.fromMusicInfo),
+        ).tracks,
+        createdAt: now,
+        updatedAt: now,
+      );
+      next.add(playlist);
+      imported.add(playlist);
+    }
+
+    state = List<LocalPlaylist>.unmodifiable(next);
+    await _persist();
+    return List<LocalPlaylist>.unmodifiable(imported);
+  }
+
+  Future<bool> updateTrackCover({
+    required String playlistId,
+    required String trackId,
+    required String picUrl,
+  }) async {
+    final url = picUrl.trim();
+    if (url.isEmpty) return false;
+
+    final playlistIndex = state.indexWhere(
+      (playlist) => playlist.id == playlistId,
+    );
+    if (playlistIndex < 0) return false;
+
+    final playlist = state[playlistIndex];
+    final trackIndex = playlist.tracks.indexWhere(
+      (track) => track.identityKey == trackId,
+    );
+    if (trackIndex < 0) return false;
+
+    final current = playlist.tracks[trackIndex];
+    final musicJson = _musicJsonWithPicUrl(current.musicJson, url);
+    final currentMetaPicUrl = _musicJsonPicUrl(current.musicJson);
+    if (current.picUrl == url &&
+        (current.musicJson == null || currentMetaPicUrl == url)) {
+      return false;
+    }
+
+    final tracks = playlist.tracks.toList();
+    tracks[trackIndex] = current.copyWith(picUrl: url, musicJson: musicJson);
+    final playlists = state.toList();
+    playlists[playlistIndex] = playlist.copyWith(
+      tracks: List<PlaylistTrack>.unmodifiable(tracks),
+      updatedAt: DateTime.now(),
+    );
+    state = List<LocalPlaylist>.unmodifiable(playlists);
+    await _persist();
+    return true;
   }
 
   Future<bool> removeTrack(String playlistId, String trackId) async {
@@ -310,9 +392,14 @@ class LocalPlaylistNotifier extends Notifier<List<LocalPlaylist>> {
     return normalized;
   }
 
-  String _uniqueImportedName(String value) {
+  String _uniqueImportedName(
+    String value, {
+    Iterable<LocalPlaylist>? playlists,
+  }) {
     final base = value.trim().isEmpty ? '导入的歌单' : value.trim();
-    final used = {for (final playlist in state) playlist.name.toLowerCase()};
+    final used = {
+      for (final playlist in playlists ?? state) playlist.name.toLowerCase(),
+    };
     if (!used.contains(base.toLowerCase())) return base;
     var suffix = 2;
     while (used.contains('$base ($suffix)'.toLowerCase())) {
@@ -414,6 +501,21 @@ _TrackMergeResult _mergeTrackLists(
   );
 }
 
+List<PlaylistTrack> _synchronizeTrackLists(
+  Iterable<PlaylistTrack> current,
+  Iterable<PlaylistTrack> incoming,
+) {
+  final currentByKey = {for (final track in current) track.identityKey: track};
+  final synchronized = <PlaylistTrack>[];
+  final seen = <String>{};
+  for (final track in incoming) {
+    if (!seen.add(track.identityKey)) continue;
+    final existing = currentByKey[track.identityKey];
+    synchronized.add(existing?.mergePreferLocal(track) ?? track);
+  }
+  return List<PlaylistTrack>.unmodifiable(synchronized);
+}
+
 bool _sameTrackSnapshot(PlaylistTrack left, PlaylistTrack right) {
   return jsonEncode(left.toJson()) == jsonEncode(right.toJson());
 }
@@ -433,4 +535,26 @@ class _TrackMergeResult {
 String? _nonEmpty(String? value) {
   final trimmed = value?.trim();
   return trimmed == null || trimmed.isEmpty ? null : trimmed;
+}
+
+Map<String, dynamic>? _musicJsonWithPicUrl(
+  Map<String, dynamic>? source,
+  String picUrl,
+) {
+  if (source == null) return null;
+  final json = Map<String, dynamic>.from(source);
+  final rawMeta = json['meta'];
+  final meta = rawMeta is Map
+      ? Map<String, dynamic>.from(rawMeta)
+      : <String, dynamic>{};
+  meta['picUrl'] = picUrl;
+  json['meta'] = meta;
+  return json;
+}
+
+String? _musicJsonPicUrl(Map<String, dynamic>? source) {
+  final meta = source?['meta'];
+  if (meta is! Map) return null;
+  final value = meta['picUrl'];
+  return value is String ? value : null;
 }

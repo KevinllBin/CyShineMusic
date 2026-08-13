@@ -80,6 +80,11 @@ flutter run
 flutter build apk --target-platform=android-arm64
 ```
 
+构建渠道由当前 Git 分支自动决定：`main` 生成包名
+`com.cyshine.music`、应用名“栖弦”的正式版，`dev` 生成包名
+`com.cyshine.music.dev`、应用名“栖弦dev”的开发版，两者可同时安装。Release
+构建分别使用固定签名；签名文件配置见 `android/signing/README.md`。
+
 构建产物位于：
 
 ```text

@@ -40,11 +40,20 @@ class PlaylistArtworkTheme extends StatefulWidget {
   State<PlaylistArtworkTheme> createState() => _PlaylistArtworkThemeState();
 }
 
+typedef _ArtworkSchemeCacheKey = ({
+  String cacheKey,
+  ImageProvider<Object> provider,
+  Brightness brightness,
+});
+
 class _PlaylistArtworkThemeState extends State<PlaylistArtworkTheme> {
-  static final Map<String, Future<ColorScheme>> _schemeCache = {};
+  static const _schemeCacheLimit = 48;
+  static final Map<_ArtworkSchemeCacheKey, ColorScheme> _resolvedSchemes = {};
+  static final Map<_ArtworkSchemeCacheKey, Future<ColorScheme>>
+  _pendingSchemes = {};
 
   ColorScheme? _scheme;
-  String? _activeRequestKey;
+  _ArtworkSchemeCacheKey? _activeRequestKey;
 
   @override
   void didChangeDependencies() {
@@ -65,28 +74,68 @@ class _PlaylistArtworkThemeState extends State<PlaylistArtworkTheme> {
   void _resolveScheme() {
     final base = Theme.of(context).colorScheme;
     final provider = widget.artworkProvider;
-    final requestKey = '${widget.cacheKey}:${base.brightness.name}';
+    if (provider == null) {
+      _activeRequestKey = null;
+      _scheme = null;
+      return;
+    }
+    final requestKey = (
+      cacheKey: widget.cacheKey,
+      provider: provider,
+      brightness: base.brightness,
+    );
     if (_activeRequestKey == requestKey) return;
     _activeRequestKey = requestKey;
-    _scheme = base;
-    if (provider == null) return;
 
-    if (_schemeCache.length >= 48 && !_schemeCache.containsKey(requestKey)) {
-      _schemeCache.remove(_schemeCache.keys.first);
+    final resolved = _resolvedSchemes[requestKey];
+    if (resolved != null) {
+      _scheme = resolved;
+      return;
     }
-    final future = _schemeCache.putIfAbsent(
+    if (_scheme?.brightness != base.brightness) {
+      _scheme = null;
+    }
+
+    _makeSchemeCacheRoom(requestKey);
+    final future = _pendingSchemes.putIfAbsent(
       requestKey,
       () => ColorScheme.fromImageProvider(
         provider: provider,
         brightness: base.brightness,
         dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
         contrastLevel: 0.1,
-      ).catchError((_) => base),
+      ),
     );
-    future.then((scheme) {
-      if (!mounted || _activeRequestKey != requestKey) return;
-      setState(() => _scheme = scheme);
-    });
+    future.then(
+      (scheme) {
+        if (identical(_pendingSchemes[requestKey], future)) {
+          _pendingSchemes.remove(requestKey);
+          _resolvedSchemes[requestKey] = scheme;
+        }
+        if (!mounted || _activeRequestKey != requestKey) return;
+        setState(() => _scheme = scheme);
+      },
+      onError: (_) {
+        if (identical(_pendingSchemes[requestKey], future)) {
+          _pendingSchemes.remove(requestKey);
+        }
+      },
+    );
+  }
+
+  static void _makeSchemeCacheRoom(_ArtworkSchemeCacheKey requestKey) {
+    if (_resolvedSchemes.containsKey(requestKey) ||
+        _pendingSchemes.containsKey(requestKey)) {
+      return;
+    }
+    while (_resolvedSchemes.length + _pendingSchemes.length >=
+        _schemeCacheLimit) {
+      if (_resolvedSchemes.isNotEmpty) {
+        _resolvedSchemes.remove(_resolvedSchemes.keys.first);
+      } else {
+        _pendingSchemes.remove(_pendingSchemes.keys.first);
+      }
+    }
   }
 
   @override

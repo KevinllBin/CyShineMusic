@@ -1068,6 +1068,24 @@ void main() {
           '</LyricInfo></QrcInfos>';
       expect(txExtractLyricContent(raw), "[0,1000]It's(0,1000)");
     });
+
+    test('keeps literal quotes inside QRC LyricContent', () {
+      const raw =
+          '<?xml version="1.0"?><QrcInfos><LyricInfo>'
+          '<Lyric_1 LyricType="1" LyricContent="'
+          '[10035,11856]Produced (10035,456)by: (10491,456)Bradford '
+          '(10947,456)"(11403,456)Brad(11859,456)" (12315,456)Delson\n'
+          '[21892,1000]I&apos;m(21892,1000) tired'
+          '"/>'
+          '</LyricInfo></QrcInfos>';
+
+      expect(
+        txExtractLyricContent(raw),
+        '[10035,11856]Produced (10035,456)by: (10491,456)Bradford '
+        '(10947,456)"(11403,456)Brad(11859,456)" (12315,456)Delson\n'
+        "[21892,1000]I'm(21892,1000) tired",
+      );
+    });
   });
 
   group('CryptoUtil', () {

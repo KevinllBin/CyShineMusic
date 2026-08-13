@@ -17,22 +17,25 @@ class PlaylistSdk {
   static Future<PlaylistInfo> parse({
     required String input,
     MusicSource source = MusicSource.all,
+    int? maxTracks,
   }) async {
-    final target = parseTarget(input, source: source);
+    final target =
+        parseTarget(input, source: source) ??
+        await _parseRedirectTarget(input, source: source);
     if (target == null) {
       throw Exception('无法识别歌单链接或 ID');
     }
     switch (target.source) {
       case MusicSource.wy:
-        return _parseWy(target.id);
+        return _parseWy(target.id, maxTracks: maxTracks);
       case MusicSource.tx:
-        return _parseTx(target.id);
+        return _parseTx(target.id, maxTracks: maxTracks);
       case MusicSource.kw:
-        return KwPlaylistAdapter.parse(target.id);
+        return KwPlaylistAdapter.parse(target.id, maxTracks: maxTracks);
       case MusicSource.kg:
-        return KgPlaylistAdapter.parse(target.id);
+        return KgPlaylistAdapter.parse(target.id, maxTracks: maxTracks);
       case MusicSource.mg:
-        return MgPlaylistAdapter.parse(target.id);
+        return MgPlaylistAdapter.parse(target.id, maxTracks: maxTracks);
       case MusicSource.all:
         throw Exception('无法识别歌单来源');
     }
@@ -44,6 +47,12 @@ class PlaylistSdk {
   }) {
     final text = input.trim();
     if (text.isEmpty) return null;
+    if (source == MusicSource.kg) {
+      final kgId = _parseKgText(text);
+      if (kgId != null) {
+        return ParsedPlaylistTarget(id: kgId, source: MusicSource.kg);
+      }
+    }
     if (RegExp(r'^\d{4,}$').hasMatch(text)) {
       return source != MusicSource.all
           ? ParsedPlaylistTarget(id: text, source: source)
@@ -53,6 +62,30 @@ class PlaylistSdk {
     for (final uri in _extractWebUris(text)) {
       final target = _parseUriTarget(uri, source);
       if (target != null) return target;
+    }
+    return null;
+  }
+
+  static Future<ParsedPlaylistTarget?> _parseRedirectTarget(
+    String input, {
+    required MusicSource source,
+  }) async {
+    for (final uri in _extractWebUris(input)) {
+      try {
+        final redirected = await SdkHttp.resolveRedirectLocation(
+          uri.toString(),
+          headers: const {
+            'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                'Chrome/120.0.0.0 Safari/537.36',
+          },
+        );
+        if (redirected == null || redirected == uri) continue;
+        final target = _parseUriTarget(redirected, source);
+        if (target != null) return target;
+      } catch (_) {
+        // Share short links are best-effort; fall through to the normal error.
+      }
     }
     return null;
   }
@@ -183,11 +216,84 @@ class PlaylistSdk {
   }
 
   static String? _parseKgId(Uri uri) {
+    final fromText = _parseKgText(uri.toString());
+    if (fromText != null) return fromText;
+
     final match = RegExp(
       r'(?:^|/)(?:special/single|plist/list)/(\d+)(?:[-./]|$)',
       caseSensitive: false,
     ).firstMatch(uri.path);
     return _numeric(match?.group(1));
+  }
+
+  static String? _parseKgText(String input) {
+    final text = input.trim();
+    if (text.isEmpty) return null;
+    if (RegExp(r'^collection_\w+', caseSensitive: false).hasMatch(text)) {
+      return 'global:$text';
+    }
+    if (RegExp(r'^gcid_\w+', caseSensitive: false).hasMatch(text)) {
+      return 'gcid:$text';
+    }
+    if (text.startsWith('global:') ||
+        text.startsWith('chain:') ||
+        text.startsWith('gcid:')) {
+      return text;
+    }
+
+    final uri = Uri.tryParse(text);
+    if (uri != null && uri.host.isNotEmpty) {
+      final global = _queryValue(uri, const {
+        'global_specialid',
+        'global_collection_id',
+      });
+      if (global != null && global.trim().isNotEmpty) {
+        return 'global:${global.trim()}';
+      }
+
+      final chain = _queryValue(uri, const {'chain'});
+      if (chain != null && chain.trim().isNotEmpty) {
+        return 'chain:${chain.trim()}';
+      }
+
+      final special = _numeric(_queryValue(uri, const {'specialid'}));
+      if (special != null) return special;
+
+      final share = RegExp(
+        r'(?:^|/)share/([A-Za-z0-9_]+)\.html(?:/|$)',
+        caseSensitive: false,
+      ).firstMatch(uri.path);
+      if (share != null) return 'chain:${share.group(1)}';
+
+      final songList = RegExp(
+        r'(?:^|/)songlist/([^/?#]+)(?:/|$)',
+        caseSensitive: false,
+      ).firstMatch(uri.path);
+      final songListId = songList?.group(1)?.trim();
+      if (songListId != null && songListId.isNotEmpty) {
+        if (RegExp(r'^\d{4,}$').hasMatch(songListId)) return songListId;
+        return RegExp(r'^gcid_\w+', caseSensitive: false).hasMatch(songListId)
+            ? 'gcid:$songListId'
+            : 'chain:$songListId';
+      }
+    }
+
+    final global = RegExp(
+      r'(?:global_specialid|global_collection_id)=([A-Za-z0-9_]+)',
+      caseSensitive: false,
+    ).firstMatch(text);
+    if (global != null) return 'global:${global.group(1)}';
+
+    final chain = RegExp(
+      r'(?:^|[?&])chain=([A-Za-z0-9_]+)',
+      caseSensitive: false,
+    ).firstMatch(text);
+    if (chain != null) return 'chain:${chain.group(1)}';
+
+    final gcid = RegExp(r'gcid_\w+', caseSensitive: false).firstMatch(text);
+    if (gcid != null) return 'gcid:${gcid.group(0)}';
+
+    return null;
   }
 
   static String? _parseMgId(Uri uri) {
@@ -235,9 +341,13 @@ class PlaylistSdk {
     return value;
   }
 
-  static Future<PlaylistInfo> _parseWy(String id) async {
+  static Future<PlaylistInfo> _parseWy(String id, {int? maxTracks}) async {
+    final requestLimit = maxTracks != null && maxTracks > 0
+        ? maxTracks
+        : 100000;
     final detail = await SdkHttp.getJson(
-      'https://music.163.com/api/v6/playlist/detail?id=$id&n=100000&s=0',
+      'https://music.163.com/api/v6/playlist/detail?id=$id'
+      '&n=$requestLimit&s=0',
       headers: const {
         'Referer': 'https://music.163.com/',
         'User-Agent':
@@ -257,7 +367,10 @@ class PlaylistSdk {
         .map((item) => item['id']?.toString())
         .whereType<String>()
         .toList();
-    final completedSongs = await _completeWySongs(trackIds, songs);
+    final limitedTrackIds = _takePlaylistMaps(trackIds, maxTracks);
+    final completedSongs = trackIds.isEmpty
+        ? _takePlaylistMaps(songs, maxTracks)
+        : await _completeWySongs(limitedTrackIds, songs);
     final tracks = completedSongs
         .map(_parseWySong)
         .whereType<MusicInfo>()
@@ -398,22 +511,25 @@ class PlaylistSdk {
         : raw;
   }
 
-  static Future<PlaylistInfo> _parseTx(String id) async {
+  static Future<PlaylistInfo> _parseTx(String id, {int? maxTracks}) async {
     try {
-      return await _parseTxMusicu(id);
+      return await _parseTxMusicu(id, maxTracks: maxTracks);
     } catch (_) {
-      return _parseTxQzone(id);
+      return _parseTxQzone(id, maxTracks: maxTracks);
     }
   }
 
-  static Future<PlaylistInfo> _parseTxMusicu(String id) async {
+  static Future<PlaylistInfo> _parseTxMusicu(
+    String id, {
+    int? maxTracks,
+  }) async {
     const pageSize = 30;
-    const maxTracks = 10000;
+    final hardLimit = _playlistTrackLimit(maxTracks);
     final songs = <Map>[];
     Map? dirInfo;
     int? expectedCount;
 
-    for (var begin = 0; ; begin += pageSize) {
+    for (var begin = 0; songs.length < hardLimit; begin += pageSize) {
       final result = await SdkHttp.fetch<dynamic>(
         'https://u.y.qq.com/cgi-bin/musicu.fcg',
         method: 'POST',
@@ -452,23 +568,24 @@ class PlaylistSdk {
       }
 
       dirInfo ??= data['dirinfo'] as Map?;
-      expectedCount ??=
-          int.tryParse(dirInfo?['songnum']?.toString() ?? '') ?? 0;
+      expectedCount ??= int.tryParse(dirInfo?['songnum']?.toString() ?? '');
       final page = (data['songlist'] as List? ?? const [])
           .whereType<Map>()
           .toList();
-      songs.addAll(page);
+      songs.addAll(page.take(hardLimit - songs.length));
 
-      final targetCount = expectedCount.clamp(0, maxTracks);
+      final targetCount = _playlistTargetCount(expectedCount, hardLimit);
       if (songs.length >= targetCount) break;
+      if (page.isEmpty && expectedCount == null) break;
       if (page.isEmpty || begin + pageSize >= targetCount) {
         throw Exception('QQ 歌单分页内容不完整');
       }
     }
 
     if (dirInfo == null) throw Exception('QQ 歌单为空或不可访问');
+    final targetCount = _playlistTargetCount(expectedCount, hardLimit);
     final tracks = songs
-        .take(expectedCount.clamp(0, maxTracks))
+        .take(targetCount)
         .map(_parseTxSong)
         .whereType<MusicInfo>()
         .toList();
@@ -491,7 +608,7 @@ class PlaylistSdk {
     return jsonDecode(body);
   }
 
-  static Future<PlaylistInfo> _parseTxQzone(String id) async {
+  static Future<PlaylistInfo> _parseTxQzone(String id, {int? maxTracks}) async {
     final body = await SdkHttp.getJson(
       'https://i.y.qq.com/qzone-music/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg'
       '?type=1&json=1&utf8=1&onlysong=0&disstid=$id&format=json'
@@ -510,11 +627,11 @@ class PlaylistSdk {
     }
     final cd = (decoded['cdlist'] as List?)?.whereType<Map>().firstOrNull;
     if (cd == null) throw Exception('QQ 歌单为空或不可访问');
-    final tracks = (cd['songlist'] as List? ?? const [])
-        .whereType<Map>()
-        .map(_parseTxSong)
-        .whereType<MusicInfo>()
-        .toList();
+    final rawSongs = (cd['songlist'] as List? ?? const []).whereType<Map>();
+    final tracks = _takePlaylistMaps(
+      rawSongs,
+      maxTracks,
+    ).whereType<Map>().map(_parseTxSong).whereType<MusicInfo>().toList();
     return PlaylistInfo(
       id: id,
       name: cd['dissname']?.toString() ?? 'QQ 歌单 $id',
@@ -523,9 +640,28 @@ class PlaylistSdk {
       creator: cd['nickname']?.toString(),
       description: cd['desc']?.toString(),
       playCount: (cd['visitnum'] as num?)?.toInt(),
-      trackCount: tracks.length,
+      trackCount: (cd['songlist'] as List?)?.length ?? tracks.length,
       tracks: dedupeMusic(tracks),
     );
+  }
+
+  static int _playlistTrackLimit(int? maxTracks) {
+    const hardLimit = 10000;
+    if (maxTracks == null || maxTracks <= 0 || maxTracks > hardLimit) {
+      return hardLimit;
+    }
+    return maxTracks;
+  }
+
+  static int _playlistTargetCount(int? expectedCount, int hardLimit) {
+    final expected = expectedCount ?? 0;
+    if (expected <= 0) return hardLimit;
+    return expected < hardLimit ? expected : hardLimit;
+  }
+
+  static List<T> _takePlaylistMaps<T>(Iterable<T> values, int? maxTracks) {
+    if (maxTracks == null || maxTracks <= 0) return values.toList();
+    return values.take(maxTracks).toList();
   }
 
   static MusicInfo? _parseTxSong(Map item) {

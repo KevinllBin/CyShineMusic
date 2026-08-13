@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:cy_shine_music/core/storage/settings_store.dart';
 import 'package:cy_shine_music/features/shell/shell_route_utils.dart';
 import 'package:cy_shine_music/features/shell/widgets/shell_header.dart';
 import 'package:cy_shine_music/features/shell/widgets/toolbar_metrics.dart';
@@ -55,10 +57,15 @@ Future<void> _pumpHeader(
   WidgetTester tester,
   String location, {
   List<Override> overrides = const [],
-}) {
-  return tester.pumpWidget(
+}) async {
+  SharedPreferences.setMockInitialValues({});
+  final prefs = await SharedPreferences.getInstance();
+  await tester.pumpWidget(
     ProviderScope(
-      overrides: overrides,
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        ...overrides,
+      ],
       child: MaterialApp(
         home: Scaffold(
           body: ShellHeader(

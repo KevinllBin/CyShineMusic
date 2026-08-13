@@ -17,6 +17,7 @@ import 'package:cy_shine_music/core/services/download_service.dart';
 import 'package:cy_shine_music/core/storage/settings_store.dart';
 import 'package:cy_shine_music/features/downloads/download_history_store.dart';
 import 'package:cy_shine_music/features/playlists/online_playlist_import_page.dart';
+import 'package:cy_shine_music/features/playlists/lx_playlist_import.dart';
 import 'package:cy_shine_music/features/playlists/playlist_browser_sheet.dart';
 import 'package:cy_shine_music/features/playlists/playlist_detail_page.dart';
 import 'package:cy_shine_music/features/playlists/playlist_detail_toolbar_state.dart';
@@ -258,6 +259,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('新建歌单'), findsOneWidget);
     expect(find.text('在线导入'), findsOneWidget);
+    expect(find.text('洛雪导入'), findsOneWidget);
     expect(find.text('夜晚循环'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
@@ -271,6 +273,79 @@ void main() {
     expect(find.text('咪咕'), findsOneWidget);
     expect(find.text('解析歌单'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('management imports a selected LX playlist file', (tester) async {
+    await _useCompactViewport(tester);
+    final prefs = await _prefsWith(const []);
+    final api = _BlockingCoverMusicApi();
+    final payload = {
+      'type': 'playListPart_v2',
+      'data': {
+        'id': 'love',
+        'name': 'list__name_love',
+        'list': [
+          {
+            'id': 'kg_1',
+            'name': '导入歌曲',
+            'singer': '歌手',
+            'source': 'kg',
+            'interval': '03:00',
+            'meta': {
+              'songId': '1',
+              'albumName': '专辑',
+              'qualitys': [
+                {'type': '320k', 'size': '2048'},
+              ],
+            },
+          },
+        ],
+      },
+    };
+    final container = ProviderContainer(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        musicApiProvider.overrideWithValue(api),
+        lxPlaylistFilePickerProvider.overrideWithValue(
+          () async => LxPlaylistPickedFile(
+            name: 'love.json',
+            bytes: utf8.encode(jsonEncode(payload)),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      _testAppWithContainer(container, const PlaylistManagementPage()),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('洛雪导入'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(api.coverRequests, 1);
+    expect(find.text('封面 0/1'), findsOneWidget);
+    expect(container.read(localPlaylistsProvider), isEmpty);
+
+    api.complete('https://img.test/imported-cover.jpg');
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final playlists = container.read(localPlaylistsProvider);
+    expect(playlists, hasLength(1));
+    expect(playlists.single.name, '我的收藏');
+    expect(playlists.single.tracks.single.name, '导入歌曲');
+    expect(
+      playlists.single.tracks.single.picUrl,
+      'https://img.test/imported-cover.jpg',
+    );
+    expect(
+      playlists.single.tracks.single.musicInfo?.meta.picUrl,
+      'https://img.test/imported-cover.jpg',
+    );
+    expect(find.text('我的收藏'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(seconds: 6));
   });
 
   testWidgets('empty playlist detail renders without overflow', (tester) async {
@@ -293,6 +368,58 @@ void main() {
     expect(find.text('空歌单'), findsOneWidget);
     expect(find.text('歌单还是空的'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('visible missing playlist cover is resolved and persisted', (
+    tester,
+  ) async {
+    await _useCompactViewport(tester);
+    final track = PlaylistTrack.fromMusicInfo(
+      _playlistMusic('missing-cover', '缺少封面的歌曲'),
+    );
+    final prefs = await _prefsWith([
+      _playlist(id: 'cover-repair', name: '自动补图', tracks: [track]),
+    ]);
+    final api = _CoverResolvingMusicApi();
+    final container = ProviderContainer(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        musicApiProvider.overrideWithValue(api),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      _testAppWithContainer(
+        container,
+        const PlaylistDetailPage(playlistId: 'cover-repair'),
+      ),
+    );
+    for (var attempt = 0; attempt < 20; attempt++) {
+      await tester.pump(const Duration(milliseconds: 20));
+      final repaired = container
+          .read(localPlaylistsProvider)
+          .single
+          .tracks
+          .single
+          .picUrl;
+      if (repaired != null) break;
+    }
+
+    final repaired = container
+        .read(localPlaylistsProvider)
+        .single
+        .tracks
+        .single;
+    expect(api.coverRequests, 1);
+    expect(api.lastPreferCached, isFalse);
+    expect(repaired.picUrl, 'https://img.test/missing-cover.jpg');
+    expect(
+      repaired.musicInfo?.meta.picUrl,
+      'https://img.test/missing-cover.jpg',
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(seconds: 5));
   });
 
   testWidgets('playlist rename dialog closes safely on cancel and save', (
@@ -325,6 +452,62 @@ void main() {
     expect(find.text('新的歌单名'), findsOneWidget);
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('management only offers update for online playlists', (
+    tester,
+  ) async {
+    await _useCompactViewport(tester);
+    final online = _playlist(
+      id: 'online',
+      name: '收藏的榜单',
+      tracks: [PlaylistTrack.fromMusicInfo(_playlistMusic('old', '旧歌曲'))],
+      originPlaylistId: '3778678',
+      originSourceCode: MusicSource.wy.code,
+    );
+    final local = _playlist(id: 'local', name: '本地新建');
+    final prefs = await _prefsWith([online, local]);
+    final api = _FakeMusicApi(
+      PlaylistInfo(
+        id: '3778678',
+        name: '线上榜单',
+        source: MusicSource.wy,
+        tracks: [_playlistMusic('old', '新歌名'), _playlistMusic('new', '新歌曲')],
+      ),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        musicApiProvider.overrideWithValue(api),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      _testAppWithContainer(container, const PlaylistManagementPage()),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('歌单选项').first);
+    await tester.pumpAndSettle();
+    expect(find.text('更新歌单'), findsOneWidget);
+    await tester.tap(find.text('更新歌单'));
+    await tester.pumpAndSettle();
+
+    final refreshed = container
+        .read(localPlaylistsProvider)
+        .firstWhere((playlist) => playlist.id == online.id);
+    expect(refreshed.tracks, hasLength(2));
+    expect(refreshed.tracks.first.name, '新歌名');
+
+    await tester.tap(find.byTooltip('歌单选项').last);
+    await tester.pumpAndSettle();
+    expect(find.text('更新歌单'), findsNothing);
+    expect(find.text('重命名'), findsOneWidget);
+    expect(find.text('删除'), findsOneWidget);
+    await tester.tapAt(const Offset(1, 1));
+    await tester.pump(const Duration(seconds: 4));
     expect(tester.takeException(), isNull);
   });
 
@@ -605,15 +788,49 @@ class _FakeMusicApi extends MusicApi {
   Future<PlaylistInfo> parsePlaylist({
     required String input,
     MusicSource source = MusicSource.all,
+    int? maxTracks,
   }) async {
     return playlist;
   }
+}
+
+class _CoverResolvingMusicApi extends MusicApi {
+  int coverRequests = 0;
+  bool? lastPreferCached;
+
+  @override
+  Future<String?> getPicUrl({
+    required MusicInfo musicInfo,
+    bool preferCached = true,
+  }) async {
+    coverRequests++;
+    lastPreferCached = preferCached;
+    return 'https://img.test/${musicInfo.id}.jpg';
+  }
+}
+
+class _BlockingCoverMusicApi extends MusicApi {
+  final Completer<String?> _completer = Completer<String?>();
+  int coverRequests = 0;
+
+  @override
+  Future<String?> getPicUrl({
+    required MusicInfo musicInfo,
+    bool preferCached = true,
+  }) {
+    coverRequests++;
+    return _completer.future;
+  }
+
+  void complete(String? url) => _completer.complete(url);
 }
 
 LocalPlaylist _playlist({
   required String id,
   required String name,
   List<PlaylistTrack> tracks = const [],
+  String? originPlaylistId,
+  String? originSourceCode,
 }) {
   final now = DateTime.utc(2026, 7, 20);
   return LocalPlaylist(
@@ -622,6 +839,8 @@ LocalPlaylist _playlist({
     tracks: tracks,
     createdAt: now,
     updatedAt: now,
+    originPlaylistId: originPlaylistId,
+    originSourceCode: originSourceCode,
   );
 }
 

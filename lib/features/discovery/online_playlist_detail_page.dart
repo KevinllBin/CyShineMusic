@@ -1,12 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/api/music_api.dart';
 import '../../core/models/enums.dart';
 import '../../core/models/music_info.dart';
 import '../../core/models/playlist_info.dart';
 import '../../core/models/playlist_summary.dart';
+import '../../core/services/app_logger.dart';
 import '../../core/ui/app_toast.dart';
+import '../../core/ui/app_refresh_indicator.dart';
 import '../../core/ui/cover_placeholder.dart';
 import '../downloads/download_history_store.dart';
 import '../downloads/download_progress.dart';
@@ -40,26 +45,91 @@ class OnlinePlaylistDetailPage extends ConsumerStatefulWidget {
 
 class _OnlinePlaylistDetailPageState
     extends ConsumerState<OnlinePlaylistDetailPage> {
+  static const _summaryCacheLimit = 48;
+
+  int _trackLimit = onlinePlaylistDetailInitialTrackLimit;
+  PlaylistInfo? _lastPlaylist;
+  PlaylistSummary? _summary;
   bool _saving = false;
   bool _removingFavorite = false;
 
-  OnlinePlaylistKey get _key =>
-      OnlinePlaylistKey(source: widget.source, id: widget.playlistId);
+  OnlinePlaylistIdentity get _identity =>
+      (source: widget.source, id: widget.playlistId);
+
+  OnlinePlaylistKey get _key => OnlinePlaylistKey(
+    source: widget.source,
+    id: widget.playlistId,
+    maxTracks: _trackLimit,
+  );
 
   String get _returnLocation =>
       '/discover/playlists/${widget.source.code}/${widget.playlistId}';
 
   @override
+  void initState() {
+    super.initState();
+    _summary =
+        widget.summary ??
+        ref.read(onlinePlaylistSummaryCacheProvider)[_identity];
+    _cacheSummary(_summary);
+  }
+
+  @override
+  void didUpdateWidget(covariant OnlinePlaylistDetailPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final identityChanged =
+        oldWidget.source != widget.source ||
+        oldWidget.playlistId != widget.playlistId;
+    if (identityChanged) {
+      _trackLimit = onlinePlaylistDetailInitialTrackLimit;
+      _lastPlaylist = null;
+      _summary =
+          widget.summary ??
+          ref.read(onlinePlaylistSummaryCacheProvider)[_identity];
+      _saving = false;
+      _removingFavorite = false;
+    } else if (widget.summary != null) {
+      _summary = widget.summary;
+    }
+    _cacheSummary(_summary);
+  }
+
+  void _cacheSummary(PlaylistSummary? summary) {
+    if (summary == null) return;
+    final cache = ref.read(onlinePlaylistSummaryCacheProvider);
+    if (cache.length >= _summaryCacheLimit && !cache.containsKey(_identity)) {
+      cache.remove(cache.keys.first);
+    }
+    cache[_identity] = summary;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final detail = ref.watch(onlinePlaylistDetailProvider(_key));
+    final loaded = detail.asData?.value;
+    if (loaded != null) {
+      _lastPlaylist = _withDiscoveryArtwork(loaded);
+    }
+    final cached = _lastPlaylist;
+    if (cached != null && loaded == null) {
+      final loadMoreError = detail.whenOrNull(
+        error: (error, _) => _friendlyError(error),
+      );
+      return _buildPlaylist(
+        context,
+        cached,
+        loadingMore: detail.isLoading,
+        loadMoreError: loadMoreError,
+      );
+    }
     return detail.when(
       loading: () => _DetailLoading(
-        summary: widget.summary,
+        summary: _summary,
         source: widget.source,
         playlistId: widget.playlistId,
       ),
       error: (error, _) => _DetailError(
-        summary: widget.summary,
+        summary: _summary,
         source: widget.source,
         playlistId: widget.playlistId,
         message: _friendlyError(error),
@@ -71,7 +141,7 @@ class _OnlinePlaylistDetailPageState
   }
 
   PlaylistInfo _withDiscoveryArtwork(PlaylistInfo playlist) {
-    final summary = widget.summary;
+    final summary = _summary;
     if (summary == null) return playlist;
     return PlaylistInfo(
       id: playlist.id,
@@ -86,23 +156,21 @@ class _OnlinePlaylistDetailPageState
     );
   }
 
-  Widget _buildPlaylist(BuildContext context, PlaylistInfo playlist) {
+  Widget _buildPlaylist(
+    BuildContext context,
+    PlaylistInfo playlist, {
+    bool loadingMore = false,
+    String? loadMoreError,
+  }) {
     final local = _findSavedPlaylist(
       ref.watch(localPlaylistsProvider),
       playlist,
     );
-    final queueId = 'online:${playlist.source.code}:${playlist.id}';
-    final queue = <DownloadHistoryEntry>[];
-    for (final music in playlist.tracks) {
-      final entry = PlaylistTrack.fromMusicInfo(
-        music,
-      ).toQueueEntry(playlistId: queueId);
-      if (entry != null) queue.add(entry);
-    }
+    final queue = _onlinePlaylistQueue(playlist);
 
     final artworkProvider = networkPlaylistArtworkProvider(
       playlist.coverUrl,
-      size: widget.summary == null ? 1200 : discoveryPlaylistArtworkSize,
+      size: _summary == null ? 1200 : discoveryPlaylistArtworkSize,
     );
     final wide = playlistDetailUsesWideLayout(context);
     final metadata = [
@@ -115,8 +183,8 @@ class _OnlinePlaylistDetailPageState
     return PlaylistArtworkTheme(
       artworkProvider: artworkProvider,
       cacheKey: _onlineArtworkCacheKey(
-        playlist.source,
-        playlist.id,
+        widget.source,
+        widget.playlistId,
         playlist.coverUrl,
       ),
       immersiveStatusBar: !wide,
@@ -132,7 +200,7 @@ class _OnlinePlaylistDetailPageState
             return PlaylistDetailActions(
               onPlay: queue.isEmpty
                   ? null
-                  : () => _playQueue(queue.first, queue),
+                  : () => _playQueue(playlist, queue.first),
               onFavorite: _saving
                   ? null
                   : () => _toggleFavorite(playlist, local),
@@ -143,9 +211,16 @@ class _OnlinePlaylistDetailPageState
             );
           }
 
+          final hasTrackFooter =
+              loadingMore ||
+              (loadMoreError != null &&
+                  playlist.tracks.length < playlist.totalTracks);
           final trackSlivers = <Widget>[
             SliverToBoxAdapter(
-              child: _PlaylistTracksHeading(count: playlist.tracks.length),
+              child: _PlaylistTracksHeading(
+                count: playlist.tracks.length,
+                total: playlist.totalTracks,
+              ),
             ),
             if (playlist.tracks.isEmpty)
               const SliverFillRemaining(
@@ -154,11 +229,17 @@ class _OnlinePlaylistDetailPageState
               )
             else
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 156),
+                padding: EdgeInsets.fromLTRB(
+                  12,
+                  0,
+                  12,
+                  hasTrackFooter ? 0 : 156,
+                ),
                 sliver: SliverList.separated(
                   itemCount: playlist.tracks.length,
                   separatorBuilder: (_, _) => _trackListDivider(scheme),
                   itemBuilder: (context, index) {
+                    _requestMoreTracksIfNeeded(playlist, index);
                     final music = playlist.tracks[index];
                     final entry = queue.where((item) {
                       final json = item.musicJson;
@@ -171,11 +252,21 @@ class _OnlinePlaylistDetailPageState
                           music: music,
                           onPlay: entry == null
                               ? null
-                              : () => _playQueue(entry, queue),
+                              : () => _playQueue(playlist, entry),
                         ),
                       ),
                     );
                   },
+                ),
+              ),
+            if (loadingMore)
+              const SliverToBoxAdapter(child: _LoadMoreTracksIndicator())
+            else if (loadMoreError != null &&
+                playlist.tracks.length < playlist.totalTracks)
+              SliverToBoxAdapter(
+                child: _LoadMoreTracksError(
+                  message: loadMoreError,
+                  onRetry: () => _loadMoreTracks(playlist),
                 ),
               ),
           ];
@@ -199,7 +290,7 @@ class _OnlinePlaylistDetailPageState
                       description: playlist.description,
                       actions: actionsWith(const EdgeInsets.only(top: 4)),
                     ),
-                    right: RefreshIndicator(
+                    right: AppRefreshIndicator(
                       onRefresh: refresh,
                       child: CustomScrollView(
                         key: PageStorageKey(
@@ -212,7 +303,7 @@ class _OnlinePlaylistDetailPageState
                       ),
                     ),
                   )
-                : RefreshIndicator(
+                : AppRefreshIndicator(
                     onRefresh: refresh,
                     child: CustomScrollView(
                       key: PageStorageKey(
@@ -257,18 +348,34 @@ class _OnlinePlaylistDetailPageState
   }
 
   Future<void> _playQueue(
-    DownloadHistoryEntry entry,
-    List<DownloadHistoryEntry> queue,
+    PlaylistInfo playlist,
+    DownloadHistoryEntry selectedEntry,
   ) async {
     final available = await ensureQueueEntryMusicSourceAvailable(
       context,
-      entry,
+      selectedEntry,
     );
     if (!available || !mounted) return;
+
+    final queue = _onlinePlaylistQueue(playlist);
+    final entry = _matchingQueueEntry(queue, selectedEntry);
+    if (entry == null) return;
+    final player = ref.read(playerControllerProvider.notifier);
+    final api = ref.read(musicApiProvider);
+
     context.go('/player', extra: _returnLocation);
-    await ref
-        .read(playerControllerProvider.notifier)
-        .playFromPlaylistQueue(entry, queue);
+    final playback = player.playFromPlaylistQueue(entry, queue);
+    if (playlist.tracks.length < playlist.totalTracks) {
+      unawaited(
+        _expandOnlinePlaylistQueue(
+          api: api,
+          player: player,
+          playlist: playlist,
+          initialQueue: queue,
+        ),
+      );
+    }
+    await playback;
   }
 
   Future<void> _toggleFavorite(
@@ -284,14 +391,19 @@ class _OnlinePlaylistDetailPageState
     try {
       final notifier = ref.read(localPlaylistsProvider.notifier);
       if (savedPlaylist == null) {
-        await notifier.importOnline(playlist);
+        final fullPlaylist = _withDiscoveryArtwork(
+          await ref
+              .read(musicApiProvider)
+              .parsePlaylist(input: playlist.id, source: playlist.source),
+        );
+        await notifier.importOnline(fullPlaylist);
       } else {
         await notifier.delete(savedPlaylist.id);
       }
       if (!mounted) return;
       showAppToast(
         context,
-        removing ? '已取消收藏' : '已收藏到我的歌单',
+        removing ? '已取消收藏' : '已完整收藏到我的歌单',
         type: AppToastType.success,
       );
     } catch (error) {
@@ -309,6 +421,23 @@ class _OnlinePlaylistDetailPageState
         });
       }
     }
+  }
+
+  void _requestMoreTracksIfNeeded(PlaylistInfo playlist, int index) {
+    if (index < playlist.tracks.length - 6) return;
+    _loadMoreTracks(playlist);
+  }
+
+  void _loadMoreTracks(PlaylistInfo playlist) {
+    if (playlist.tracks.length >= playlist.totalTracks) return;
+    if (_trackLimit >= playlist.totalTracks) return;
+    final next = _trackLimit + onlinePlaylistDetailTrackPageSize;
+    final target = next > playlist.totalTracks ? playlist.totalTracks : next;
+    if (target <= _trackLimit) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _trackLimit >= target) return;
+      setState(() => _trackLimit = target);
+    });
   }
 }
 
@@ -527,11 +656,7 @@ class _DetailError extends StatelessWidget {
     );
     return PlaylistArtworkTheme(
       artworkProvider: artworkProvider,
-      cacheKey: _onlineArtworkCacheKey(
-        source,
-        item?.id ?? 'unknown',
-        item?.coverUrl,
-      ),
+      cacheKey: _onlineArtworkCacheKey(source, playlistId, item?.coverUrl),
       immersiveStatusBar: !wide,
       child: Builder(
         builder: (context) {
@@ -592,9 +717,18 @@ class _DetailError extends StatelessWidget {
 }
 
 class _PlaylistTracksHeading extends StatelessWidget {
-  const _PlaylistTracksHeading({this.count});
+  const _PlaylistTracksHeading({this.count, this.total});
 
   final int? count;
+  final int? total;
+
+  String get _label {
+    final loaded = count;
+    final all = total;
+    if (loaded == null) return '歌曲';
+    if (all != null && all > loaded) return '歌曲  $loaded/$all';
+    return '歌曲  $loaded';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -608,13 +742,69 @@ class _PlaylistTracksHeading extends StatelessWidget {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                count == null ? '歌曲' : '歌曲  $count',
+                _label,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0,
                 ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LoadMoreTracksIndicator extends StatelessWidget {
+  const _LoadMoreTracksIndicator();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 156),
+      child: Center(
+        child: SizedBox.square(
+          dimension: 22,
+          child: CircularProgressIndicator(strokeWidth: 2.4),
+        ),
+      ),
+    );
+  }
+}
+
+class _LoadMoreTracksError extends StatelessWidget {
+  const _LoadMoreTracksError({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 156),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 900),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text(
+                  message,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: scheme.onSurfaceVariant),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton.filledTonal(
+                tooltip: '重试',
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+            ],
           ),
         ),
       ),
@@ -715,6 +905,56 @@ String _onlineArtworkCacheKey(
   String? coverUrl,
 ) {
   return 'online:${source.code}:$playlistId:${coverUrl?.trim() ?? ''}';
+}
+
+List<DownloadHistoryEntry> _onlinePlaylistQueue(PlaylistInfo playlist) {
+  final queueId = 'online:${playlist.source.code}:${playlist.id}';
+  final queue = <DownloadHistoryEntry>[];
+  for (final music in playlist.tracks) {
+    final entry = PlaylistTrack.fromMusicInfo(
+      music,
+    ).toQueueEntry(playlistId: queueId);
+    if (entry != null) queue.add(entry);
+  }
+  return queue;
+}
+
+DownloadHistoryEntry? _matchingQueueEntry(
+  Iterable<DownloadHistoryEntry> queue,
+  DownloadHistoryEntry selected,
+) {
+  for (final entry in queue) {
+    if (entry.id == selected.id ||
+        (entry.sourceCode == selected.sourceCode &&
+            entry.musicId == selected.musicId)) {
+      return entry;
+    }
+  }
+  return null;
+}
+
+Future<void> _expandOnlinePlaylistQueue({
+  required MusicApi api,
+  required PlayerController player,
+  required PlaylistInfo playlist,
+  required List<DownloadHistoryEntry> initialQueue,
+}) async {
+  try {
+    final fullPlaylist = await api.parsePlaylist(
+      input: playlist.id,
+      source: playlist.source,
+    );
+    final fullQueue = _onlinePlaylistQueue(fullPlaylist);
+    player.expandPlaylistQueue(
+      expectedQueue: initialQueue,
+      expandedQueue: fullQueue,
+    );
+  } catch (error) {
+    await AppLogger.write(
+      'player',
+      'expand online playlist queue failed: $error',
+    );
+  }
 }
 
 LocalPlaylist? _findSavedPlaylist(

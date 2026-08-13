@@ -14,7 +14,6 @@ import '../api/music_api.dart';
 import '../models/enums.dart';
 import '../models/lyric_format.dart';
 import '../models/music_info.dart';
-import '../models/music_url.dart';
 import '../music_sources/music_url_resolver.dart';
 import '../storage/settings_store.dart';
 import '../ui/cover_image_source.dart';
@@ -53,6 +52,15 @@ class EmbedRequest {
 class DownloadResult {
   const DownloadResult({required this.path});
   final String path;
+}
+
+class DownloadSourceFallbackException implements Exception {
+  const DownloadSourceFallbackException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
 class BatchDownloadResult {
@@ -171,7 +179,7 @@ class DownloadService {
     }
 
     Quality? selectedQuality = quality;
-    String? tmpPath;
+    Directory? taskCacheDir;
     try {
       final resolver = _ref.read(musicUrlResolverProvider);
       final requestedQuality = selectedQuality ??= await resolver
@@ -184,77 +192,103 @@ class DownloadService {
         'lyricFormat=${embed.lyricFormat.code}',
       );
 
-      // 1. Resolve a direct URL through the active on-device JS source.
-      log('step1 resolve with active local music source');
-      final MusicUrl musicUrl;
+      // Resolve and transfer inside the same source attempt so a stale CDN
+      // URL can fall through to the next enabled source.
+      log('step1 resolve with enabled local music sources');
+      final destDir = await _resolveDestinationDir(settings.downloadDir, log);
+      final cacheRoot = await getTemporaryDirectory();
+      taskCacheDir = await cacheRoot.createTemp('cyshine-download-');
+
+      final MusicSourceFallbackResult<_DownloadedAudio> sourceResult;
       try {
-        musicUrl = await resolver.resolve(
+        sourceResult = await resolver.useFirstAvailable<_DownloadedAudio>(
           music: music,
           quality: requestedQuality,
+          shouldFallbackOnConsumerError: _shouldFallbackAfterDownloadError,
+          use: (source, musicUrl) async {
+            if (musicUrl.url.trim().isEmpty) {
+              throw Exception('音源未返回音频地址');
+            }
+            final resolvedQuality = musicUrl.type ?? requestedQuality;
+            final extension = FileNaming.extensionFor(
+              requestedQuality,
+              resolvedQuality,
+            );
+            final fileName = FileNaming.resolvedOrBuild(
+              music,
+              extension,
+              musicUrl.fileName,
+            );
+            final candidateTmpPath = p.join(taskCacheDir!.path, fileName);
+
+            progress.updateStage(
+              taskId,
+              DownloadStage.downloading,
+              message: '正在尝试音源：${source.name}',
+            );
+            progress.updateBytes(taskId, 0, null);
+            log(
+              'step1 OK source=${source.name} url.len=${musicUrl.url.length} '
+              'type=${musicUrl.type}',
+            );
+            log('step2 destDir=${destDir.path} fileName=$fileName');
+            log('step3 GET source=${source.name} ${_shortUrl(musicUrl.url)}');
+            try {
+              await dio.download(
+                musicUrl.url,
+                candidateTmpPath,
+                options: Options(
+                  headers: const {
+                    'User-Agent':
+                        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                        'AppleWebKit/537.36 (KHTML, like Gecko) '
+                        'Chrome/120.0.0.0 Safari/537.36',
+                  },
+                  responseType: ResponseType.bytes,
+                ),
+                onReceiveProgress: (received, total) {
+                  progress.updateBytes(
+                    taskId,
+                    received,
+                    total > 0 ? total : null,
+                  );
+                },
+              );
+            } catch (error) {
+              log('step3 FAIL source=${source.name}: $error');
+              if (error is DioException) {
+                log(
+                  'step3 dio: type=${error.type} message=${error.message} '
+                  'status=${error.response?.statusCode}',
+                );
+              }
+              await _deleteTemporaryFile(candidateTmpPath);
+              rethrow;
+            }
+            log('step3 OK source=${source.name} bytes downloaded to tmp');
+            return _DownloadedAudio(
+              tmpPath: candidateTmpPath,
+              fileName: fileName,
+              quality: resolvedQuality,
+            );
+          },
         );
+      } on MusicSourceFallbackException catch (error) {
+        throw _downloadFallbackException(error);
       } catch (e) {
-        log('step1 FAIL: $e');
+        log('step1/3 FAIL: $e');
         if (e is DioException) {
           log(
-            'step1 dio: type=${e.type} message=${e.message} '
+            'step1/3 dio: type=${e.type} message=${e.message} '
             'status=${e.response?.statusCode} body=${e.response?.data}',
           );
         }
         rethrow;
       }
-      log('step1 OK url.len=${musicUrl.url.length} type=${musicUrl.type}');
-      if (musicUrl.url.isEmpty) {
-        throw Exception('音源未返回音频地址');
-      }
-      final resolvedQuality = musicUrl.type ?? requestedQuality;
-      final extension = FileNaming.extensionFor(
-        requestedQuality,
-        resolvedQuality,
-      );
-      final fileName = FileNaming.resolvedOrBuild(
-        music,
-        extension,
-        musicUrl.fileName,
-      );
-
-      // 2. Pick a writable target directory. If MANAGE_EXTERNAL_STORAGE isn't
-      //    granted yet, we'll fall back to the app-private dir transparently.
-      progress.updateStage(taskId, DownloadStage.downloading);
-      final destDir = await _resolveDestinationDir(settings.downloadDir, log);
-      log('step2 destDir=${destDir.path} fileName=$fileName');
-      final cacheDir = await getTemporaryDirectory();
-      tmpPath = p.join(cacheDir.path, fileName);
-
-      // 3. Stream the audio bytes directly from the CDN and bypasses our server.
-      log(
-        'step3 GET ${musicUrl.url.length > 120 ? "${musicUrl.url.substring(0, 120)}..." : musicUrl.url}',
-      );
-      try {
-        await dio.download(
-          musicUrl.url,
-          tmpPath,
-          options: Options(
-            headers: const {
-              'User-Agent':
-                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-                  '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            },
-            responseType: ResponseType.bytes,
-          ),
-          onReceiveProgress: (received, total) {
-            progress.updateBytes(taskId, received, total > 0 ? total : null);
-          },
-        );
-      } catch (e) {
-        log('step3 FAIL: $e');
-        if (e is DioException) {
-          log(
-            'step3 dio: type=${e.type} message=${e.message} status=${e.response?.statusCode}',
-          );
-        }
-        rethrow;
-      }
-      log('step3 OK bytes downloaded to tmp');
+      final downloaded = sourceResult.value;
+      final tmpPath = downloaded.tmpPath;
+      final fileName = downloaded.fileName;
+      final resolvedQuality = downloaded.quality;
 
       // 4. Embed core tags plus any cover/lyrics fetched on-device.
       Uint8List? coverBytes;
@@ -368,10 +402,11 @@ class DownloadService {
       );
       rethrow;
     } finally {
-      if (tmpPath != null) {
+      if (taskCacheDir != null) {
         try {
-          final f = File(tmpPath);
-          if (f.existsSync()) await f.delete();
+          if (taskCacheDir.existsSync()) {
+            await taskCacheDir.delete(recursive: true);
+          }
         } catch (_) {}
       }
     }
@@ -435,6 +470,34 @@ class DownloadService {
   String _shortUrl(String? url) {
     if (url == null || url.isEmpty) return '';
     return url.length > 160 ? '${url.substring(0, 160)}...' : url;
+  }
+
+  bool _shouldFallbackAfterDownloadError(Object error) {
+    if (error is FileSystemException) return false;
+    if (error is DioException && error.error is FileSystemException) {
+      return false;
+    }
+    return true;
+  }
+
+  DownloadSourceFallbackException _downloadFallbackException(
+    MusicSourceFallbackException error,
+  ) {
+    if (error.failures.isEmpty) {
+      return const DownloadSourceFallbackException('没有更多可用的备用音源');
+    }
+    final last = error.failures.last;
+    return DownloadSourceFallbackException(
+      '所有已启用音源均无法下载这首歌（已尝试 ${error.failures.length} 个）：'
+      '${last.source.name}：${_messageFor(last.error)}',
+    );
+  }
+
+  Future<void> _deleteTemporaryFile(String path) async {
+    try {
+      final file = File(path);
+      if (file.existsSync()) await file.delete();
+    } catch (_) {}
   }
 
   Future<Directory> _resolveDestinationDir(
@@ -558,6 +621,18 @@ class DownloadService {
     if (error is DioException) return describeDioError(error);
     return error.toString();
   }
+}
+
+class _DownloadedAudio {
+  const _DownloadedAudio({
+    required this.tmpPath,
+    required this.fileName,
+    required this.quality,
+  });
+
+  final String tmpPath;
+  final String fileName;
+  final Quality quality;
 }
 
 final downloadServiceProvider = Provider<DownloadService>(

@@ -13,6 +13,11 @@ import '../../downloads/download_history_store.dart';
 import '../player_controller.dart';
 import 'player_palette.dart';
 
+const _queueEntryHeight = 66.0;
+const _queueEntrySpacing = 6.0;
+const _queueItemExtent = _queueEntryHeight + _queueEntrySpacing;
+const _queueListTopPadding = 12.0;
+
 class PlaybackQueueButton extends StatelessWidget {
   const PlaybackQueueButton({
     super.key,
@@ -181,22 +186,14 @@ class _PlaybackQueueSheet extends ConsumerWidget {
               ),
               Expanded(
                 child: vm.queue.isNotEmpty
-                    ? ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
-                        itemCount: vm.queue.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 6),
-                        itemBuilder: (context, index) {
-                          final active = index == vm.queueIndex;
-                          return _PlaybackQueueEntryTile(
-                            entry: vm.queue[index],
-                            active: active,
-                            playing: active && vm.playing,
-                            currentTrack: active ? vm.track : null,
-                            onTap: () => ref
-                                .read(playerControllerProvider.notifier)
-                                .playQueueItem(index),
-                          );
-                        },
+                    ? _PlaybackQueueList(
+                        queue: vm.queue,
+                        queueIndex: vm.queueIndex,
+                        track: vm.track,
+                        playing: vm.playing,
+                        onSelect: (index) => ref
+                            .read(playerControllerProvider.notifier)
+                            .playQueueItem(index),
                       )
                     : vm.track == null
                     ? const _PlaybackQueueEmpty()
@@ -218,8 +215,82 @@ class _PlaybackQueueSheet extends ConsumerWidget {
   }
 }
 
+class _PlaybackQueueList extends StatefulWidget {
+  const _PlaybackQueueList({
+    required this.queue,
+    required this.queueIndex,
+    required this.track,
+    required this.playing,
+    required this.onSelect,
+  });
+
+  final List<DownloadHistoryEntry> queue;
+  final int queueIndex;
+  final PlayerTrack? track;
+  final bool playing;
+  final ValueChanged<int> onSelect;
+
+  @override
+  State<_PlaybackQueueList> createState() => _PlaybackQueueListState();
+}
+
+class _PlaybackQueueListState extends State<_PlaybackQueueList> {
+  ScrollController? _scrollController;
+
+  @override
+  void dispose() {
+    _scrollController?.dispose();
+    super.dispose();
+  }
+
+  double _initialScrollOffset(double viewportHeight) {
+    final currentIndex =
+        widget.queueIndex >= 0 && widget.queueIndex < widget.queue.length
+        ? widget.queueIndex
+        : 0;
+    final currentItemCenter =
+        _queueListTopPadding +
+        currentIndex * _queueItemExtent +
+        _queueEntryHeight / 2;
+    return math.max(0, currentItemCenter - viewportHeight / 2);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        _scrollController ??= ScrollController(
+          initialScrollOffset: _initialScrollOffset(constraints.maxHeight),
+        );
+        return ListView.builder(
+          key: const ValueKey('playback-queue-list'),
+          controller: _scrollController,
+          padding: const EdgeInsets.fromLTRB(14, _queueListTopPadding, 14, 18),
+          itemCount: widget.queue.length,
+          itemExtent: _queueItemExtent,
+          itemBuilder: (context, index) {
+            final active = index == widget.queueIndex;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: _queueEntrySpacing),
+              child: _PlaybackQueueEntryTile(
+                key: ValueKey('playback-queue-entry-$index'),
+                entry: widget.queue[index],
+                active: active,
+                playing: active && widget.playing,
+                currentTrack: active ? widget.track : null,
+                onTap: () => widget.onSelect(index),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
 class _PlaybackQueueEntryTile extends StatelessWidget {
   const _PlaybackQueueEntryTile({
+    super.key,
     required this.entry,
     required this.active,
     required this.playing,

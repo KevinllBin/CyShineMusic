@@ -67,8 +67,13 @@ class MusicApi {
   Future<PlaylistInfo> parsePlaylist({
     required String input,
     MusicSource source = MusicSource.all,
+    int? maxTracks,
   }) {
-    return PlaylistSdk.parse(input: input, source: source);
+    return PlaylistSdk.parse(
+      input: input,
+      source: source,
+      maxTracks: maxTracks,
+    );
   }
 
   Future<List<PlaylistSummary>> featuredPlaylists({

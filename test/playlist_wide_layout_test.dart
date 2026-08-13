@@ -358,6 +358,7 @@ class _FakePlaylistApi extends MusicApi {
   Future<PlaylistInfo> parsePlaylist({
     required String input,
     MusicSource source = MusicSource.all,
+    int? maxTracks,
   }) {
     return delayDetail ? _detail.future : Future.value(_playlist);
   }

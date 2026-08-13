@@ -10,6 +10,7 @@ import '../../core/models/enums.dart';
 import '../../core/models/playlist_summary.dart';
 import '../../core/ui/cover_image_source.dart';
 import '../../core/ui/cover_placeholder.dart';
+import '../../core/ui/app_refresh_indicator.dart';
 import '../../theme/app_motion.dart';
 import 'discovery_controller.dart';
 
@@ -351,7 +352,7 @@ class _DiscoveryListState extends State<_DiscoveryList> {
     if (_items.isEmpty) {
       return _DiscoveryEmpty(onRefresh: widget.onRefresh);
     }
-    return RefreshIndicator(
+    return AppRefreshIndicator(
       onRefresh: widget.onRefresh,
       child: ListView(
         key: PageStorageKey('discovery-${widget.source.code}-scroll'),
@@ -807,7 +808,7 @@ class _DiscoveryEmpty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
+    return AppRefreshIndicator(
       onRefresh: onRefresh,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),

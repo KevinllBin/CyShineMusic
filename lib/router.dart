@@ -75,20 +75,9 @@ GoRouter createAppRouter({
                         : null,
                   ),
                 ),
-                transitionsBuilder:
-                    (context, animation, secondaryAnimation, child) {
-                      if (reduceMotion) return child;
-                      final opacity = CurvedAnimation(
-                        parent: animation,
-                        curve: const Interval(
-                          0.12,
-                          1,
-                          curve: AppMotion.emphasizedDecelerate,
-                        ),
-                        reverseCurve: AppMotion.emphasizedAccelerate,
-                      );
-                      return FadeTransition(opacity: opacity, child: child);
-                    },
+                // Keep the page opaque while the non-zero route duration
+                // drives the shared artwork Hero transition.
+                transitionsBuilder: (_, _, _, child) => child,
               );
             },
           ),

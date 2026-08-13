@@ -186,18 +186,7 @@ class KgSdk {
         'vip': 1,
       },
     );
-    final body = response.body;
-    if (body is! Map) return null;
-    final infoNode = (body['data'] as List?)?.firstOrNull;
-    if (infoNode is! Map) return null;
-    final innerInfo = infoNode['info'];
-    if (innerInfo is! Map) return null;
-    final imgSizes = innerInfo['imgsize'];
-    final image = innerInfo['image']?.toString() ?? '';
-    if (imgSizes is List && imgSizes.isNotEmpty) {
-      return image.replaceAll('{size}', imgSizes.first.toString());
-    }
-    return image.isEmpty ? null : image;
+    return parseKgPrivilegeCoverUrl(response.body);
   }
 
   static Future<LyricInfo> getLyric(MusicInfo info) async {

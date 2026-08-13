@@ -86,11 +86,32 @@ void main() {
       final mobile = PlaylistSdk.parseTarget(
         'https://m.kugou.com/plist/list/1254394?uid=1234',
       );
+      final global = PlaylistSdk.parseTarget(
+        'https://m3ws.kugou.com/share/index.php?'
+        'global_specialid=collection_3_509005732_35_0',
+      );
+      final chain = PlaylistSdk.parseTarget(
+        'https://www.kugou.com/share/8eJsfc5xIV3.html?id=8eJsfc5xIV3',
+      );
+      final songList = PlaylistSdk.parseTarget(
+        'https://www.kugou.com/songlist/8eJsfc5xIV3/?uid=1234&iszlist=1',
+      );
+      final gcid = PlaylistSdk.parseTarget(
+        'https://www.kugou.com/songlist/gcid_3z9ly0fxznz0d1/这个歌单链接',
+      );
 
       expect(standard?.source, MusicSource.kg);
       expect(standard?.id, '1254394');
       expect(mobile?.source, MusicSource.kg);
       expect(mobile?.id, '1254394');
+      expect(global?.source, MusicSource.kg);
+      expect(global?.id, 'global:collection_3_509005732_35_0');
+      expect(chain?.source, MusicSource.kg);
+      expect(chain?.id, 'chain:8eJsfc5xIV3');
+      expect(songList?.source, MusicSource.kg);
+      expect(songList?.id, 'chain:8eJsfc5xIV3');
+      expect(gcid?.source, MusicSource.kg);
+      expect(gcid?.id, 'gcid:gcid_3z9ly0fxznz0d1');
     });
 
     test('recognizes Migu standard and hash share links', () {

@@ -87,12 +87,12 @@ void main() {
 
     expect(
       harness.container.read(searchControllerProvider).source,
-      MusicSource.all,
+      MusicSource.kw,
     );
     await _dragPage(tester, '/', const Offset(-150, 0));
     expect(
       harness.container.read(searchControllerProvider).source,
-      MusicSource.kw,
+      MusicSource.kg,
     );
     expect(harness.location, '/');
 
