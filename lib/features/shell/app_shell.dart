@@ -400,6 +400,8 @@ class _AppShellState extends ConsumerState<AppShell>
       context.go('/settings');
     } else if (context.canPop()) {
       context.pop();
+    } else if (widget.location == '/player') {
+      unawaited(_dismissPlayer());
     } else if (isDiscoveryLocation(widget.location) && widget.location != '/') {
       context.go('/');
     } else if (isPlaylistLocation(widget.location)) {
@@ -842,7 +844,6 @@ const _doubleBackExitWindow = Duration(seconds: 2);
 bool _isTopLevelMenuLocation(String location) {
   return location == '/' ||
       location == '/songs' ||
-      location == '/player' ||
       location == '/settings';
 }
 
