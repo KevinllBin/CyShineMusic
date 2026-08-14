@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/models/enums.dart';
 import '../../core/storage/settings_store.dart';
+import '../../core/ui/app_toast.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_theme.dart';
 import '../discovery/discovery_controller.dart';
@@ -63,6 +64,8 @@ class _AppShellState extends ConsumerState<AppShell>
   bool _playerLayerMounted = false;
   bool _pullActive = false;
   bool _dismissing = false;
+  Timer? _returnToDesktopTimer;
+  AppToastHandle? _returnToDesktopToast;
   double _lastPullDelta = 0;
 
   bool _toolbarScrollSequenceActive = false;
@@ -98,6 +101,7 @@ class _AppShellState extends ConsumerState<AppShell>
 
   @override
   void dispose() {
+    _resetTopLevelBack();
     _toolbarRevealController.dispose();
     _pull.dispose();
     super.dispose();
@@ -110,6 +114,7 @@ class _AppShellState extends ConsumerState<AppShell>
       _rememberTabLocation();
     }
     if (oldWidget.location != widget.location) {
+      _resetTopLevelBack();
       _routeMotion = _motionFor(oldWidget.location, widget.location);
       _toolbarScrollSequenceActive = false;
       _lastToolbarScrollDelta = 0;
@@ -385,15 +390,16 @@ class _AppShellState extends ConsumerState<AppShell>
     }
 
     _releaseRouteFocus();
-    if (widget.location == '/downloads' || widget.location == '/songs/search') {
+    if (_isTopLevelMenuLocation(widget.location)) {
+      await _handleTopLevelBack();
+    } else if (widget.location == '/downloads' ||
+        widget.location == '/songs/search') {
       context.go('/songs');
     } else if (widget.location == '/settings/sources' ||
         widget.location == '/debug') {
       context.go('/settings');
     } else if (context.canPop()) {
       context.pop();
-    } else if (widget.location == '/player') {
-      unawaited(_dismissPlayer());
     } else if (isDiscoveryLocation(widget.location) && widget.location != '/') {
       context.go('/');
     } else if (isPlaylistLocation(widget.location)) {
@@ -402,6 +408,32 @@ class _AppShellState extends ConsumerState<AppShell>
       unawaited(_moveAppTaskToBack());
     }
     return true;
+  }
+
+  Future<void> _handleTopLevelBack() async {
+    if (_returnToDesktopTimer?.isActive ?? false) {
+      _resetTopLevelBack();
+      await _moveAppTaskToBack();
+      return;
+    }
+
+    _resetTopLevelBack();
+    _returnToDesktopToast = showAppToast(
+      context,
+      '再次点击返回键切换到桌面',
+      duration: _doubleBackExitWindow,
+    );
+    _returnToDesktopTimer = Timer(_doubleBackExitWindow, () {
+      _returnToDesktopTimer = null;
+      _returnToDesktopToast = null;
+    });
+  }
+
+  void _resetTopLevelBack() {
+    _returnToDesktopTimer?.cancel();
+    _returnToDesktopTimer = null;
+    dismissAppToast(_returnToDesktopToast, showRemoveAnimation: false);
+    _returnToDesktopToast = null;
   }
 
   void _releaseRouteFocus() {
@@ -804,6 +836,15 @@ class _AppShellState extends ConsumerState<AppShell>
 }
 
 enum _ShellRouteMotion { forward, backward, playerEnter, playerExit }
+
+const _doubleBackExitWindow = Duration(seconds: 2);
+
+bool _isTopLevelMenuLocation(String location) {
+  return location == '/' ||
+      location == '/songs' ||
+      location == '/player' ||
+      location == '/settings';
+}
 
 _ShellRouteMotion _motionFor(String from, String to) {
   if (to == '/player') return _ShellRouteMotion.playerEnter;

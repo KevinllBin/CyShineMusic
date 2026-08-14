@@ -89,7 +89,29 @@ void main() {
     );
   });
 
-  test('automatic downloads use the active source highest quality', () {
+  test('quality fallback starts requested and only moves downward', () {
+    expect(
+      musicSourceQualityFallbacks(
+        requested: Quality.master,
+        sourceQualities: const [
+          Quality.k128,
+          Quality.atmos,
+          Quality.master,
+          Quality.atmosPlus,
+        ],
+      ),
+      [Quality.master, Quality.atmosPlus, Quality.atmos, Quality.k128],
+    );
+    expect(
+      musicSourceQualityFallbacks(
+        requested: Quality.flac,
+        sourceQualities: const [Quality.master, Quality.k320],
+      ),
+      [Quality.flac, Quality.k320],
+    );
+  });
+
+  test('automatic downloads use the enabled sources highest quality', () {
     expect(
       highestMusicSourceQuality(
         sourceQualities: const [Quality.k128, Quality.flac, Quality.hires],

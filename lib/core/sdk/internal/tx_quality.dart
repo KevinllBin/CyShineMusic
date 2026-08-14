@@ -46,8 +46,8 @@ List<QualityOption> parseTxQualityOptions({
   // QQ definitions: MASTER=size_new[0], ATMOS_2=size_new[1],
   // ATMOS_51=size_new[2]. Old app pairs them with vs[3], vs[4], vs[4].
   addVersioned(Quality.master, sizeIndex: 0, versionIndex: 3);
-  addVersioned(Quality.atmosPlus, sizeIndex: 1, versionIndex: 4);
-  addVersioned(Quality.atmos, sizeIndex: 2, versionIndex: 4);
+  addVersioned(Quality.atmos, sizeIndex: 1, versionIndex: 4);
+  addVersioned(Quality.atmosPlus, sizeIndex: 2, versionIndex: 4);
 
   return result;
 }

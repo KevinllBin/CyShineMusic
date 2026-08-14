@@ -23,13 +23,19 @@ void main() {
   });
 
   test(
-    'resolver tries enabled sources in order with per-source quality',
+    'resolver tries every source at requested quality before downgrade',
     () async {
-      final first = _record('first', qualities: const [Quality.k128]);
-      final second = _record('second', qualities: const [Quality.flac]);
+      final first = _record(
+        'first',
+        qualities: const [Quality.flac, Quality.k128],
+      );
+      final second = _record(
+        'second',
+        qualities: const [Quality.flac, Quality.k128],
+      );
       final runtime = _FakeRuntime({
-        first.id: StateError('first source failed'),
-        second.id: const MusicUrl(
+        'first:flac': StateError('first source failed'),
+        'second:flac': const MusicUrl(
           url: 'https://audio.test/second.flac',
           type: Quality.flac,
         ),
@@ -45,9 +51,64 @@ void main() {
           .resolve(music: _music(), quality: Quality.flac);
 
       expect(result.url, 'https://audio.test/second.flac');
-      expect(runtime.calls, ['first:128k', 'second:flac']);
+      expect(runtime.calls, ['first:flac', 'second:flac']);
     },
   );
+
+  test(
+    'resolver downgrades after all sources fail the current quality',
+    () async {
+      final first = _record(
+        'first',
+        qualities: const [Quality.master, Quality.atmosPlus, Quality.flac],
+      );
+      final second = _record(
+        'second',
+        qualities: const [Quality.master, Quality.atmosPlus, Quality.flac],
+      );
+      final runtime = _FakeRuntime({
+        'first:master': StateError('first master failed'),
+        'second:master': StateError('second master failed'),
+        'first:atmos_plus': const MusicUrl(
+          url: 'https://audio.test/first-atmos.flac',
+          type: Quality.atmosPlus,
+        ),
+      });
+      final container = await _container(
+        records: [first, second],
+        runtime: runtime,
+      );
+      addTearDown(container.dispose);
+
+      final result = await container
+          .read(musicUrlResolverProvider)
+          .resolve(music: _music(), quality: Quality.master);
+
+      expect(result.type, Quality.atmosPlus);
+      expect(runtime.calls, [
+        'first:master',
+        'second:master',
+        'first:atmos_plus',
+      ]);
+    },
+  );
+
+  test('highest quality is selected across all enabled sources', () async {
+    final first = _record('first', qualities: const [Quality.k128]);
+    final second = _record('second', qualities: const [Quality.master]);
+    final container = await _container(
+      records: [first, second],
+      runtime: _FakeRuntime(const {}),
+    );
+    addTearDown(container.dispose);
+
+    expect(
+      await container
+          .read(musicUrlResolverProvider)
+          .highestQualityFor(_music()),
+      Quality.master,
+    );
+  });
 
   test(
     'consumer failure also falls back and intermediate errors stay internal',
@@ -83,6 +144,54 @@ void main() {
       expect(loaded, ['first', 'second']);
     },
   );
+
+  test('consumer failures also keep quality before source order', () async {
+    final first = _record(
+      'first',
+      qualities: const [Quality.master, Quality.atmosPlus],
+    );
+    final second = _record(
+      'second',
+      qualities: const [Quality.master, Quality.atmosPlus],
+    );
+    final runtime = _FakeRuntime({
+      'first:master': const MusicUrl(
+        url: 'https://audio.test/first-master.flac',
+        type: Quality.master,
+      ),
+      'second:master': const MusicUrl(
+        url: 'https://audio.test/second-master.flac',
+        type: Quality.master,
+      ),
+      'first:atmos_plus': const MusicUrl(
+        url: 'https://audio.test/first-atmos.flac',
+        type: Quality.atmosPlus,
+      ),
+    });
+    final container = await _container(
+      records: [first, second],
+      runtime: runtime,
+    );
+    addTearDown(container.dispose);
+    final consumed = <String>[];
+
+    final result = await container
+        .read(musicUrlResolverProvider)
+        .useFirstAvailable<Quality>(
+          music: _music(),
+          quality: Quality.master,
+          use: (source, url) async {
+            consumed.add('${source.id}:${url.type?.code}');
+            if (url.type == Quality.master) {
+              throw StateError('audio transfer failed');
+            }
+            return url.type!;
+          },
+        );
+
+    expect(result.value, Quality.atmosPlus);
+    expect(consumed, ['first:master', 'second:master', 'first:atmos_plus']);
+  });
 
   test(
     'resolver skips unsupported sources and aggregates final failure',
@@ -275,7 +384,8 @@ class _FakeRuntime extends MusicSourceRuntime {
     required Quality quality,
   }) async {
     calls.add('${record.id}:${quality.code}');
-    final response = responses[record.id];
+    final response =
+        responses['${record.id}:${quality.code}'] ?? responses[record.id];
     if (response is MusicUrl) return response;
     throw response ?? StateError('missing response');
   }

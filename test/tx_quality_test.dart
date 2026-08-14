@@ -23,9 +23,9 @@ void main() {
     expect(byType, isNot(contains(Quality.flac24bit)));
     expect(byType[Quality.master]?.size, '151.66M');
     expect(byType[Quality.master]?.mediaInfo, 'MASTER_MID');
-    expect(byType[Quality.atmosPlus]?.size, '24.64M');
+    expect(byType[Quality.atmosPlus]?.size, '63.57M');
     expect(byType[Quality.atmosPlus]?.mediaInfo, 'ATMOS_MID');
-    expect(byType[Quality.atmos]?.size, '63.57M');
+    expect(byType[Quality.atmos]?.size, '24.64M');
     expect(byType[Quality.atmos]?.mediaInfo, 'ATMOS_MID');
   });
 
