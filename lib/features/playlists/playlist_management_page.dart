@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/models/enums.dart';
+import '../../core/ui/app_scrollbar.dart';
 import '../../core/ui/app_toast.dart';
 import '../../theme/app_motion.dart';
 import 'lx_playlist_import.dart';
@@ -23,71 +24,85 @@ class PlaylistManagementPage extends ConsumerStatefulWidget {
 
 class _PlaylistManagementPageState
     extends ConsumerState<PlaylistManagementPage> {
+  final ScrollController _scrollController = ScrollController();
   bool _importingLx = false;
   String? _lxImportProgress;
   final Set<String> _updatingPlaylistIds = <String>{};
 
   @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final playlists = ref.watch(localPlaylistsProvider);
     return Scaffold(
-      body: CustomScrollView(
-        key: const PageStorageKey('playlists-manage-scroll'),
-        physics: const BouncingScrollPhysics(
-          parent: AlwaysScrollableScrollPhysics(),
-        ),
-        slivers: [
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 2, 16, 0),
-            sliver: SliverToBoxAdapter(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 760),
-                  child: _ManagementActions(
-                    count: playlists.length,
-                    onCreate: () => _createPlaylist(context, ref),
-                    onImport: () => context.go('/playlists/import'),
-                    onImportLx: _importLxPlaylist,
-                    importingLx: _importingLx,
-                    lxImportProgress: _lxImportProgress,
+      body: AppScrollbar(
+        controller: _scrollController,
+        child: CustomScrollView(
+          controller: _scrollController,
+          key: const PageStorageKey('playlists-manage-scroll'),
+          physics: const BouncingScrollPhysics(
+            parent: AlwaysScrollableScrollPhysics(),
+          ),
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 2, 16, 0),
+              sliver: SliverToBoxAdapter(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 760),
+                    child: _ManagementActions(
+                      count: playlists.length,
+                      onCreate: () => _createPlaylist(context, ref),
+                      onImport: () => context.go('/playlists/import'),
+                      onImportLx: _importLxPlaylist,
+                      importingLx: _importingLx,
+                      lxImportProgress: _lxImportProgress,
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          if (playlists.isEmpty)
-            const SliverFillRemaining(
-              hasScrollBody: false,
-              child: _EmptyManagement(),
-            )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 116),
-              sliver: SliverList.separated(
-                itemCount: playlists.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 8),
-                itemBuilder: (context, index) {
-                  final playlist = playlists[index];
-                  return Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 760),
-                      child: _PlaylistManagementTile(
-                        playlist: playlist,
-                        onOpen: () =>
-                            context.go(_managementDetailLocation(playlist.id)),
-                        onRename: () => _renamePlaylist(context, ref, playlist),
-                        onUpdate: playlist.isOnlineImport
-                            ? () => _updatePlaylist(playlist)
-                            : null,
-                        updating: _updatingPlaylistIds.contains(playlist.id),
-                        onDelete: () => _deletePlaylist(context, ref, playlist),
+            if (playlists.isEmpty)
+              const SliverFillRemaining(
+                hasScrollBody: false,
+                child: _EmptyManagement(),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 116),
+                sliver: SliverList.separated(
+                  itemCount: playlists.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    final playlist = playlists[index];
+                    return Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 760),
+                        child: _PlaylistManagementTile(
+                          playlist: playlist,
+                          onOpen: () => context.go(
+                            _managementDetailLocation(playlist.id),
+                          ),
+                          onRename: () =>
+                              _renamePlaylist(context, ref, playlist),
+                          onUpdate: playlist.isOnlineImport
+                              ? () => _updatePlaylist(playlist)
+                              : null,
+                          updating: _updatingPlaylistIds.contains(playlist.id),
+                          onDelete: () =>
+                              _deletePlaylist(context, ref, playlist),
+                        ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

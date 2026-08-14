@@ -11,6 +11,7 @@ import '../../core/models/enums.dart';
 import '../../core/services/embedded_artwork_cache.dart';
 import '../../core/services/download_service.dart';
 import '../../core/storage/settings_store.dart';
+import '../../core/ui/app_scrollbar.dart';
 import '../../core/ui/app_toast.dart';
 import '../downloads/download_history_store.dart';
 import '../downloads/download_progress.dart';
@@ -50,6 +51,7 @@ class PlaylistDetailPage extends ConsumerStatefulWidget {
 
 class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
   final Set<String> _selectedTrackIds = {};
+  final ScrollController _scrollController = ScrollController();
   bool _batchMode = false;
   bool _batchSubmitting = false;
   bool _removingFavorite = false;
@@ -96,6 +98,7 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
     _artworkRequest = null;
     _searchFocusNode.removeListener(_handleSearchFocusChanged);
     _restoreToolbarAfterSearchFocus();
+    _scrollController.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
     final toolbarStateController = _toolbarStateController;
@@ -233,37 +236,41 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
     required int localCount,
     required ImageProvider<Object>? artworkProvider,
   }) {
-    return CustomScrollView(
-      key: PageStorageKey('playlist-detail-${widget.playlistId}'),
-      physics: const BouncingScrollPhysics(
-        parent: AlwaysScrollableScrollPhysics(),
-      ),
-      slivers: [
-        SliverToBoxAdapter(
-          child: ImmersivePlaylistHeader(
-            artworkProvider: artworkProvider,
-            topBar: _buildImmersiveTopBar(
-              queue: queue,
-              selectedCount: selectedCount,
-              visibleCount: filtered.length,
+    return AppScrollbar(
+      controller: _scrollController,
+      child: CustomScrollView(
+        controller: _scrollController,
+        key: PageStorageKey('playlist-detail-${widget.playlistId}'),
+        physics: const BouncingScrollPhysics(
+          parent: AlwaysScrollableScrollPhysics(),
+        ),
+        slivers: [
+          SliverToBoxAdapter(
+            child: ImmersivePlaylistHeader(
+              artworkProvider: artworkProvider,
+              topBar: _buildImmersiveTopBar(
+                queue: queue,
+                selectedCount: selectedCount,
+                visibleCount: filtered.length,
+              ),
             ),
           ),
-        ),
-        SliverToBoxAdapter(
-          child: PlaylistDetailInfo(
-            title: playlist.name,
-            metadata: _playlistMetadata(playlist, localCount: localCount),
-            description: playlist.description,
+          SliverToBoxAdapter(
+            child: PlaylistDetailInfo(
+              title: playlist.name,
+              metadata: _playlistMetadata(playlist, localCount: localCount),
+              description: playlist.description,
+            ),
           ),
-        ),
-        SliverToBoxAdapter(child: _buildActions(playlist, queue)),
-        ..._trackListSlivers(
-          playlist: playlist,
-          resolved: resolved,
-          filtered: filtered,
-          queue: queue,
-        ),
-      ],
+          SliverToBoxAdapter(child: _buildActions(playlist, queue)),
+          ..._trackListSlivers(
+            playlist: playlist,
+            resolved: resolved,
+            filtered: filtered,
+            queue: queue,
+          ),
+        ],
+      ),
     );
   }
 
@@ -295,16 +302,20 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
         ),
         bottomPadding: _batchMode ? 12 : 156,
       ),
-      right: CustomScrollView(
-        key: PageStorageKey('playlist-detail-wide-${widget.playlistId}'),
-        physics: const BouncingScrollPhysics(
-          parent: AlwaysScrollableScrollPhysics(),
-        ),
-        slivers: _trackListSlivers(
-          playlist: playlist,
-          resolved: resolved,
-          filtered: filtered,
-          queue: queue,
+      right: AppScrollbar(
+        controller: _scrollController,
+        child: CustomScrollView(
+          controller: _scrollController,
+          key: PageStorageKey('playlist-detail-wide-${widget.playlistId}'),
+          physics: const BouncingScrollPhysics(
+            parent: AlwaysScrollableScrollPhysics(),
+          ),
+          slivers: _trackListSlivers(
+            playlist: playlist,
+            resolved: resolved,
+            filtered: filtered,
+            queue: queue,
+          ),
         ),
       ),
     );

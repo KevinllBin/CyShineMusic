@@ -12,6 +12,7 @@ import '../../core/models/playlist_summary.dart';
 import '../../core/services/app_logger.dart';
 import '../../core/ui/app_toast.dart';
 import '../../core/ui/app_refresh_indicator.dart';
+import '../../core/ui/app_scrollbar.dart';
 import '../../core/ui/cover_placeholder.dart';
 import '../downloads/download_history_store.dart';
 import '../downloads/download_progress.dart';
@@ -52,6 +53,7 @@ class _OnlinePlaylistDetailPageState
   PlaylistSummary? _summary;
   bool _saving = false;
   bool _removingFavorite = false;
+  final ScrollController _scrollController = ScrollController();
 
   OnlinePlaylistIdentity get _identity =>
       (source: widget.source, id: widget.playlistId);
@@ -101,6 +103,12 @@ class _OnlinePlaylistDetailPageState
       cache.remove(cache.keys.first);
     }
     cache[_identity] = summary;
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   @override
@@ -290,55 +298,63 @@ class _OnlinePlaylistDetailPageState
                       description: playlist.description,
                       actions: actionsWith(const EdgeInsets.only(top: 4)),
                     ),
-                    right: AppRefreshIndicator(
+                    right: AppScrollbar(
+                      controller: _scrollController,
+                      child: AppRefreshIndicator(
+                        onRefresh: refresh,
+                        child: CustomScrollView(
+                          controller: _scrollController,
+                          key: PageStorageKey(
+                            'online-playlist-wide-${playlist.source.code}-${playlist.id}',
+                          ),
+                          physics: const AlwaysScrollableScrollPhysics(
+                            parent: BouncingScrollPhysics(),
+                          ),
+                          slivers: trackSlivers,
+                        ),
+                      ),
+                    ),
+                  )
+                : AppScrollbar(
+                    controller: _scrollController,
+                    child: AppRefreshIndicator(
                       onRefresh: refresh,
                       child: CustomScrollView(
+                        controller: _scrollController,
                         key: PageStorageKey(
-                          'online-playlist-wide-${playlist.source.code}-${playlist.id}',
+                          'online-playlist-${playlist.source.code}-${playlist.id}',
                         ),
                         physics: const AlwaysScrollableScrollPhysics(
                           parent: BouncingScrollPhysics(),
                         ),
-                        slivers: trackSlivers,
-                      ),
-                    ),
-                  )
-                : AppRefreshIndicator(
-                    onRefresh: refresh,
-                    child: CustomScrollView(
-                      key: PageStorageKey(
-                        'online-playlist-${playlist.source.code}-${playlist.id}',
-                      ),
-                      physics: const AlwaysScrollableScrollPhysics(
-                        parent: BouncingScrollPhysics(),
-                      ),
-                      slivers: [
-                        SliverToBoxAdapter(
-                          child: ImmersivePlaylistHeader(
-                            artworkProvider: artworkProvider,
-                            artworkHeroTag: onlinePlaylistArtworkHeroTag(
-                              playlist.source,
-                              playlist.id,
-                            ),
-                            topBar: const ImmersivePlaylistTopBar(
-                              title: '歌单详情',
+                        slivers: [
+                          SliverToBoxAdapter(
+                            child: ImmersivePlaylistHeader(
+                              artworkProvider: artworkProvider,
+                              artworkHeroTag: onlinePlaylistArtworkHeroTag(
+                                playlist.source,
+                                playlist.id,
+                              ),
+                              topBar: const ImmersivePlaylistTopBar(
+                                title: '歌单详情',
+                              ),
                             ),
                           ),
-                        ),
-                        SliverToBoxAdapter(
-                          child: PlaylistDetailInfo(
-                            title: playlist.name,
-                            metadata: metadata,
-                            description: playlist.description,
+                          SliverToBoxAdapter(
+                            child: PlaylistDetailInfo(
+                              title: playlist.name,
+                              metadata: metadata,
+                              description: playlist.description,
+                            ),
                           ),
-                        ),
-                        SliverToBoxAdapter(
-                          child: actionsWith(
-                            const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                          SliverToBoxAdapter(
+                            child: actionsWith(
+                              const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                            ),
                           ),
-                        ),
-                        ...trackSlivers,
-                      ],
+                          ...trackSlivers,
+                        ],
+                      ),
                     ),
                   ),
           );

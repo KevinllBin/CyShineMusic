@@ -11,6 +11,7 @@ import '../../core/models/enums.dart';
 import '../../core/services/embedded_artwork_cache.dart';
 import '../../core/services/tagger.dart';
 import '../../core/storage/settings_store.dart';
+import '../../core/ui/app_scrollbar.dart';
 import '../../core/ui/app_toast.dart';
 import '../../core/ui/app_refresh_indicator.dart';
 import '../../theme/app_motion.dart';
@@ -52,6 +53,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
   bool _batchMode = false;
   String _searchQuery = '';
   final Object _toolbarOwner = Object();
+  final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode(debugLabel: 'songs-search');
   bool? _toolbarVisibilityBeforeSearchFocus;
@@ -130,6 +132,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     _scanCache.removeListener(_handleScanCacheChanged);
     _localMusicDirSubscription?.close();
     _tagFlushTimer?.cancel();
+    _scrollController.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
     final toolbarStateController = _toolbarStateController;
@@ -1006,109 +1009,117 @@ class _SongsPageState extends ConsumerState<SongsPage> {
       activePlaylist: selectedPlaylist,
     );
 
-    final libraryView = CustomScrollView(
-      key: PageStorageKey(
-        '${widget.searchMode ? 'songs-search' : 'songs'}-'
-        '${selectedPlaylist?.id ?? 'local'}-scroll',
-      ),
-      physics: const BouncingScrollPhysics(
-        parent: AlwaysScrollableScrollPhysics(),
-      ),
-      slivers: [
-        if (widget.searchMode)
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(14, 2, 14, 0),
-            sliver: SliverToBoxAdapter(
-              child: SongsSearchBar(
-                controller: _searchController,
-                focusNode: _searchFocusNode,
-                query: _searchQuery,
-                autofocus: true,
-                onChanged: _updateSearchQuery,
-                onClear: _clearSearch,
+    final libraryView = AppScrollbar(
+      controller: _scrollController,
+      child: CustomScrollView(
+        controller: _scrollController,
+        key: PageStorageKey(
+          '${widget.searchMode ? 'songs-search' : 'songs'}-'
+          '${selectedPlaylist?.id ?? 'local'}-scroll',
+        ),
+        physics: const BouncingScrollPhysics(
+          parent: AlwaysScrollableScrollPhysics(),
+        ),
+        slivers: [
+          if (widget.searchMode)
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(14, 2, 14, 0),
+              sliver: SliverToBoxAdapter(
+                child: SongsSearchBar(
+                  controller: _searchController,
+                  focusNode: _searchFocusNode,
+                  query: _searchQuery,
+                  autofocus: true,
+                  onChanged: _updateSearchQuery,
+                  onClear: _clearSearch,
+                ),
               ),
             ),
-          ),
-        if (allSongs.isNotEmpty)
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(14, 0, 14, 2),
-            sliver: SliverToBoxAdapter(
-              child: SongsListSummary(
-                count: songs.length,
-                totalCount: allSongs.length,
-                searching: widget.searchMode && _searchQuery.trim().isNotEmpty,
-                sortMode: _sortMode,
-                ascending: _ascending,
-                batchMode: _batchMode,
-                onOpenSort: () => unawaited(_openSortSheet()),
-                onToggleBatch: songs.isEmpty ? null : _toggleBatchMode,
-                showSort: !playlistMode,
-                collectionLabel: playlistMode ? '歌单歌曲' : '本地歌曲',
+          if (allSongs.isNotEmpty)
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 2),
+              sliver: SliverToBoxAdapter(
+                child: SongsListSummary(
+                  count: songs.length,
+                  totalCount: allSongs.length,
+                  searching:
+                      widget.searchMode && _searchQuery.trim().isNotEmpty,
+                  sortMode: _sortMode,
+                  ascending: _ascending,
+                  batchMode: _batchMode,
+                  onOpenSort: () => unawaited(_openSortSheet()),
+                  onToggleBatch: songs.isEmpty ? null : _toggleBatchMode,
+                  showSort: !playlistMode,
+                  collectionLabel: playlistMode ? '歌单歌曲' : '本地歌曲',
+                ),
               ),
             ),
-          ),
-        if (allSongs.isEmpty)
-          SliverFillRemaining(
-            hasScrollBody: false,
-            child: scanning
-                ? const SongsLoading()
-                : EmptySongs(
-                    error: playlistMode ? null : _scanError,
-                    playlistMode: playlistMode,
-                  ),
-          )
-        else if (songs.isEmpty)
-          const SliverFillRemaining(
-            hasScrollBody: false,
-            child: EmptySongSearch(),
-          )
-        else
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(12, 0, 12, _batchMode ? 12 : 104),
-            sliver: SlidableAutoCloseBehavior(
-              child: SliverList.separated(
-                itemCount: songs.length,
-                separatorBuilder: (_, _) => const SongListDivider(),
-                itemBuilder: (context, index) {
-                  final entry = songs[index];
-                  final path = entry.savedPath;
-                  final playing = _matchesPlayingEntry(
-                    entry,
-                    playbackIdentity.queueEntry,
-                    playbackIdentity.localPath,
-                  );
-                  return SongRow(
-                    key: ValueKey(entry.id),
-                    entry: entry,
-                    artworkVersion: path == null
-                        ? null
-                        : artworkVersionByPath[_pathKey(path)],
-                    playing: playing,
-                    playingActive: playing && playbackIdentity.playing,
-                    batchMode: _batchMode,
-                    selected: _selectedIds.contains(entry.id),
-                    onToggleSelected: () => _toggleSelection(entry),
-                    onAddNext: () => _addNext(entry),
-                    onAddToPlaylist: () =>
-                        unawaited(_selectPlaylistForSong(entry)),
-                    onPlay: () => _play(entry, songs),
-                    onDelete: playlistMode
-                        ? () {
-                            final track = _visiblePlaylistTracks[entry.id];
-                            if (track != null) {
-                              unawaited(
-                                _removePlaylistTrack(selectedPlaylist!, track),
-                              );
+          if (allSongs.isEmpty)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: scanning
+                  ? const SongsLoading()
+                  : EmptySongs(
+                      error: playlistMode ? null : _scanError,
+                      playlistMode: playlistMode,
+                    ),
+            )
+          else if (songs.isEmpty)
+            const SliverFillRemaining(
+              hasScrollBody: false,
+              child: EmptySongSearch(),
+            )
+          else
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(12, 0, 12, _batchMode ? 12 : 104),
+              sliver: SlidableAutoCloseBehavior(
+                child: SliverList.separated(
+                  itemCount: songs.length,
+                  separatorBuilder: (_, _) => const SongListDivider(),
+                  itemBuilder: (context, index) {
+                    final entry = songs[index];
+                    final path = entry.savedPath;
+                    final playing = _matchesPlayingEntry(
+                      entry,
+                      playbackIdentity.queueEntry,
+                      playbackIdentity.localPath,
+                    );
+                    return SongRow(
+                      key: ValueKey(entry.id),
+                      entry: entry,
+                      artworkVersion: path == null
+                          ? null
+                          : artworkVersionByPath[_pathKey(path)],
+                      playing: playing,
+                      playingActive: playing && playbackIdentity.playing,
+                      batchMode: _batchMode,
+                      selected: _selectedIds.contains(entry.id),
+                      onToggleSelected: () => _toggleSelection(entry),
+                      onAddNext: () => _addNext(entry),
+                      onAddToPlaylist: () =>
+                          unawaited(_selectPlaylistForSong(entry)),
+                      onPlay: () => _play(entry, songs),
+                      onDelete: playlistMode
+                          ? () {
+                              final track = _visiblePlaylistTracks[entry.id];
+                              if (track != null) {
+                                unawaited(
+                                  _removePlaylistTrack(
+                                    selectedPlaylist!,
+                                    track,
+                                  ),
+                                );
+                              }
                             }
-                          }
-                        : () => _deleteSong(entry),
-                    playlistMode: playlistMode,
-                  );
-                },
+                          : () => _deleteSong(entry),
+                      playlistMode: playlistMode,
+                    );
+                  },
+                ),
               ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
 
     return Scaffold(

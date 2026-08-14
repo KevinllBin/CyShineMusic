@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/ui/app_scrollbar.dart';
 import '../../theme/app_motion.dart';
 import 'playlist_models.dart';
 import 'playlist_store.dart';
@@ -110,30 +111,33 @@ class _PlaylistBrowserSheet extends ConsumerWidget {
                 color: scheme.outlineVariant.withValues(alpha: 0.56),
               ),
               Expanded(
-                child: playlists.isEmpty
-                    ? _EmptyPlaylists(
-                        controller: scrollController,
-                        selecting: selecting,
-                      )
-                    : ListView.separated(
-                        controller: scrollController,
-                        physics: const BouncingScrollPhysics(
-                          parent: AlwaysScrollableScrollPhysics(),
+                child: AppScrollbar(
+                  controller: scrollController,
+                  child: playlists.isEmpty
+                      ? _EmptyPlaylists(
+                          controller: scrollController,
+                          selecting: selecting,
+                        )
+                      : ListView.separated(
+                          controller: scrollController,
+                          physics: const BouncingScrollPhysics(
+                            parent: AlwaysScrollableScrollPhysics(),
+                          ),
+                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
+                          itemCount: playlists.length,
+                          separatorBuilder: (_, _) => const SizedBox(height: 6),
+                          itemBuilder: (context, index) {
+                            final playlist = playlists[index];
+                            return _PlaylistSheetTile(
+                              playlist: playlist,
+                              selecting: selecting,
+                              onTap: () => Navigator.of(
+                                context,
+                              ).pop('/playlists/${playlist.id}'),
+                            );
+                          },
                         ),
-                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
-                        itemCount: playlists.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 6),
-                        itemBuilder: (context, index) {
-                          final playlist = playlists[index];
-                          return _PlaylistSheetTile(
-                            playlist: playlist,
-                            selecting: selecting,
-                            onTap: () => Navigator.of(
-                              context,
-                            ).pop('/playlists/${playlist.id}'),
-                          );
-                        },
-                      ),
+                ),
               ),
             ],
           ),
