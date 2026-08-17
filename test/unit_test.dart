@@ -688,6 +688,36 @@ void main() {
       expect(line.words.first.progressAt(10150), closeTo(0.5, 0.001));
     });
 
+    test('aligns NetEase translation through the matching plain lyric', () {
+      const info = LyricInfo(
+        lyric:
+            '[00:59.060]In my dreams\n'
+            '[01:01.010]I feel your light\n'
+            '[01:02.850]I feel love is born again\n'
+            '[01:06.670]Fireflies',
+        tlyric:
+            '[00:59.060]我的梦里\n'
+            '[01:01.010]有你的光芒\n'
+            '[01:02.850]爱再次绽放\n'
+            '[01:06.670]萤火虫',
+        // NetEase yrc starts at the first sung word, commonly 450-700 ms
+        // after the line-level lrc/tlyric timestamp.
+        lxlyric:
+            '[00:59.610]<0,450>In <450,420>my <870,900>dreams\n'
+            '[01:01.560]<0,240>I <240,570>feel <810,540>your <1350,480>light\n'
+            '[01:03.450]<0,240>I <240,540>feel <780,660>love '
+            '<1440,150>is <1590,780>born <2370,930>again\n'
+            '[01:06.780]<0,2100>Fireflies',
+      );
+
+      final lyrics = KaraokeLyricsParser.parse(info);
+
+      expect(
+        lyrics.lines.map((line) => line.translation),
+        ['我的梦里', '有你的光芒', '爱再次绽放', '萤火虫'],
+      );
+    });
+
     test('falls back to line-level LRC when word timing is unavailable', () {
       const info = LyricInfo(
         lyric: '[00:01.000][00:03.000]Hello',

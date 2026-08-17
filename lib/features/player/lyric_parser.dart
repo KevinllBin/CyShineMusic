@@ -151,11 +151,12 @@ class KaraokeLyricsParser {
   }
 
   static KaraokeLyrics parse(LyricInfo info) {
+    final mainLines = _parseTextByTime(info.lyric);
     final translations = _parseTextByTime(info.tlyric);
     final romans = _parseTextByTime(info.rlyric);
     final wordLyric = info.lxlyric?.trim();
     var lines = wordLyric != null && wordLyric.isNotEmpty
-        ? _parseWordLyric(wordLyric, translations, romans)
+        ? _parseWordLyric(wordLyric, mainLines, translations, romans)
         : const <KaraokeLyricLine>[];
     if (lines.isEmpty) {
       // lxlyric present but unparseable (or absent) — the plain lyric is
@@ -167,6 +168,7 @@ class KaraokeLyricsParser {
 
   static List<KaraokeLyricLine> _parseWordLyric(
     String lrc,
+    Map<int, String> mainLines,
     Map<int, String> translations,
     Map<int, String> romans,
   ) {
@@ -185,6 +187,11 @@ class KaraokeLyricsParser {
       final words = _parseWords(body, startMs);
       final text = body.replaceAll(_wordTimingExp, '').trim();
       if (text.isEmpty) continue;
+      final extendedTrackAnchor = _matchingMainLineStart(
+        mainLines,
+        text,
+        startMs,
+      );
       final endMs = words.isEmpty
           ? startMs + 4000
           : math.max(startMs + 1, words.map((w) => w.endMs).reduce(math.max));
@@ -193,8 +200,8 @@ class KaraokeLyricsParser {
           startMs: startMs,
           endMs: endMs,
           text: text,
-          translation: _nearestLine(translations, startMs),
-          roman: _nearestLine(romans, startMs),
+          translation: _nearestLine(translations, extendedTrackAnchor),
+          roman: _nearestLine(romans, extendedTrackAnchor),
           words: words,
         ),
       );
@@ -301,6 +308,29 @@ class KaraokeLyricsParser {
       }
     }
     return out;
+  }
+
+  static int _matchingMainLineStart(
+    Map<int, String> mainLines,
+    String text,
+    int fallbackStartMs,
+  ) {
+    final normalizedText = _normalizeLineText(text);
+    int? bestStartMs;
+    var bestDelta = 1 << 31;
+    for (final entry in mainLines.entries) {
+      if (_normalizeLineText(entry.value) != normalizedText) continue;
+      final delta = (entry.key - fallbackStartMs).abs();
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        bestStartMs = entry.key;
+      }
+    }
+    return bestStartMs ?? fallbackStartMs;
+  }
+
+  static String _normalizeLineText(String value) {
+    return value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
   }
 
   static String? _nearestLine(Map<int, String> lines, int startMs) {

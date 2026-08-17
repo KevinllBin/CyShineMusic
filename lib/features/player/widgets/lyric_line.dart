@@ -312,10 +312,15 @@ class LyricLineTile extends StatelessWidget {
           child: child,
           builder: (context, sigma, child) {
             return ImageFiltered(
+              // Decal, not clamp: clamp replicates the glyph-edge pixels
+              // outward before blurring, which draws a hard rectangular seam
+              // wherever text touches its paint bounds (line start, cap
+              // height, wrapped-line right edge). Decal samples transparent
+              // outside the bounds so the halo fades out naturally.
               imageFilter: ImageFilter.blur(
                 sigmaX: sigma,
                 sigmaY: sigma,
-                tileMode: TileMode.clamp,
+                tileMode: TileMode.decal,
               ),
               enabled: !suppressed && sigma > 0.05,
               child: child,

@@ -15,6 +15,14 @@ const double _kLyricScrollAnchor = 0.42;
 const double _kLyricScrollStiffness = 210;
 const double _kLyricScrollDamping = 27;
 const double _kLyricEdgeFadeExtent = 48;
+// Horizontal breathing room INSIDE the list row, around each blurred tile.
+// Every ancestor clip (list viewport, compact pager ClipRect, PageView) sits
+// flush against the panel edge; a blur halo extends ~3*sigma (~11px at the
+// deepest 3.65 sigma) past the glyphs, so without this inset the halo is
+// sliced into a hard vertical seam at the first/last glyph. The page layout
+// hands this same amount back (player_page keeps 16px less outer padding for
+// the compact pager), so glyph positions on screen are unchanged.
+const double _kLyricBlurBleedInset = 16;
 const Duration _kLyricLineLayoutDuration = Duration(milliseconds: 380);
 const Duration _kLyricBlurRestoreDelay = Duration(seconds: 3);
 
@@ -686,21 +694,26 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
             generation: _lyricStaggerGeneration,
             shiftPx: _lyricStaggerShiftPx,
             visibleStartIndex: _lyricStaggerVisibleStartIndex,
-            child: LyricLineTile(
-              line: line,
-              active: active,
-              selected: index == _selectedIndex,
-              distance: distance,
-              blurSuppressed: _blurSuppressed,
-              showTranslation: widget.showTranslation,
-              anchorMs: _anchorMs,
-              playing: _playing,
-              buffering: _buffering,
-              onSelect: () => _selectLine(index),
-              onSeek: () {
-                _selectLine(index);
-                controller.seek(Duration(milliseconds: line.startMs));
-              },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: _kLyricBlurBleedInset,
+              ),
+              child: LyricLineTile(
+                line: line,
+                active: active,
+                selected: index == _selectedIndex,
+                distance: distance,
+                blurSuppressed: _blurSuppressed,
+                showTranslation: widget.showTranslation,
+                anchorMs: _anchorMs,
+                playing: _playing,
+                buffering: _buffering,
+                onSelect: () => _selectLine(index),
+                onSeek: () {
+                  _selectLine(index);
+                  controller.seek(Duration(milliseconds: line.startMs));
+                },
+              ),
             ),
           );
         },

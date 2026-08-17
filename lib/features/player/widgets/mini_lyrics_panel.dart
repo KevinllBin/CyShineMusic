@@ -11,11 +11,18 @@ import '../player_controller.dart';
 
 /// Blur applied directly to the previous and next lyric text. Increase this
 /// value for a stronger effect; the active line always stays sharp.
-const double miniLyricsInactiveBlurSigma = 0.7;
+const double miniLyricsInactiveBlurSigma = 0.45;
 
 const double _miniLyricLineExtent = 22;
 const int _miniLyricVisibleLineCount = 3;
 const Duration _miniLyricScrollDuration = Duration(milliseconds: 380);
+// Breathing room INSIDE the list viewport so the first/last row's blur halo
+// fades out before reaching the viewport clip instead of being sliced flat
+// against it. The panel padding below hands back the same amount, so text
+// keeps its exact on-screen position and the window math is untouched:
+// row i starts at bleed + i*extent, and the existing `windowStart * extent`
+// scroll target leaves the top row exactly `bleed` inside the viewport.
+const double _miniLyricBlurBleed = 4;
 
 class MiniLyricsPanel extends ConsumerWidget {
   const MiniLyricsPanel({super.key, required this.onOpenLyrics});
@@ -57,8 +64,8 @@ class MiniLyricsPanel extends ConsumerWidget {
               height: 84,
               child: Padding(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 9,
+                  horizontal: 14 - _miniLyricBlurBleed,
+                  vertical: 9 - _miniLyricBlurBleed,
                 ),
                 child: _MiniLyricsScroller(
                   lyrics: vm.lyrics,
@@ -160,7 +167,7 @@ class _MiniLyricsScrollerState extends State<_MiniLyricsScroller> {
       key: const ValueKey('player-mini-lyrics-scroll'),
       controller: _controller,
       physics: const NeverScrollableScrollPhysics(),
-      padding: EdgeInsets.zero,
+      padding: const EdgeInsets.all(_miniLyricBlurBleed),
       itemExtent: _miniLyricLineExtent,
       // ignore: deprecated_member_use
       cacheExtent: 0,
@@ -191,10 +198,12 @@ class _MiniLyricsScrollerState extends State<_MiniLyricsScroller> {
           ),
           builder: (context, sigma, child) => ImageFiltered(
             key: ValueKey('player-mini-lyric-blur-$index'),
+            // Decal so the blur halo fades past the text bounds instead of
+            // clamp's hard seam at the glyph edges.
             imageFilter: ImageFilter.blur(
               sigmaX: sigma,
               sigmaY: sigma,
-              tileMode: TileMode.clamp,
+              tileMode: TileMode.decal,
             ),
             enabled: sigma > 0.05,
             child: child,

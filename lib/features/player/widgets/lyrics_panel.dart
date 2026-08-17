@@ -102,7 +102,10 @@ class _LyricsTranslationToggle extends StatelessWidget {
         ? Duration.zero
         : AppMotion.medium;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(0, 4, 0, 10),
+      // Horizontal 16 mirrors the lyric rows' blur-bleed inset: the page
+      // keeps 16px less outer padding, so this restores the toggle's
+      // original on-screen position.
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
       child: Align(
         alignment: Alignment.centerRight,
         child: Tooltip(

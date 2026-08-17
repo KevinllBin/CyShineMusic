@@ -252,7 +252,7 @@ class _NowPlayingBodyState extends ConsumerState<_NowPlayingBody> {
                     ],
                   ),
                 ),
-                const SizedBox(width: 40),
+                const SizedBox(width: 24),
                 const Expanded(
                   flex: 11,
                   child: KeyedSubtree(
@@ -266,8 +266,13 @@ class _NowPlayingBodyState extends ConsumerState<_NowPlayingBody> {
         }
 
         // Phone layouts keep the swipe gesture between album and lyrics.
+        // Horizontal padding is split 8 (here) + 16 (inside each pager page /
+        // the transport bar) instead of a flat 24: the lyrics rows carry the
+        // inner 16 themselves (_kLyricBlurBleedInset) so their blur halos are
+        // no longer sliced by the pager and viewport clips, which all sit at
+        // this Padding's inner edge. Glyph positions are identical.
         return Padding(
-          padding: const EdgeInsets.fromLTRB(24, 4, 24, 14),
+          padding: const EdgeInsets.fromLTRB(8, 4, 8, 14),
           child: Column(
             children: [
               Expanded(
@@ -296,7 +301,12 @@ class _NowPlayingBodyState extends ConsumerState<_NowPlayingBody> {
                           ClipRect(
                             key: const ValueKey('player-compact-album-clip'),
                             clipBehavior: Clip.hardEdge,
-                            child: AlbumPage(onOpenLyrics: _openLyricsPage),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              child: AlbumPage(onOpenLyrics: _openLyricsPage),
+                            ),
                           ),
                           ClipRect(
                             key: const ValueKey('player-compact-lyrics-clip'),
@@ -311,7 +321,10 @@ class _NowPlayingBodyState extends ConsumerState<_NowPlayingBody> {
                   ),
                 ),
               ),
-              const TransportBar(),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: TransportBar(),
+              ),
             ],
           ),
         );
