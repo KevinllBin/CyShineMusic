@@ -1,5 +1,6 @@
 import 'package:audio_service/audio_service.dart' show MediaItem;
 
+import 'media_item_copy.dart';
 import 'player_models.dart';
 
 const String androidBluetoothLyricsMetadataKey =
@@ -79,12 +80,15 @@ class BluetoothLyricMetadata {
       extras[androidBluetoothLyricsMetadataKey] = rawLyric;
     }
 
-    return current.copyWith(
-      title: title,
-      artist: artist,
-      displayTitle: title,
-      displaySubtitle: artist,
-      extras: extras,
+    return preserveMediaItemArtHeaders(
+      current,
+      current.copyWith(
+        title: title,
+        artist: artist,
+        displayTitle: title,
+        displaySubtitle: artist,
+        extras: extras,
+      ),
     );
   }
 }

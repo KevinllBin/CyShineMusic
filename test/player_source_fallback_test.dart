@@ -100,6 +100,21 @@ void main() {
     },
   );
 
+  test('NetEase system media artwork carries the required headers', () async {
+    final harness = await _Harness.create(loadFailures: 0);
+    addTearDown(harness.dispose);
+
+    await harness.controller.playFromMusic(_neteaseMusic());
+
+    final item = harness.audio.currentMediaItem;
+    expect(
+      item?.artUri.toString(),
+      'https://p1.music.126.net/test/cover.jpg?param=500y500',
+    );
+    expect(item?.artHeaders, containsPair('Referer', 'https://music.163.com/'));
+    expect(item?.artHeaders, contains('User-Agent'));
+  });
+
   test('all source load failures publish only the final error state', () async {
     final harness = await _Harness.create(loadFailures: 2);
     addTearDown(harness.dispose);
@@ -531,6 +546,24 @@ MusicInfo _music() {
     meta: const MusicMeta(
       songId: 'song-1',
       albumName: 'Test Album',
+      qualitys: [QualityOption(type: Quality.k128)],
+      raw: {},
+    ),
+    raw: const {},
+  );
+}
+
+MusicInfo _neteaseMusic() {
+  return MusicInfo(
+    id: 'netease-song',
+    name: 'NetEase Song',
+    singer: 'Test Singer',
+    source: MusicSource.wy,
+    interval: '03:00',
+    meta: const MusicMeta(
+      songId: 'netease-song',
+      albumName: 'Test Album',
+      picUrl: 'http://p1.music.126.net/test/cover.jpg',
       qualitys: [QualityOption(type: Quality.k128)],
       raw: {},
     ),

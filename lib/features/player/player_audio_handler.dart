@@ -10,6 +10,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'media_item_copy.dart';
+
 typedef PlayerTransportCallback = Future<void> Function();
 typedef PlayerQueueItemCallback = Future<void> Function(int index);
 typedef PlayerRepeatModeCallback =
@@ -173,7 +175,10 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     final resolvedDuration = item.duration ?? _player.duration;
     _currentMediaItem = resolvedDuration == null
         ? item
-        : item.copyWith(duration: resolvedDuration);
+        : preserveMediaItemArtHeaders(
+            item,
+            item.copyWith(duration: resolvedDuration),
+          );
     mediaItem.add(_currentMediaItem);
   }
 
@@ -281,7 +286,10 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     if (duration == null) return;
     final item = _currentMediaItem;
     if (item == null || item.duration == duration) return;
-    _currentMediaItem = item.copyWith(duration: duration);
+    _currentMediaItem = preserveMediaItemArtHeaders(
+      item,
+      item.copyWith(duration: duration),
+    );
     mediaItem.add(_currentMediaItem);
   }
 

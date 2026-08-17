@@ -15,6 +15,10 @@ void main() {
     qualityLabel: 'flac',
   );
   final artwork = Uri.parse('https://example.com/cover.jpg');
+  const artworkHeaders = {
+    'User-Agent': 'CyShineMusic test',
+    'Referer': 'https://music.163.com/',
+  };
   final base = MediaItem(
     id: track.id,
     title: track.title,
@@ -22,6 +26,7 @@ void main() {
     album: track.album,
     duration: const Duration(minutes: 3),
     artUri: artwork,
+    artHeaders: artworkHeaders,
     displayTitle: track.title,
     displaySubtitle: track.artist,
     extras: const {'trackKind': 'remote', 'source': '网易'},
@@ -44,6 +49,7 @@ void main() {
     expect(item.album, '测试专辑');
     expect(item.duration, const Duration(minutes: 3));
     expect(item.artUri, artwork);
+    expect(item.artHeaders, artworkHeaders);
     expect(item.extras?['trackKind'], 'remote');
     expect(item.extras?[androidBluetoothLyricsMetadataKey], '[00:00.00]完整歌词');
   });

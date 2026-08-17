@@ -957,6 +957,7 @@ class PlayerController extends StateNotifier<PlayerState>
       album: album.isEmpty ? null : album,
       duration: duration != null && duration > Duration.zero ? duration : null,
       artUri: artUri,
+      artHeaders: CoverImageSource.headersFor(artUri?.toString()),
       displayTitle: track.title,
       displaySubtitle: track.artist,
       displayDescription: sourceDescription.isEmpty ? null : sourceDescription,

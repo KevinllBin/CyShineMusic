@@ -22,9 +22,19 @@ void main() {
       });
 
       handler.updateMediaMetadata(
-        const MediaItem(id: 'old', title: '上一首', artist: '旧歌手'),
+        MediaItem(
+          id: 'old',
+          title: '上一首',
+          artist: '旧歌手',
+          duration: const Duration(minutes: 3),
+          artUri: Uri.parse('https://p1.music.126.net/old.jpg'),
+          artHeaders: const {'Referer': 'https://music.163.com/'},
+        ),
       );
       await tester.pump();
+      expect(handler.mediaItem.value?.artHeaders, {
+        'Referer': 'https://music.163.com/',
+      });
       final stateCountBeforeTransition = states.length;
 
       await handler.beginTrackTransition(
