@@ -308,10 +308,13 @@ void main() {
       find.byKey(const ValueKey('player-mini-lyric-line-2')),
       findsOneWidget,
     );
-    expect(
-      find.byKey(const ValueKey('player-mini-lyric-line-3')),
-      findsNothing,
+    final miniViewport = tester.getRect(
+      find.byKey(const ValueKey('player-mini-lyrics-scroll')),
     );
+    final fourthLine = tester.getRect(
+      find.byKey(const ValueKey('player-mini-lyric-line-3')),
+    );
+    expect(fourthLine.top, greaterThanOrEqualTo(miniViewport.bottom));
     expect(
       tester
           .widget<Text>(find.byKey(const ValueKey('player-mini-lyric-line-1')))

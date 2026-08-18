@@ -152,11 +152,11 @@ String normalizeWebDavBaseUrl(String value) {
     throw const FormatException('请输入有效的 HTTP 或 HTTPS 地址');
   }
   final path = uri.path == '/' ? '' : uri.path.replaceFirst(RegExp(r'/+$'), '');
-  return uri
-      .replace(
-        path: path,
-        queryParameters: const <String, String>{},
-        fragment: '',
-      )
-      .toString();
+  return Uri(
+    scheme: uri.scheme,
+    userInfo: uri.userInfo,
+    host: uri.host,
+    port: uri.hasPort ? uri.port : null,
+    path: path,
+  ).toString();
 }
