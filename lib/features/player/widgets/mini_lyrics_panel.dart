@@ -23,6 +23,8 @@ const Duration _miniLyricScrollDuration = Duration(milliseconds: 380);
 // row i starts at bleed + i*extent, and the existing `windowStart * extent`
 // scroll target leaves the top row exactly `bleed` inside the viewport.
 const double _miniLyricBlurBleed = 4;
+const double _miniLyricViewportExtent =
+    _miniLyricVisibleLineCount * _miniLyricLineExtent + _miniLyricBlurBleed;
 
 class MiniLyricsPanel extends ConsumerWidget {
   const MiniLyricsPanel({super.key, required this.onOpenLyrics});
@@ -67,9 +69,12 @@ class MiniLyricsPanel extends ConsumerWidget {
                   horizontal: 14 - _miniLyricBlurBleed,
                   vertical: 9 - _miniLyricBlurBleed,
                 ),
-                child: _MiniLyricsScroller(
-                  lyrics: vm.lyrics,
-                  activeIndex: vm.activeIndex,
+                child: SizedBox(
+                  height: _miniLyricViewportExtent,
+                  child: _MiniLyricsScroller(
+                    lyrics: vm.lyrics,
+                    activeIndex: vm.activeIndex,
+                  ),
                 ),
               ),
             ),
