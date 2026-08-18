@@ -669,6 +669,57 @@ void main() {
     });
   });
 
+  test(
+    'WebDAV export omits local-only tracks and restores device paths',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final container = _containerWith(prefs);
+      addTearDown(container.dispose);
+      final notifier = container.read(localPlaylistsProvider.notifier);
+      final playlist = await notifier.create('混合歌单');
+      final online = _music('remote-sync', '在线歌曲');
+      await notifier.addMusic(playlist.id, online);
+      await notifier.attachDownload(
+        music: online,
+        quality: Quality.flac,
+        localPath: r'D:\Music\remote-sync.flac',
+      );
+      await notifier.addEntry(
+        playlist.id,
+        _historyEntry(
+          id: 'local-only',
+          musicId: 'local-only',
+          path: r'D:\Music\local-only.flac',
+          name: '本地歌曲',
+        ),
+      );
+
+      final exported = notifier.exportForSync();
+      final tracks = exported.single['tracks']! as List;
+      expect(tracks, hasLength(1));
+      expect((tracks.single as Map).containsKey('localPath'), isFalse);
+
+      exported.single['name'] = '云端名称';
+      await notifier.applyFromSync(exported);
+      final restored = notifier.byId(playlist.id)!;
+      expect(restored.name, '云端名称');
+      expect(restored.tracks, hasLength(2));
+      expect(
+        restored.tracks
+            .firstWhere((track) => track.musicId == 'local-only')
+            .localPath,
+        r'D:\Music\local-only.flac',
+      );
+      expect(
+        restored.tracks
+            .firstWhere((track) => track.musicId == 'remote-sync')
+            .localPath,
+        r'D:\Music\remote-sync.flac',
+      );
+    },
+  );
+
   group('PlaylistTrack queue entry', () {
     test('keeps an online music snapshot playable without a local file', () {
       final track = PlaylistTrack.fromMusicInfo(_music('remote-1', '在线歌曲'));

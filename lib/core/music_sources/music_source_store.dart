@@ -100,6 +100,52 @@ class MusicSourceStore {
     if (await file.exists()) await file.delete();
   }
 
+  Future<void> replaceAll(
+    MusicSourceState state,
+    Map<String, String> scripts,
+  ) async {
+    final support = await getApplicationSupportDirectory();
+    final root = Directory(p.join(support.path, 'music_sources'));
+    final suffix = DateTime.now().microsecondsSinceEpoch;
+    final staging = Directory('${root.path}.sync-stage-$suffix');
+    final backup = Directory('${root.path}.sync-backup-$suffix');
+    await staging.create(recursive: true);
+    var hadRoot = false;
+    try {
+      for (final entry in scripts.entries) {
+        await File(
+          p.join(staging.path, '${entry.key}.js'),
+        ).writeAsString(entry.value, flush: true);
+      }
+      hadRoot = await root.exists();
+      if (hadRoot) await root.rename(backup.path);
+      try {
+        await staging.rename(root.path);
+      } catch (_) {
+        if (hadRoot && await backup.exists()) await backup.rename(root.path);
+        rethrow;
+      }
+      try {
+        await save(state);
+      } catch (_) {
+        if (await root.exists()) await root.delete(recursive: true);
+        if (hadRoot && await backup.exists()) await backup.rename(root.path);
+        rethrow;
+      }
+      try {
+        if (await backup.exists()) await backup.delete(recursive: true);
+      } catch (_) {
+        // A stale backup is harmless; the active directory is already valid.
+      }
+    } finally {
+      try {
+        if (await staging.exists()) await staging.delete(recursive: true);
+      } catch (_) {
+        // Best-effort cleanup must not turn a committed replacement into an error.
+      }
+    }
+  }
+
   Future<File> scriptFile(String id) async {
     final support = await getApplicationSupportDirectory();
     return File(p.join(support.path, 'music_sources', '$id.js'));

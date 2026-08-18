@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
-import 'package:just_audio/just_audio.dart' show ProcessingState;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:cy_shine_music/core/models/enums.dart';
@@ -746,7 +745,7 @@ void main() {
     controller.setStateForTest(
       controller.state.copyWith(
         position: const Duration(milliseconds: 1200),
-        processingState: ProcessingState.buffering,
+        processingState: PlayerProcessingState.buffering,
       ),
     );
     await tester.pump();
@@ -760,7 +759,7 @@ void main() {
     expect(_activeWordProgress(tester, 0), closeTo(bufferedProgress, 0.0001));
 
     controller.setStateForTest(
-      controller.state.copyWith(processingState: ProcessingState.ready),
+      controller.state.copyWith(processingState: PlayerProcessingState.ready),
     );
     await tester.pump();
     await tester.runAsync(

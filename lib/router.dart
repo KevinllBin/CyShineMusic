@@ -11,6 +11,7 @@ import 'features/playlists/playlist_detail_page.dart';
 import 'features/playlists/playlist_management_page.dart';
 import 'features/search/search_page.dart';
 import 'features/settings/settings_page.dart';
+import 'features/settings/webdav_sync_page.dart';
 import 'features/music_sources/music_source_page.dart';
 import 'features/shell/app_shell.dart';
 import 'features/shell/shell_page_storage.dart';
@@ -145,6 +146,12 @@ GoRouter createAppRouter({
             ),
           ),
           GoRoute(
+            path: '/settings/webdav',
+            pageBuilder: (context, state) => const NoTransitionPage(
+              child: ShellPageStorage(child: WebDavSyncPage()),
+            ),
+          ),
+          GoRoute(
             path: '/debug',
             pageBuilder: (context, state) => const NoTransitionPage(
               child: ShellPageStorage(child: DebugLogPage()),
@@ -173,6 +180,7 @@ bool _isPlayerReturnLocation(String location) {
     '/songs/search' ||
     '/settings' ||
     '/settings/sources' ||
+    '/settings/webdav' ||
     '/debug' => true,
     _ => false,
   };

@@ -41,6 +41,26 @@ void main() {
     },
   );
 
+  test('WebDAV appearance restore changes only appearance settings', () async {
+    final prefs = await SharedPreferences.getInstance();
+    final container = _settingsContainer(prefs);
+    addTearDown(container.dispose);
+    final notifier = container.read(settingsProvider.notifier);
+    await notifier.setOnlinePlaybackQuality(OnlinePlaybackQuality.lossless);
+
+    await notifier.applyAppearanceFromSync({
+      'themeMode': 'dark',
+      'themeSeedArgb': 0xFF123456,
+      'useDynamicColor': true,
+    });
+
+    final restored = container.read(settingsProvider);
+    expect(restored.themeMode, ThemeMode.dark);
+    expect(restored.themeSeed.toARGB32(), 0xFF123456);
+    expect(restored.useDynamicColor, isTrue);
+    expect(restored.onlinePlaybackQuality, OnlinePlaybackQuality.lossless);
+  });
+
   test('player lyric preferences persist', () async {
     final prefs = await SharedPreferences.getInstance();
     final container = _settingsContainer(prefs);
@@ -187,6 +207,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('音源管理'), findsOneWidget);
+    expect(find.text('WebDAV 同步'), findsOneWidget);
     expect(find.text('批量下载音质'), findsOneWidget);
     expect(find.text('扫描文件夹'), findsOneWidget);
     expect(find.text('浏览U盘'), findsNWidgets(2));

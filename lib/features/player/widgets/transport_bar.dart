@@ -2,8 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:just_audio/just_audio.dart' show ProcessingState;
-
 import '../../../theme/app_motion.dart';
 import '../player_controller.dart';
 import 'playback_queue_sheet.dart';
@@ -32,7 +30,7 @@ class _TransportBarState extends ConsumerState<TransportBar> {
           playing: s.playing,
           loading: s.loading,
           buffering: s.buffering,
-          ended: s.processingState == ProcessingState.completed,
+          ended: s.processingState == PlayerProcessingState.completed,
           hasTrack: s.track != null,
           playbackMode: s.playbackMode,
           queueCount: s.queue.isEmpty

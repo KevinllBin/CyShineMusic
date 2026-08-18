@@ -396,6 +396,7 @@ class _AppShellState extends ConsumerState<AppShell>
         widget.location == '/songs/search') {
       context.go('/songs');
     } else if (widget.location == '/settings/sources' ||
+        widget.location == '/settings/webdav' ||
         widget.location == '/debug') {
       context.go('/settings');
     } else if (context.canPop()) {
@@ -842,9 +843,7 @@ enum _ShellRouteMotion { forward, backward, playerEnter, playerExit }
 const _doubleBackExitWindow = Duration(seconds: 2);
 
 bool _isTopLevelMenuLocation(String location) {
-  return location == '/' ||
-      location == '/songs' ||
-      location == '/settings';
+  return location == '/' || location == '/songs' || location == '/settings';
 }
 
 _ShellRouteMotion _motionFor(String from, String to) {

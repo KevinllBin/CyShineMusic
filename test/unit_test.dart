@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
-import 'package:just_audio/just_audio.dart' show ProcessingState;
 import 'package:test/test.dart';
 
 import 'package:cy_shine_music/core/models/enums.dart';
@@ -26,6 +25,7 @@ import 'package:cy_shine_music/core/services/flac_metadata_writer.dart';
 import 'package:cy_shine_music/core/services/lyric_builder.dart';
 import 'package:cy_shine_music/core/services/tagger.dart';
 import 'package:cy_shine_music/core/storage/base_url.dart';
+import 'package:cy_shine_music/core/sync/sync_models.dart';
 import 'package:cy_shine_music/features/downloads/download_history_entry.dart';
 import 'package:cy_shine_music/features/player/lyric_parser.dart';
 // player_models (not player_controller): the controller's closure pulls in
@@ -33,6 +33,78 @@ import 'package:cy_shine_music/features/player/lyric_parser.dart';
 import 'package:cy_shine_music/features/player/player_models.dart';
 
 void main() {
+  group('WebDAV sync snapshot', () {
+    final older = DateTime.utc(2026, 8, 17, 8);
+    final newer = DateTime.utc(2026, 8, 17, 9);
+
+    test('round-trips the versioned sections', () {
+      final snapshot = WebDavSyncSnapshot(
+        generatedAt: newer,
+        playlists: WebDavSyncSection(
+          modifiedAt: older,
+          data: const [
+            {'id': 'playlist-1', 'name': '通勤'},
+          ],
+        ),
+        appearance: WebDavSyncSection(
+          modifiedAt: newer,
+          data: const {'themeMode': 'dark'},
+        ),
+        musicSources: WebDavSyncSection(
+          modifiedAt: older,
+          data: const {'records': <Object>[]},
+        ),
+      );
+
+      final restored = WebDavSyncSnapshot.decode(snapshot.encode());
+
+      expect(restored.generatedAt, newer);
+      expect(restored.playlists.modifiedAt, older);
+      expect(restored.playlists.data, isA<List>());
+      expect(restored.appearance.data, containsPair('themeMode', 'dark'));
+    });
+
+    test('hashes maps independently of key insertion order', () {
+      expect(
+        syncDataHash(const {
+          'b': 2,
+          'a': {'y': 2, 'x': 1},
+        }),
+        syncDataHash(const {
+          'a': {'x': 1, 'y': 2},
+          'b': 2,
+        }),
+      );
+    });
+
+    test('chooses the newer section and resolves changed ties to remote', () {
+      final local = WebDavSyncSection(
+        modifiedAt: older,
+        data: const {'value': 'local'},
+      );
+      final remote = WebDavSyncSection(
+        modifiedAt: newer,
+        data: const {'value': 'remote'},
+      );
+      expect(newerSyncSection(local, remote), same(remote));
+
+      final tiedRemote = WebDavSyncSection(
+        modifiedAt: older,
+        data: const {'value': 'remote'},
+      );
+      expect(newerSyncSection(local, tiedRemote), same(tiedRemote));
+    });
+
+    test('rejects unsupported snapshot versions', () {
+      expect(
+        () => WebDavSyncSnapshot.decode(
+          '{"schemaVersion":2,"generatedAt":"2026-08-17T00:00:00Z","sections":{}}',
+        ),
+        throwsA(isA<SyncFormatException>()),
+      );
+    });
+  });
+
   group('PlayerTrack queue entries', () {
     final Map<String, dynamic> music = {
       'id': 'queue-song',
@@ -121,7 +193,7 @@ void main() {
         playing: true,
         position: Duration(seconds: 2),
         duration: Duration(minutes: 3),
-        processingState: ProcessingState.ready,
+        processingState: PlayerProcessingState.ready,
       );
 
       final loading = playing.beginTrackLoading(
@@ -140,7 +212,7 @@ void main() {
       expect(loading.playing, isFalse);
       expect(loading.position, Duration.zero);
       expect(loading.duration, Duration.zero);
-      expect(loading.processingState, ProcessingState.loading);
+      expect(loading.processingState, PlayerProcessingState.loading);
     });
 
     test('a lyric response cannot revive transport state while loading', () {
@@ -149,7 +221,7 @@ void main() {
             loading: true,
             lyricLoading: true,
             playing: false,
-            processingState: ProcessingState.loading,
+            processingState: PlayerProcessingState.loading,
           ).withLoadedLyrics(
             info: const LyricInfo(lyric: '[00:01.000]New lyric'),
             parsed: const KaraokeLyrics([
@@ -163,7 +235,7 @@ void main() {
       expect(loading.playing, isFalse);
       expect(loading.position, Duration.zero);
       expect(loading.duration, Duration.zero);
-      expect(loading.processingState, ProcessingState.loading);
+      expect(loading.processingState, PlayerProcessingState.loading);
     });
   });
 
@@ -712,10 +784,12 @@ void main() {
 
       final lyrics = KaraokeLyricsParser.parse(info);
 
-      expect(
-        lyrics.lines.map((line) => line.translation),
-        ['我的梦里', '有你的光芒', '爱再次绽放', '萤火虫'],
-      );
+      expect(lyrics.lines.map((line) => line.translation), [
+        '我的梦里',
+        '有你的光芒',
+        '爱再次绽放',
+        '萤火虫',
+      ]);
     });
 
     test('falls back to line-level LRC when word timing is unavailable', () {

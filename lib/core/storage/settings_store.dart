@@ -191,6 +191,39 @@ class SettingsNotifier extends Notifier<AppSettings> {
     state = state.copyWith(useDynamicColor: value);
   }
 
+  Map<String, dynamic> exportAppearanceForSync() => {
+    'themeMode': _encodeThemeMode(state.themeMode),
+    'themeSeedArgb': state.themeSeed.toARGB32(),
+    'useDynamicColor': state.useDynamicColor,
+  };
+
+  Future<void> applyAppearanceFromSync(Object value) async {
+    if (value is! Map) throw const FormatException('云端外观设置格式无效');
+    final json = Map<String, dynamic>.from(value);
+    final rawMode = json['themeMode'];
+    final rawSeed = json['themeSeedArgb'];
+    final rawDynamic = json['useDynamicColor'];
+    if (rawMode is! String ||
+        rawSeed is! int ||
+        rawSeed < 0 ||
+        rawSeed > 0xFFFFFFFF ||
+        rawDynamic is! bool) {
+      throw const FormatException('云端外观设置不完整');
+    }
+    if (!const {'system', 'light', 'dark'}.contains(rawMode)) {
+      throw const FormatException('云端主题模式无效');
+    }
+    final next = state.copyWith(
+      themeMode: _decodeThemeMode(rawMode),
+      themeSeed: Color(rawSeed),
+      useDynamicColor: rawDynamic,
+    );
+    await _prefs.setString(_kThemeModeKey, rawMode);
+    await _prefs.setInt(_kThemeSeedKey, rawSeed);
+    await _prefs.setBool(_kUseDynamicColorKey, rawDynamic);
+    state = next;
+  }
+
   Future<void> setNetworkAdapterMode(NetworkAdapterMode mode) async {
     NetworkAdapterPreference.current = mode;
     await _prefs.setString(_kNetworkAdapterModeKey, mode.code);

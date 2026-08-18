@@ -211,6 +211,74 @@ class LocalPlaylistNotifier extends Notifier<List<LocalPlaylist>> {
     return List<LocalPlaylist>.unmodifiable(imported);
   }
 
+  List<Map<String, dynamic>> exportForSync() {
+    return List<Map<String, dynamic>>.unmodifiable([
+      for (final playlist in state)
+        <String, dynamic>{
+          ...playlist.toJson(),
+          'tracks': [
+            for (final track in playlist.tracks)
+              if (track.musicInfo != null) track.withoutLocalPath().toJson(),
+          ],
+        },
+    ]);
+  }
+
+  Future<void> applyFromSync(Object value) async {
+    if (value is! List) throw const PlaylistStoreException('云端歌单格式无效');
+    final incoming = <LocalPlaylist>[];
+    final seenIds = <String>{};
+    for (final item in value) {
+      final playlist = LocalPlaylist.tryFromJson(item);
+      if (playlist == null || !seenIds.add(playlist.id)) {
+        throw const PlaylistStoreException('云端歌单包含无效或重复的数据');
+      }
+      incoming.add(playlist);
+    }
+
+    final currentById = {for (final playlist in state) playlist.id: playlist};
+    final restored = <LocalPlaylist>[];
+    for (final remote in incoming) {
+      final current = currentById[remote.id];
+      if (current == null) {
+        restored.add(remote);
+        continue;
+      }
+      final currentByTrack = {
+        for (final track in current.tracks) track.identityKey: track,
+      };
+      final remoteIds = {for (final track in remote.tracks) track.identityKey};
+      final localOnly = [
+        for (final track in current.tracks)
+          if (track.musicInfo == null &&
+              track.isLocal &&
+              !remoteIds.contains(track.identityKey))
+            track,
+      ];
+      final portable = [
+        for (final track in remote.tracks)
+          currentByTrack[track.identityKey]?.mergePreferLocal(track) ?? track,
+      ];
+      restored.add(
+        LocalPlaylist(
+          id: remote.id,
+          name: remote.name,
+          tracks: List<PlaylistTrack>.unmodifiable([...localOnly, ...portable]),
+          createdAt: remote.createdAt,
+          updatedAt: remote.updatedAt,
+          originPlaylistId: remote.originPlaylistId,
+          originSourceCode: remote.originSourceCode,
+          onlineTrackIds: remote.onlineTrackIds,
+          coverUrl: remote.coverUrl,
+          creator: remote.creator,
+          description: remote.description,
+        ),
+      );
+    }
+    state = List<LocalPlaylist>.unmodifiable(restored);
+    await _persist();
+  }
+
   Future<bool> updateTrackCover({
     required String playlistId,
     required String trackId,

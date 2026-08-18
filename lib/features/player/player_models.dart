@@ -1,18 +1,18 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:just_audio/just_audio.dart' show ProcessingState;
-
 import '../../core/models/enums.dart';
 import '../../core/models/lyric_info.dart';
 import '../../core/models/music_info.dart';
-import '../../core/services/tagger.dart';
+import '../../core/services/embedded_audio_tags.dart';
 import '../downloads/download_history_entry.dart';
 import 'lyric_parser.dart';
 
 const _unset = Object();
 
 enum PlayerTrackKind { remote, localFile }
+
+enum PlayerProcessingState { idle, loading, buffering, ready, completed }
 
 enum PlayerPlaybackMode {
   sequence('顺序播放'),
@@ -246,7 +246,7 @@ class PlayerState {
     this.playing = false,
     this.position = Duration.zero,
     this.duration = Duration.zero,
-    this.processingState = ProcessingState.idle,
+    this.processingState = PlayerProcessingState.idle,
     this.canPlayPrevious = false,
     this.canPlayNext = false,
     this.queue = const [],
@@ -263,7 +263,7 @@ class PlayerState {
   final bool playing;
   final Duration position;
   final Duration duration;
-  final ProcessingState processingState;
+  final PlayerProcessingState processingState;
   final bool canPlayPrevious;
   final bool canPlayNext;
   final List<DownloadHistoryEntry> queue;
@@ -273,8 +273,8 @@ class PlayerState {
 
   bool get hasTrack => track != null;
   bool get buffering =>
-      processingState == ProcessingState.loading ||
-      processingState == ProcessingState.buffering;
+      processingState == PlayerProcessingState.loading ||
+      processingState == PlayerProcessingState.buffering;
 
   PlayerState copyWith({
     Object? track = _unset,
@@ -285,7 +285,7 @@ class PlayerState {
     bool? playing,
     Duration? position,
     Duration? duration,
-    ProcessingState? processingState,
+    PlayerProcessingState? processingState,
     bool? canPlayPrevious,
     bool? canPlayNext,
     List<DownloadHistoryEntry>? queue,
@@ -330,7 +330,7 @@ class PlayerState {
       playing: false,
       position: Duration.zero,
       duration: Duration.zero,
-      processingState: ProcessingState.loading,
+      processingState: PlayerProcessingState.loading,
       canPlayPrevious: canPlayPrevious,
       canPlayNext: canPlayNext,
       queue: queue,

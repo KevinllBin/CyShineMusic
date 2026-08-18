@@ -94,6 +94,7 @@ class ShellHeader extends ConsumerWidget {
     if (location.startsWith('/playlists/')) return '歌单详情';
     if (location == '/songs/search') return '搜索本地歌曲';
     if (location == '/settings/sources') return '音源管理';
+    if (location == '/settings/webdav') return 'WebDAV 同步';
     switch (location) {
       case '/history':
       case '/downloads':

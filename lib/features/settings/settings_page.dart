@@ -14,6 +14,7 @@ import '../../core/models/enums.dart';
 import '../../core/music_sources/music_source_controller.dart';
 import '../../core/services/permission_service.dart';
 import '../../core/storage/settings_store.dart';
+import '../../core/sync/webdav_sync_controller.dart';
 import '../../core/ui/app_toast.dart';
 import '../../theme/dynamic_color_status.dart';
 import '../shell/shell_toolbar_visibility.dart';
@@ -33,6 +34,7 @@ class SettingsPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     final sourceState = ref.watch(musicSourceControllerProvider);
+    final webDavState = ref.watch(webDavSyncControllerProvider);
     final dynamicColor = ref.watch(dynamicColorStatusProvider);
     final versionLabel = ref.watch(appVersionLabelProvider);
     final baseTheme = Theme.of(context);
@@ -73,6 +75,14 @@ class SettingsPage extends ConsumerWidget {
                               ),
                               trailing: Symbols.chevron_right,
                               onTap: () => context.go('/settings/sources'),
+                            ),
+                            SettingsAction(
+                              key: const ValueKey('webdav-sync-setting'),
+                              icon: Icons.cloud_sync_outlined,
+                              title: 'WebDAV 同步',
+                              subtitle: _webDavSubtitle(webDavState),
+                              trailing: Symbols.chevron_right,
+                              onTap: () => context.go('/settings/webdav'),
                             ),
                             SettingsMenuAction(
                               key: const ValueKey('network-adapter-menu'),
@@ -732,4 +742,27 @@ class SettingsPage extends ConsumerWidget {
     if (!context.mounted) return;
     showAppToast(context, '主题颜色已更新', type: AppToastType.success);
   }
+}
+
+String _webDavSubtitle(AsyncValue<WebDavSyncState> value) {
+  return value.when(
+    loading: () => '正在读取同步配置',
+    error: (_, _) => '同步配置读取失败',
+    data: (sync) {
+      if (!sync.config.isConfigured) return '未配置';
+      if (sync.phase == WebDavSyncPhase.connecting) return '正在连接';
+      if (sync.phase == WebDavSyncPhase.syncing) return '正在同步';
+      if (sync.phase == WebDavSyncPhase.failure) {
+        return sync.errorMessage ?? '最近同步失败';
+      }
+      final lastSyncedAt = sync.lastSyncedAt?.toLocal();
+      if (lastSyncedAt == null) return '已连接，尚未同步';
+      return '上次同步 ${_shortDateTime(lastSyncedAt)}';
+    },
+  );
+}
+
+String _shortDateTime(DateTime value) {
+  String two(int number) => number.toString().padLeft(2, '0');
+  return '${value.month}-${two(value.day)} ${two(value.hour)}:${two(value.minute)}';
 }

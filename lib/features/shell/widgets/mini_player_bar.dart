@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:just_audio/just_audio.dart' show ProcessingState;
-
 import '../../../theme/app_motion.dart';
 import '../../player/player_controller.dart';
 import '../../player/widgets/spinning_cover_art.dart';
@@ -31,7 +29,7 @@ class MiniPlayerBar extends ConsumerWidget {
           playing: s.playing,
           loading: s.loading,
           buffering: s.buffering,
-          ended: s.processingState == ProcessingState.completed,
+          ended: s.processingState == PlayerProcessingState.completed,
           canPrev: s.canPlayPrevious,
           canNext: s.canPlayNext,
         ),

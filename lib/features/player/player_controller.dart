@@ -27,6 +27,15 @@ import 'player_session_store.dart';
 
 export 'player_models.dart';
 
+PlayerProcessingState _mapProcessingState(ProcessingState value) =>
+    switch (value) {
+      ProcessingState.idle => PlayerProcessingState.idle,
+      ProcessingState.loading => PlayerProcessingState.loading,
+      ProcessingState.buffering => PlayerProcessingState.buffering,
+      ProcessingState.ready => PlayerProcessingState.ready,
+      ProcessingState.completed => PlayerProcessingState.completed,
+    };
+
 const _lyricLoadTimeout = Duration(seconds: 8);
 const _embeddedTagReadTimeout = Duration(seconds: 8);
 const _positionCheckpointInterval = Duration(seconds: 2);
@@ -62,7 +71,7 @@ class PlayerController extends StateNotifier<PlayerState>
         final wasPlaying = state.playing;
         state = state.copyWith(
           playing: playerState.playing,
-          processingState: playerState.processingState,
+          processingState: _mapProcessingState(playerState.processingState),
         );
         _syncBluetoothMetadata();
         if ((wasPlaying && !playerState.playing) ||
@@ -158,7 +167,7 @@ class PlayerController extends StateNotifier<PlayerState>
         track: restoredTrack ?? state.track,
         loading: true,
         playing: false,
-        processingState: ProcessingState.loading,
+        processingState: PlayerProcessingState.loading,
         canPlayPrevious: _canPlayPrevious,
         canPlayNext: _canPlayNext,
         queue: List<DownloadHistoryEntry>.unmodifiable(_queue),
@@ -272,7 +281,7 @@ class PlayerController extends StateNotifier<PlayerState>
         playing: _audioHandler.playing,
         position: _audioHandler.position,
         duration: _audioHandler.duration ?? Duration.zero,
-        processingState: _audioHandler.processingState,
+        processingState: _mapProcessingState(_audioHandler.processingState),
         error: null,
       );
       _publishMediaMetadata(finalItem);
@@ -300,7 +309,7 @@ class PlayerController extends StateNotifier<PlayerState>
         loading: false,
         lyricLoading: preservePresentation ? state.lyricLoading : false,
         playing: false,
-        processingState: ProcessingState.idle,
+        processingState: PlayerProcessingState.idle,
         error: showErrors ? describeDioError(e) : null,
       );
       return false;
@@ -569,7 +578,7 @@ class PlayerController extends StateNotifier<PlayerState>
         playing: _audioHandler.playing,
         position: _audioHandler.position,
         duration: _audioHandler.duration ?? Duration.zero,
-        processingState: _audioHandler.processingState,
+        processingState: _mapProcessingState(_audioHandler.processingState),
         error: null,
       );
       _syncBluetoothMetadata(force: true);
@@ -611,7 +620,7 @@ class PlayerController extends StateNotifier<PlayerState>
         loading: false,
         lyricLoading: false,
         playing: false,
-        processingState: ProcessingState.idle,
+        processingState: PlayerProcessingState.idle,
         error: showErrors ? '无法播放这个文件：$e' : null,
       );
       return false;
@@ -987,7 +996,7 @@ class PlayerController extends StateNotifier<PlayerState>
         state.playing &&
         !state.loading &&
         !state.buffering &&
-        state.processingState != ProcessingState.completed &&
+        state.processingState != PlayerProcessingState.completed &&
         !state.lyrics.isEmpty;
     var lineIndex = -1;
     String? activeLine;
@@ -1100,7 +1109,7 @@ class PlayerController extends StateNotifier<PlayerState>
       playing: false,
       position: restoredPosition,
       duration: restoredDuration,
-      processingState: ProcessingState.loading,
+      processingState: PlayerProcessingState.loading,
       queue: List<DownloadHistoryEntry>.unmodifiable(_queue),
       queueIndex: _queueIndex,
       playbackMode: playbackMode,

@@ -13,6 +13,7 @@ import 'package:material_color_utilities/material_color_utilities.dart';
 import 'core/services/app_logger.dart';
 import 'core/services/permission_service.dart';
 import 'core/storage/settings_store.dart';
+import 'core/sync/webdav_sync_controller.dart';
 import 'core/ui/app_toast.dart';
 import 'features/downloads/download_history_store.dart';
 import 'core/music_sources/music_source_controller.dart';
@@ -33,13 +34,15 @@ class CyShineMusicApp extends ConsumerStatefulWidget {
   ConsumerState<CyShineMusicApp> createState() => _CyShineMusicAppState();
 }
 
-class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp> {
+class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
+    with WidgetsBindingObserver {
   Future<CorePalette?>? _corePaletteFuture;
   String? _lastLoggedScheme;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _corePaletteFuture = DynamicColorPlugin.getCorePalette();
     // Warm persisted library and player state behind the startup screen so
     // synchronous decoding and audio-source restoration stay off the first
@@ -48,6 +51,7 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp> {
       if (!mounted) return;
       ref.read(downloadHistoryProvider);
       ref.read(musicSourceControllerProvider);
+      ref.read(webDavSyncControllerProvider);
       ref.read(playerControllerProvider.notifier);
       final scanCache = ref.read(localSongScanCacheProvider);
       unawaited(
@@ -56,6 +60,18 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp> {
         ),
       );
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !mounted) return;
+    unawaited(ref.read(webDavSyncControllerProvider.notifier).onAppResumed());
   }
 
   Future<void> _onStartupReady() async {

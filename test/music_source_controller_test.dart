@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:cy_shine_music/core/models/enums.dart';
 import 'package:cy_shine_music/core/music_sources/music_source_controller.dart';
+import 'package:cy_shine_music/core/music_sources/music_source_metadata_parser.dart';
 import 'package:cy_shine_music/core/music_sources/music_source_models.dart';
 import 'package:cy_shine_music/core/music_sources/music_source_runtime.dart';
 import 'package:cy_shine_music/core/music_sources/music_source_store.dart';
@@ -118,6 +119,40 @@ void main() {
       ['first', 'third'],
     );
   });
+
+  test(
+    'WebDAV restore validates scripts and preserves enabled order',
+    () async {
+      const firstScript = '// @name Cloud One\n// @author sync\n';
+      const secondScript = '// @name Cloud Two\n// @author sync\n';
+      final firstId = musicSourceId(parseMusicSourceMetadata(firstScript));
+      final secondId = musicSourceId(parseMusicSourceMetadata(secondScript));
+      final first = _record(firstId, name: 'Cloud One', author: 'sync');
+      final second = _record(secondId, name: 'Cloud Two', author: 'sync');
+      final harness = await _Harness.create(MusicSourceState.empty);
+      addTearDown(harness.container.dispose);
+      final controller = harness.container.read(
+        musicSourceControllerProvider.notifier,
+      );
+
+      await controller.applyFromSync({
+        'records': [first.toJson(), second.toJson()],
+        'enabledIds': [secondId, firstId],
+        'scripts': {firstId: firstScript, secondId: secondScript},
+      });
+
+      final restored = harness.container
+          .read(musicSourceControllerProvider)
+          .requireValue;
+      expect(restored.records.map((record) => record.id), [firstId, secondId]);
+      expect(restored.enabledIds, [secondId, firstId]);
+      final exported = await controller.exportForSync();
+      expect(exported['scripts'], {
+        firstId: firstScript,
+        secondId: secondScript,
+      });
+    },
+  );
 }
 
 class _Harness {
@@ -148,6 +183,7 @@ class _MemoryStore extends MusicSourceStore {
   _MemoryStore(super.preferences, this.current);
 
   MusicSourceState current;
+  Map<String, String> scripts = <String, String>{};
 
   @override
   Future<MusicSourceState> load() async => current;
@@ -158,7 +194,16 @@ class _MemoryStore extends MusicSourceStore {
   }
 
   @override
-  Future<String> readScript(String id) async => 'script:$id';
+  Future<String> readScript(String id) async => scripts[id] ?? 'script:$id';
+
+  @override
+  Future<void> replaceAll(
+    MusicSourceState state,
+    Map<String, String> nextScripts,
+  ) async {
+    current = state;
+    scripts = Map<String, String>.from(nextScripts);
+  }
 }
 
 class _ValidationRuntime extends MusicSourceRuntime {
@@ -184,12 +229,12 @@ class _ValidationRuntime extends MusicSourceRuntime {
   Future<void> disposeRuntime() async {}
 }
 
-MusicSourceRecord _record(String id) {
+MusicSourceRecord _record(String id, {String? name, String author = 'test'}) {
   return MusicSourceRecord(
     id: id,
-    name: id,
+    name: name ?? id,
     description: '',
-    author: 'test',
+    author: author,
     homepage: '',
     version: '1',
     origin: 'test',

@@ -62,6 +62,98 @@ class MusicSourceController extends AsyncNotifier<MusicSourceState> {
     return state.requireValue.records.firstWhere((item) => item.id == id);
   }
 
+  Future<Map<String, dynamic>> exportForSync() async {
+    final current = await future;
+    final scripts = <String, String>{};
+    final records = <Map<String, dynamic>>[];
+    for (final record in current.records) {
+      scripts[record.id] = await _store.readScript(record.id);
+      final json = record.toJson()..remove('lastError');
+      json['origin'] = _portableOrigin(record.origin);
+      records.add(json);
+    }
+    return {
+      'records': records,
+      'enabledIds': current.enabledIds,
+      'scripts': scripts,
+    };
+  }
+
+  Future<void> applyFromSync(Object value) async {
+    if (value is! Map) {
+      throw const MusicSourceRuntimeException('云端音源格式无效');
+    }
+    final json = Map<String, dynamic>.from(value);
+    final rawRecords = json['records'];
+    final rawEnabledIds = json['enabledIds'];
+    final rawScripts = json['scripts'];
+    if (rawRecords is! List || rawEnabledIds is! List || rawScripts is! Map) {
+      throw const MusicSourceRuntimeException('云端音源数据不完整');
+    }
+    if (rawRecords.length > kMaxMusicSourceCount) {
+      throw const MusicSourceRuntimeException('云端音源数量超过 20 个');
+    }
+
+    final scripts = <String, String>{};
+    for (final entry in rawScripts.entries) {
+      if (entry.key is String && entry.value is String) {
+        scripts[entry.key as String] = entry.value as String;
+      }
+    }
+    final parsedRecords = <MusicSourceRecord>[];
+    final ids = <String>{};
+    try {
+      for (final rawRecord in rawRecords) {
+        if (rawRecord is! Map) throw const FormatException();
+        final record = MusicSourceRecord.fromJson(
+          Map<String, dynamic>.from(rawRecord),
+        );
+        final script = scripts[record.id];
+        if (record.id.isEmpty || script == null || !ids.add(record.id)) {
+          throw const FormatException();
+        }
+        final metadata = parseMusicSourceMetadata(script);
+        if (musicSourceId(metadata) != record.id) throw const FormatException();
+        parsedRecords.add(record);
+      }
+    } catch (error) {
+      throw const MusicSourceRuntimeException('云端音源脚本或索引无效');
+    }
+
+    final enabledIds = <String>[];
+    for (final rawId in rawEnabledIds) {
+      if (rawId is! String || !ids.contains(rawId)) {
+        throw const MusicSourceRuntimeException('云端启用音源列表无效');
+      }
+      if (!enabledIds.contains(rawId)) enabledIds.add(rawId);
+    }
+    if (enabledIds.length > kMaxEnabledMusicSourceCount) {
+      throw const MusicSourceRuntimeException('云端启用音源数量超过 5 个');
+    }
+    if (scripts.length != parsedRecords.length) {
+      throw const MusicSourceRuntimeException('云端音源脚本数量不一致');
+    }
+
+    final records = <MusicSourceRecord>[];
+    try {
+      for (final record in parsedRecords) {
+        records.add(await _validate(record, scripts[record.id]!));
+      }
+    } catch (error) {
+      await _runtime.disposeRuntime();
+      if (error is MusicSourceRuntimeException) rethrow;
+      throw const MusicSourceRuntimeException('云端音源脚本初始化失败');
+    }
+
+    final next = MusicSourceState(
+      records: List<MusicSourceRecord>.unmodifiable(records),
+      enabledIds: List<String>.unmodifiable(enabledIds),
+    );
+    await _runtime.disposeRuntime();
+    await _store.replaceAll(next, scripts);
+    state = AsyncData(next);
+  }
+
   Future<void> activate(String id) async {
     final current = await future;
     final record = current.records.firstWhere(
@@ -177,6 +269,14 @@ class MusicSourceController extends AsyncNotifier<MusicSourceState> {
         if (record.id == replacement.id) replacement else record,
     ]);
   }
+}
+
+String _portableOrigin(String origin) {
+  final uri = Uri.tryParse(origin.trim());
+  if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+    return uri.toString();
+  }
+  return 'WebDAV 同步';
 }
 
 final musicSourceControllerProvider =
