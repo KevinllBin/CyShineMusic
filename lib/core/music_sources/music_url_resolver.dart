@@ -84,16 +84,9 @@ class LocalMusicUrlResolver implements MusicUrlResolver {
     if (supported.isEmpty) {
       throw MusicSourceRuntimeException('已启用的音源均不支持${music.source.label}');
     }
-    final sources = [
-      for (final source in supported)
-        if (!excludedSourceIds.contains(source.id)) source,
-    ];
-    if (sources.isEmpty) {
-      throw const MusicSourceFallbackException([]);
-    }
+    final sources = supported;
 
     final failures = <MusicSourceAttemptFailure>[];
-    final attemptedSourceIds = <String>[];
     final qualityCandidates = musicSourceQualityFallbacks(
       requested: quality,
       sourceQualities: sources.expand(
@@ -102,7 +95,15 @@ class LocalMusicUrlResolver implements MusicUrlResolver {
     );
     final scripts = <String, String>{};
     for (final resolvedQuality in qualityCandidates) {
+      final attemptedSourceIds = <String>[];
       for (final source in sources) {
+        // A late playback failure excludes this source only at the quality
+        // that just failed. The same source must remain eligible after the
+        // resolver downgrades to the next quality.
+        if (resolvedQuality == quality &&
+            excludedSourceIds.contains(source.id)) {
+          continue;
+        }
         final sourceQualities = source.qualitiesFor(music.source);
         final supportsQuality = sourceQualities.isEmpty
             ? resolvedQuality == quality

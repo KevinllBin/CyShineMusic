@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'app_motion.dart';
+import 'color_style.dart';
 
 class AppTheme {
   const AppTheme._();
@@ -17,20 +18,35 @@ class AppTheme {
     'Microsoft YaHei',
   ];
 
-  static ThemeData light([Color seed = designSeed]) =>
-      _build(Brightness.light, seed);
-  static ThemeData dark([Color seed = designSeed]) =>
-      _build(Brightness.dark, seed);
+  static ThemeData light([
+    Color seed = designSeed,
+    AppColorStyle style = AppColorStyle.fallback,
+  ]) => _build(Brightness.light, seed, style);
+
+  static ThemeData dark([
+    Color seed = designSeed,
+    AppColorStyle style = AppColorStyle.fallback,
+  ]) => _build(Brightness.dark, seed, style);
+
   static ThemeData fromScheme(ColorScheme scheme) => _buildFromScheme(scheme);
 
-  static ThemeData _build(Brightness brightness, Color seed) {
-    final scheme = ColorScheme.fromSeed(
-      seedColor: seed,
-      brightness: brightness,
-      dynamicSchemeVariant: DynamicSchemeVariant.tonalSpot,
-    );
+  /// 用给定风格展开种子色。设置页的风格预览也走这里，保证预览与实际一致。
+  static ColorScheme schemeFor(
+    Color seed,
+    Brightness brightness,
+    AppColorStyle style,
+  ) => ColorScheme.fromSeed(
+    seedColor: seed,
+    brightness: brightness,
+    dynamicSchemeVariant: style.variant,
+  );
 
-    return _buildFromScheme(scheme);
+  static ThemeData _build(
+    Brightness brightness,
+    Color seed,
+    AppColorStyle style,
+  ) {
+    return _buildFromScheme(schemeFor(seed, brightness, style));
   }
 
   static ThemeData _buildFromScheme(ColorScheme scheme) {

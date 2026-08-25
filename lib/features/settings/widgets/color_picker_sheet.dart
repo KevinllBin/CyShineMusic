@@ -2,20 +2,27 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../theme/app_theme.dart';
+import '../../../theme/color_style.dart';
 
-Future<Color?> showColorPickerSheet(BuildContext context, Color initial) {
+Future<Color?> showColorPickerSheet(
+  BuildContext context,
+  Color initial, {
+  AppColorStyle style = AppColorStyle.fallback,
+}) {
   return showModalBottomSheet<Color>(
     context: context,
+    useRootNavigator: true,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (ctx) => _ColorPickerSheet(initial: initial),
+    builder: (ctx) => _ColorPickerSheet(initial: initial, style: style),
   );
 }
 
 class _ColorPickerSheet extends StatefulWidget {
-  const _ColorPickerSheet({required this.initial});
+  const _ColorPickerSheet({required this.initial, required this.style});
 
   final Color initial;
+  final AppColorStyle style;
 
   @override
   State<_ColorPickerSheet> createState() => _ColorPickerSheetState();
@@ -72,9 +79,10 @@ class _ColorPickerSheetState extends State<_ColorPickerSheet> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final preview = ColorScheme.fromSeed(
-      seedColor: _color,
-      brightness: Theme.of(context).brightness,
+    final preview = AppTheme.schemeFor(
+      _color,
+      Theme.of(context).brightness,
+      widget.style,
     );
     final viewInsets = MediaQuery.viewInsetsOf(context);
 

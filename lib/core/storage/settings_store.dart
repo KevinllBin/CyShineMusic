@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/dio_factory.dart';
 import '../models/enums.dart';
+import '../../theme/color_style.dart';
 import '../../theme/seed_palette.dart';
 import 'base_url.dart';
 
@@ -15,6 +16,7 @@ const String _kDownloadDirKey = 'download_dir';
 const String _kLocalMusicDirKey = 'local_music_dir';
 const String _kThemeModeKey = 'theme_mode';
 const String _kThemeSeedKey = 'theme_seed_argb';
+const String _kColorStyleKey = 'theme_color_style';
 const String _kUseDynamicColorKey = 'use_dynamic_color';
 const String _kNetworkAdapterModeKey = 'network_adapter_mode';
 const String _kEnabledSearchSourcesKey = 'enabled_search_source_codes';
@@ -34,6 +36,7 @@ class AppSettings {
     required this.localMusicDir,
     required this.themeMode,
     required this.themeSeed,
+    required this.colorStyle,
     required this.useDynamicColor,
     required this.networkAdapterMode,
     required this.enabledSearchSources,
@@ -50,6 +53,7 @@ class AppSettings {
   final String localMusicDir;
   final ThemeMode themeMode;
   final Color themeSeed;
+  final AppColorStyle colorStyle;
   final bool useDynamicColor;
   final NetworkAdapterMode networkAdapterMode;
   final Set<MusicSource> enabledSearchSources;
@@ -66,6 +70,7 @@ class AppSettings {
     String? localMusicDir,
     ThemeMode? themeMode,
     Color? themeSeed,
+    AppColorStyle? colorStyle,
     bool? useDynamicColor,
     NetworkAdapterMode? networkAdapterMode,
     Set<MusicSource>? enabledSearchSources,
@@ -81,6 +86,7 @@ class AppSettings {
     localMusicDir: localMusicDir ?? this.localMusicDir,
     themeMode: themeMode ?? this.themeMode,
     themeSeed: themeSeed ?? this.themeSeed,
+    colorStyle: colorStyle ?? this.colorStyle,
     useDynamicColor: useDynamicColor ?? this.useDynamicColor,
     networkAdapterMode: networkAdapterMode ?? this.networkAdapterMode,
     enabledSearchSources: enabledSearchSources ?? this.enabledSearchSources,
@@ -100,6 +106,7 @@ class AppSettings {
     localMusicDir: kDefaultDownloadDir,
     themeMode: ThemeMode.system,
     themeSeed: SeedPalette.defaultSeed,
+    colorStyle: AppColorStyle.fallback,
     useDynamicColor: false,
     networkAdapterMode: NetworkAdapterMode.system,
     enabledSearchSources: kDefaultEnabledSearchSources,
@@ -136,6 +143,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
       themeSeed: Color(
         _prefs.getInt(_kThemeSeedKey) ?? SeedPalette.defaultSeed.toARGB32(),
       ),
+      colorStyle: AppColorStyle.fromCode(_prefs.getString(_kColorStyleKey)),
       useDynamicColor: _prefs.getBool(_kUseDynamicColorKey) ?? false,
       networkAdapterMode: NetworkAdapterPreference.current,
       enabledSearchSources: decodeEnabledSearchSources(
@@ -186,6 +194,11 @@ class SettingsNotifier extends Notifier<AppSettings> {
     state = state.copyWith(themeSeed: color);
   }
 
+  Future<void> setColorStyle(AppColorStyle style) async {
+    await _prefs.setString(_kColorStyleKey, style.code);
+    state = state.copyWith(colorStyle: style);
+  }
+
   Future<void> setUseDynamicColor(bool value) async {
     await _prefs.setBool(_kUseDynamicColorKey, value);
     state = state.copyWith(useDynamicColor: value);
@@ -194,6 +207,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
   Map<String, dynamic> exportAppearanceForSync() => {
     'themeMode': _encodeThemeMode(state.themeMode),
     'themeSeedArgb': state.themeSeed.toARGB32(),
+    'colorStyle': state.colorStyle.code,
     'useDynamicColor': state.useDynamicColor,
   };
 
@@ -213,13 +227,30 @@ class SettingsNotifier extends Notifier<AppSettings> {
     if (!const {'system', 'light', 'dark'}.contains(rawMode)) {
       throw const FormatException('云端主题模式无效');
     }
+
+    // colorStyle 是后加的字段：旧版本写的备份没有它，此时保留本机当前风格，
+    // 而不是把它当成损坏数据。
+    final rawStyle = json['colorStyle'];
+    final AppColorStyle? syncedStyle;
+    if (rawStyle == null) {
+      syncedStyle = null;
+    } else if (rawStyle is String && AppColorStyle.isKnownCode(rawStyle)) {
+      syncedStyle = AppColorStyle.fromCode(rawStyle);
+    } else {
+      throw const FormatException('云端配色风格无效');
+    }
+
     final next = state.copyWith(
       themeMode: _decodeThemeMode(rawMode),
       themeSeed: Color(rawSeed),
+      colorStyle: syncedStyle,
       useDynamicColor: rawDynamic,
     );
     await _prefs.setString(_kThemeModeKey, rawMode);
     await _prefs.setInt(_kThemeSeedKey, rawSeed);
+    if (syncedStyle != null) {
+      await _prefs.setString(_kColorStyleKey, syncedStyle.code);
+    }
     await _prefs.setBool(_kUseDynamicColorKey, rawDynamic);
     state = next;
   }

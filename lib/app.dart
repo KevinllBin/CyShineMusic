@@ -179,10 +179,10 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
                 darkScheme != null;
             final lightTheme = useDynamicScheme
                 ? AppTheme.fromScheme(lightScheme)
-                : AppTheme.light(settings.themeSeed);
+                : AppTheme.light(settings.themeSeed, settings.colorStyle);
             final darkTheme = useDynamicScheme
                 ? AppTheme.fromScheme(darkScheme)
-                : AppTheme.dark(settings.themeSeed);
+                : AppTheme.dark(settings.themeSeed, settings.colorStyle);
             final isDark = switch (themeMode) {
               ThemeMode.light => false,
               ThemeMode.dark => true,

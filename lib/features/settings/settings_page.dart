@@ -21,6 +21,7 @@ import '../shell/shell_toolbar_visibility.dart';
 import '../songs/local_song_scan_cache.dart';
 import '../update/app_update_prompt.dart';
 import 'widgets/color_picker_sheet.dart';
+import 'widgets/color_style_row.dart';
 import 'widgets/settings_action.dart';
 import 'widgets/settings_menu.dart';
 import 'widgets/storage_folder_picker_sheet.dart';
@@ -354,6 +355,17 @@ class SettingsPage extends ConsumerWidget {
                                   .read(settingsProvider.notifier)
                                   .setThemeSeed(color),
                               onCustomize: () => _pickThemeSeed(context, ref),
+                            ),
+                            const SizedBox(height: 18),
+                            ColorStyleRow(
+                              value: settings.colorStyle,
+                              seed: settings.themeSeed,
+                              enabled:
+                                  !(settings.useDynamicColor &&
+                                      dynamicColor.available),
+                              onPick: (style) => ref
+                                  .read(settingsProvider.notifier)
+                                  .setColorStyle(style),
                             ),
                             const SizedBox(height: 18),
                             DynamicColorRow(
@@ -727,13 +739,18 @@ class SettingsPage extends ConsumerWidget {
   }
 
   Future<void> _pickThemeSeed(BuildContext context, WidgetRef ref) async {
-    final current = ref.read(settingsProvider).themeSeed;
+    final settings = ref.read(settingsProvider);
+    final current = settings.themeSeed;
     final toolbar = ref.read(shellToolbarVisibleProvider.notifier);
     final wasToolbarVisible = ref.read(shellToolbarVisibleProvider);
     toolbar.state = false;
     Color? selected;
     try {
-      selected = await showColorPickerSheet(context, current);
+      selected = await showColorPickerSheet(
+        context,
+        current,
+        style: settings.colorStyle,
+      );
     } finally {
       if (toolbar.mounted) toolbar.state = wasToolbarVisible;
     }

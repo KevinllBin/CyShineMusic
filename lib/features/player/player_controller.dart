@@ -253,7 +253,7 @@ class PlayerController extends StateNotifier<PlayerState>
       final resolvedQuality = resolved.type ?? selectedQuality;
       _currentQuality = resolvedQuality;
       _attemptedRemoteSourceIds = {
-        ...excludedSourceIds,
+        if (resolvedQuality == selectedQuality) ...excludedSourceIds,
         ...fallback.attemptedSourceIds,
       };
       final coverUrl = await coverFuture;

@@ -12,6 +12,7 @@ import 'package:cy_shine_music/features/settings/settings_page.dart';
 import 'package:cy_shine_music/features/settings/widgets/settings_action.dart';
 import 'package:cy_shine_music/features/settings/widgets/settings_style.dart';
 import 'package:cy_shine_music/theme/app_theme.dart';
+import 'package:cy_shine_music/theme/color_style.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -59,6 +60,80 @@ void main() {
     expect(restored.themeSeed.toARGB32(), 0xFF123456);
     expect(restored.useDynamicColor, isTrue);
     expect(restored.onlinePlaybackQuality, OnlinePlaybackQuality.lossless);
+  });
+
+  test('color style persists and defaults to soft', () async {
+    final prefs = await SharedPreferences.getInstance();
+    final container = _settingsContainer(prefs);
+    expect(container.read(settingsProvider).colorStyle, AppColorStyle.soft);
+
+    await container
+        .read(settingsProvider.notifier)
+        .setColorStyle(AppColorStyle.vivid);
+    container.dispose();
+
+    final restored = _settingsContainer(prefs);
+    addTearDown(restored.dispose);
+    expect(restored.read(settingsProvider).colorStyle, AppColorStyle.vivid);
+  });
+
+  test('appearance sync round-trips the color style', () async {
+    final prefs = await SharedPreferences.getInstance();
+    final container = _settingsContainer(prefs);
+    addTearDown(container.dispose);
+    final notifier = container.read(settingsProvider.notifier);
+
+    await notifier.setColorStyle(AppColorStyle.faithful);
+    expect(
+      notifier.exportAppearanceForSync()['colorStyle'],
+      AppColorStyle.faithful.code,
+    );
+
+    await notifier.applyAppearanceFromSync({
+      'themeMode': 'light',
+      'themeSeedArgb': 0xFF00BCD4,
+      'colorStyle': AppColorStyle.creative.code,
+      'useDynamicColor': false,
+    });
+    expect(container.read(settingsProvider).colorStyle, AppColorStyle.creative);
+  });
+
+  test(
+    'appearance payload without a color style keeps the local one',
+    () async {
+      final prefs = await SharedPreferences.getInstance();
+      final container = _settingsContainer(prefs);
+      addTearDown(container.dispose);
+      final notifier = container.read(settingsProvider.notifier);
+      await notifier.setColorStyle(AppColorStyle.vivid);
+
+      // 旧版本写的备份没有 colorStyle 字段，不应被当成损坏数据。
+      await notifier.applyAppearanceFromSync({
+        'themeMode': 'dark',
+        'themeSeedArgb': 0xFF123456,
+        'useDynamicColor': false,
+      });
+
+      final restored = container.read(settingsProvider);
+      expect(restored.colorStyle, AppColorStyle.vivid);
+      expect(restored.themeMode, ThemeMode.dark);
+    },
+  );
+
+  test('appearance sync rejects an unknown color style', () async {
+    final prefs = await SharedPreferences.getInstance();
+    final container = _settingsContainer(prefs);
+    addTearDown(container.dispose);
+
+    expect(
+      () => container.read(settingsProvider.notifier).applyAppearanceFromSync({
+        'themeMode': 'dark',
+        'themeSeedArgb': 0xFF123456,
+        'colorStyle': 'not-a-style',
+        'useDynamicColor': false,
+      }),
+      throwsA(isA<FormatException>()),
+    );
   });
 
   test('player lyric preferences persist', () async {
