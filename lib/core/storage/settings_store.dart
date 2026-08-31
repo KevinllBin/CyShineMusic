@@ -18,6 +18,7 @@ const String _kThemeModeKey = 'theme_mode';
 const String _kThemeSeedKey = 'theme_seed_argb';
 const String _kColorStyleKey = 'theme_color_style';
 const String _kUseDynamicColorKey = 'use_dynamic_color';
+const String _kFlowingLightEnabledKey = 'flowing_light_enabled';
 const String _kNetworkAdapterModeKey = 'network_adapter_mode';
 const String _kEnabledSearchSourcesKey = 'enabled_search_source_codes';
 const String _kOnlinePlaybackQualityKey = 'online_playback_quality';
@@ -38,6 +39,7 @@ class AppSettings {
     required this.themeSeed,
     required this.colorStyle,
     required this.useDynamicColor,
+    required this.flowingLightEnabled,
     required this.networkAdapterMode,
     required this.enabledSearchSources,
     required this.onlinePlaybackQuality,
@@ -55,6 +57,10 @@ class AppSettings {
   final Color themeSeed;
   final AppColorStyle colorStyle;
   final bool useDynamicColor;
+
+  /// Whether the player backdrop animates its extracted colors. Off falls back
+  /// to the static blurred-artwork backdrop.
+  final bool flowingLightEnabled;
   final NetworkAdapterMode networkAdapterMode;
   final Set<MusicSource> enabledSearchSources;
   final OnlinePlaybackQuality onlinePlaybackQuality;
@@ -72,6 +78,7 @@ class AppSettings {
     Color? themeSeed,
     AppColorStyle? colorStyle,
     bool? useDynamicColor,
+    bool? flowingLightEnabled,
     NetworkAdapterMode? networkAdapterMode,
     Set<MusicSource>? enabledSearchSources,
     OnlinePlaybackQuality? onlinePlaybackQuality,
@@ -88,6 +95,7 @@ class AppSettings {
     themeSeed: themeSeed ?? this.themeSeed,
     colorStyle: colorStyle ?? this.colorStyle,
     useDynamicColor: useDynamicColor ?? this.useDynamicColor,
+    flowingLightEnabled: flowingLightEnabled ?? this.flowingLightEnabled,
     networkAdapterMode: networkAdapterMode ?? this.networkAdapterMode,
     enabledSearchSources: enabledSearchSources ?? this.enabledSearchSources,
     onlinePlaybackQuality: onlinePlaybackQuality ?? this.onlinePlaybackQuality,
@@ -108,6 +116,7 @@ class AppSettings {
     themeSeed: SeedPalette.defaultSeed,
     colorStyle: AppColorStyle.fallback,
     useDynamicColor: false,
+    flowingLightEnabled: true,
     networkAdapterMode: NetworkAdapterMode.system,
     enabledSearchSources: kDefaultEnabledSearchSources,
     onlinePlaybackQuality: OnlinePlaybackQuality.highest,
@@ -145,6 +154,8 @@ class SettingsNotifier extends Notifier<AppSettings> {
       ),
       colorStyle: AppColorStyle.fromCode(_prefs.getString(_kColorStyleKey)),
       useDynamicColor: _prefs.getBool(_kUseDynamicColorKey) ?? false,
+      flowingLightEnabled:
+          _prefs.getBool(_kFlowingLightEnabledKey) ?? true,
       networkAdapterMode: NetworkAdapterPreference.current,
       enabledSearchSources: decodeEnabledSearchSources(
         _prefs.getStringList(_kEnabledSearchSourcesKey),
@@ -204,11 +215,17 @@ class SettingsNotifier extends Notifier<AppSettings> {
     state = state.copyWith(useDynamicColor: value);
   }
 
+  Future<void> setFlowingLightEnabled(bool value) async {
+    await _prefs.setBool(_kFlowingLightEnabledKey, value);
+    state = state.copyWith(flowingLightEnabled: value);
+  }
+
   Map<String, dynamic> exportAppearanceForSync() => {
     'themeMode': _encodeThemeMode(state.themeMode),
     'themeSeedArgb': state.themeSeed.toARGB32(),
     'colorStyle': state.colorStyle.code,
     'useDynamicColor': state.useDynamicColor,
+    'flowingLightEnabled': state.flowingLightEnabled,
   };
 
   Future<void> applyAppearanceFromSync(Object value) async {
@@ -240,16 +257,31 @@ class SettingsNotifier extends Notifier<AppSettings> {
       throw const FormatException('云端配色风格无效');
     }
 
+    // flowingLightEnabled 同样是后加字段，缺失时保留本机开关。
+    final rawFlowingLight = json['flowingLightEnabled'];
+    final bool? syncedFlowingLight;
+    if (rawFlowingLight == null) {
+      syncedFlowingLight = null;
+    } else if (rawFlowingLight is bool) {
+      syncedFlowingLight = rawFlowingLight;
+    } else {
+      throw const FormatException('云端流光设置无效');
+    }
+
     final next = state.copyWith(
       themeMode: _decodeThemeMode(rawMode),
       themeSeed: Color(rawSeed),
       colorStyle: syncedStyle,
       useDynamicColor: rawDynamic,
+      flowingLightEnabled: syncedFlowingLight,
     );
     await _prefs.setString(_kThemeModeKey, rawMode);
     await _prefs.setInt(_kThemeSeedKey, rawSeed);
     if (syncedStyle != null) {
       await _prefs.setString(_kColorStyleKey, syncedStyle.code);
+    }
+    if (syncedFlowingLight != null) {
+      await _prefs.setBool(_kFlowingLightEnabledKey, syncedFlowingLight);
     }
     await _prefs.setBool(_kUseDynamicColorKey, rawDynamic);
     state = next;

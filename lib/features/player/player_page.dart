@@ -98,9 +98,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
           body: Stack(
             fit: StackFit.expand,
             children: [
-              const Positioned.fill(
-                key: ValueKey('player-backdrop'),
-                child: RepaintBoundary(child: ImmersiveBackground()),
+              Positioned.fill(
+                key: const ValueKey('player-backdrop'),
+                child: RepaintBoundary(
+                  child: ImmersiveBackground(revealProgress: widget.progress),
+                ),
               ),
               SafeArea(
                 key: const ValueKey('player-chrome'),

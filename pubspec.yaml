@@ -54,6 +54,8 @@ flutter:
   assets:
     - logo.png
     - logo_fg.png
+  shaders:
+    - shaders/flowing_light.frag
 flutter_launcher_icons:
   android: "ic_launcher"
   ios: false

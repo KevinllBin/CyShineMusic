@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -27,6 +28,8 @@ import 'package:cy_shine_music/core/services/tagger.dart';
 import 'package:cy_shine_music/core/storage/base_url.dart';
 import 'package:cy_shine_music/core/sync/sync_models.dart';
 import 'package:cy_shine_music/features/downloads/download_history_entry.dart';
+import 'package:cy_shine_music/features/player/flow_palette.dart';
+import 'package:cy_shine_music/features/player/flowing_light_spec.dart';
 import 'package:cy_shine_music/features/player/lyric_parser.dart';
 // player_models (not player_controller): the controller's closure pulls in
 // audio_service / settings_store → Flutter, which breaks `dart test`.
@@ -1235,6 +1238,273 @@ void main() {
       expect(CryptoUtil.bytesToHex(encrypted), expected);
     });
   });
+
+  group('Player flowing-light palette', () {
+    test('pulls one separated accent per distinct artwork region', () {
+      // The 2x2 quadrants land exactly on the 4x4 sampling grid, so every
+      // block averages to one pure input color.
+      final artwork = _quadrantArtwork(64, const [
+        220, 40, 40, // red      -> hue 0
+        40, 200, 60, // green    -> hue 127
+        50, 70, 220, // blue     -> hue 233
+        230, 200, 50, // yellow  -> hue 50
+      ]);
+
+      final palette = extractFlowPalette(artwork, 64, 64);
+
+      expect(palette.accentsArgb, hasLength(FlowPalette.accentCount));
+      final hues = palette.accentsArgb.map(_hueOf).toList();
+      for (final source in const [0.0, 127.0, 233.0, 50.0]) {
+        expect(
+          hues.any((hue) => _hueGap(hue, source) < 20),
+          isTrue,
+          reason: 'no accent near source hue $source, got $hues',
+        );
+      }
+      for (var i = 0; i < hues.length; i++) {
+        for (var j = i + 1; j < hues.length; j++) {
+          expect(
+            _hueGap(hues[i], hues[j]),
+            greaterThan(20),
+            reason: 'accents $i and $j collapsed onto the same hue',
+          );
+        }
+      }
+    });
+
+    test('spins extra accents out of monochrome artwork', () {
+      const flat = [90, 120, 160, 90, 120, 160, 90, 120, 160, 90, 120, 160];
+
+      final palette = extractFlowPalette(_quadrantArtwork(32, flat), 32, 32);
+
+      expect(palette.accentsArgb, hasLength(FlowPalette.accentCount));
+      expect(
+        palette.accentsArgb.toSet(),
+        hasLength(FlowPalette.accentCount),
+        reason: 'a single-color cover must still yield four distinct bodies',
+      );
+    });
+
+    test('falls back on empty, undersized or transparent buffers', () {
+      expect(extractFlowPalette(Uint8List(0), 0, 0), FlowPalette.fallback);
+      expect(extractFlowPalette(Uint8List(10), 16, 16), FlowPalette.fallback);
+      expect(
+        extractFlowPalette(Uint8List(16 * 16 * 4), 16, 16),
+        FlowPalette.fallback,
+        reason: 'fully transparent artwork carries no usable color',
+      );
+    });
+
+    test('lifts washed-out artwork into a visible saturation range', () {
+      // A near-gray cover: without the normalization pass these bodies would
+      // be invisible once composited at the layer's low opacity.
+      const nearGray = [
+        128, 126, 124, //
+        130, 128, 126,
+        126, 128, 130,
+        124, 126, 128,
+      ];
+
+      final palette = extractFlowPalette(
+        _quadrantArtwork(32, nearGray),
+        32,
+        32,
+      );
+
+      for (final argb in palette.accentsArgb) {
+        expect(
+          _saturationOf(argb),
+          greaterThan(0.1),
+          reason: 'accent ${argb.toRadixString(16)} stayed too gray',
+        );
+      }
+    });
+
+    test('base lightness tracks artwork brightness', () {
+      const dark = [20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20];
+      const light = [
+        235, 235, 235, //
+        235, 235, 235,
+        235, 235, 235,
+        235, 235, 235,
+      ];
+
+      expect(
+        extractFlowPalette(_quadrantArtwork(16, dark), 16, 16).baseLightness,
+        lessThan(0.2),
+      );
+      expect(
+        extractFlowPalette(_quadrantArtwork(16, light), 16, 16).baseLightness,
+        greaterThan(0.8),
+      );
+    });
+  });
+
+  group('Salt flowing-light spec', () {
+    // These constants are the replica. They were read out of Salt 12.1.1's
+    // decompiled `hi.java`, and there is nothing in the rendering code that
+    // would fail visibly if one of them drifted — it would just stop looking
+    // like Salt. Hence the assertions.
+    test('composes into Salt-sized buffers on a 1080x2400 phone', () {
+      final spec = FlowingLightSpec.forViewport(
+        physicalWidth: 1080,
+        physicalHeight: 2400,
+        devicePixelRatio: 3,
+        dark: true,
+      );
+
+      // 1080 / 32 + 58 = 91.75 -> 92, 2400 / 32 + 58 = 133.
+      expect(spec.compositionWidth, 92);
+      expect(spec.compositionHeight, 133);
+      expect(spec.visibleWidth, closeTo(33.75, 1e-9));
+      expect(spec.visibleHeight, closeTo(75, 1e-9));
+      // The margin is split evenly so the visible window sits centred.
+      expect(spec.cropLeft, closeTo(29.125, 1e-9));
+      expect(spec.cropTop, closeTo(29, 1e-9));
+    });
+
+    test('switches composition scale at 420dpi', () {
+      // densityDpi = devicePixelRatio * 160, so the boundary lands between
+      // 2.625 (420dpi) and just below it.
+      expect(compositionScaleFor(2.625), 32);
+      expect(compositionScaleFor(2.6), 20);
+      expect(compositionScaleFor(3), 32);
+      expect(compositionScaleFor(1.5), 20);
+    });
+
+    test('rotation phases start aligned and wrap on their own periods', () {
+      expect(flowingLightLayer1Angle(Duration.zero), 0);
+      expect(flowingLightLayer2Angle(Duration.zero), 0);
+      expect(flowingLightLayer3Angle(Duration.zero), 0);
+
+      // Each layer is back at its start exactly one period in.
+      expect(flowingLightLayer1Angle(const Duration(seconds: 100)), 0);
+      expect(flowingLightLayer2Angle(const Duration(seconds: 70)), 0);
+      expect(flowingLightLayer3Angle(const Duration(seconds: 40)), 0);
+
+      // Halfway through: first clockwise, the other two against it.
+      expect(flowingLightLayer1Angle(const Duration(seconds: 50)), closeTo(180, 1e-9));
+      expect(flowingLightLayer2Angle(const Duration(seconds: 35)), closeTo(-180, 1e-9));
+      expect(flowingLightLayer3Angle(const Duration(seconds: 20)), closeTo(-180, 1e-9));
+    });
+
+    test('the three phases only realign every 1400 seconds', () {
+      const realign = Duration(seconds: 1400);
+      for (final angle in [
+        flowingLightLayer1Angle(realign),
+        flowingLightLayer2Angle(realign),
+        flowingLightLayer3Angle(realign),
+      ]) {
+        expect(angle, closeTo(0, 1e-9));
+      }
+      // Nothing shorter does: 700s puts the 100s layer half a turn out.
+      expect(
+        flowingLightLayer1Angle(const Duration(seconds: 700)),
+        closeTo(0, 1e-9),
+      );
+      expect(
+        flowingLightLayer3Angle(const Duration(seconds: 700)),
+        isNot(closeTo(0, 1e-9)),
+      );
+    });
+
+    test('blur radius converts to the RenderScript sigma, not straight through', () {
+      // AOSP's rsCpuIntrinsicBlur: sigma = 0.4 * radius + 0.6. Passing radius
+      // 25 to ImageFilter.blur as a sigma over-blurs by about 2.4x.
+      expect(kFlowingLightBlurRadius, 25);
+      expect(kFlowingLightBlurSigma, closeTo(10.6, 1e-9));
+    });
+
+    test('saturation matrix matches Android ColorMatrix.setSaturation(2.5)', () {
+      expect(kFlowingLightSaturation, 2.5);
+      final matrix = flowingLightSaturationMatrix(kFlowingLightSaturation);
+
+      expect(matrix, hasLength(20));
+      expect(matrix[0], closeTo(2.1805, 1e-9));
+      expect(matrix[1], closeTo(-1.0725, 1e-9));
+      expect(matrix[2], closeTo(-0.108, 1e-9));
+      expect(matrix[6], closeTo(1.4275, 1e-9));
+      expect(matrix[12], closeTo(2.392, 1e-9));
+      // Alpha is passed through untouched.
+      expect(matrix.sublist(15), [0, 0, 0, 1, 0]);
+
+      // Saturation 1 has to be the identity, or the derivation is wrong.
+      final identity = flowingLightSaturationMatrix(1);
+      expect(identity[0], closeTo(1, 1e-9));
+      expect(identity[1], closeTo(0, 1e-9));
+      expect(identity[6], closeTo(1, 1e-9));
+    });
+
+    test('holds the remaining Salt constants', () {
+      expect(kFlowingLightFrameInterval, const Duration(milliseconds: 42));
+      expect(kFlowingLightArtworkFade, const Duration(milliseconds: 500));
+      expect(kFlowingLightFeedbackAlpha, 64);
+      // 64 / 255: each frame keeps just over a quarter of the previous one.
+      expect(kFlowingLightFeedbackAlpha / 255, closeTo(0.251, 1e-3));
+      expect(kFlowingLightCoverScale, 1.3);
+      expect(kFlowingLightRevealThreshold, 0.95);
+      expect(kFlowingLightLayer2OffsetX, -0.95);
+      expect(kFlowingLightLayer2OffsetY, -0.70);
+      expect(kFlowingLightLayer3OffsetX, -0.50);
+      expect(kFlowingLightLayer3OffsetY, 0.70);
+    });
+  });
+}
+
+/// Builds a [size]x[size] RGBA buffer painted as four opaque quadrants.
+///
+/// [quadrants] holds twelve channel values — r, g, b per quadrant in
+/// top-left, top-right, bottom-left, bottom-right order.
+Uint8List _quadrantArtwork(int size, List<int> quadrants) {
+  final bytes = Uint8List(size * size * 4);
+  final half = size ~/ 2;
+  for (var y = 0; y < size; y++) {
+    for (var x = 0; x < size; x++) {
+      final quadrant = (y < half ? 0 : 2) + (x < half ? 0 : 1);
+      final offset = (y * size + x) * 4;
+      bytes[offset] = quadrants[quadrant * 3];
+      bytes[offset + 1] = quadrants[quadrant * 3 + 1];
+      bytes[offset + 2] = quadrants[quadrant * 3 + 2];
+      bytes[offset + 3] = 255;
+    }
+  }
+  return bytes;
+}
+
+double _hueOf(int argb) {
+  final r = ((argb >> 16) & 0xFF) / 255;
+  final g = ((argb >> 8) & 0xFF) / 255;
+  final b = (argb & 0xFF) / 255;
+  final max = math.max(r, math.max(g, b));
+  final min = math.min(r, math.min(g, b));
+  final delta = max - min;
+  if (delta <= 0) return 0;
+  final double hue;
+  if (max == r) {
+    hue = (g - b) / delta + (g < b ? 6 : 0);
+  } else if (max == g) {
+    hue = (b - r) / delta + 2;
+  } else {
+    hue = (r - g) / delta + 4;
+  }
+  return (hue * 60) % 360;
+}
+
+double _saturationOf(int argb) {
+  final r = ((argb >> 16) & 0xFF) / 255;
+  final g = ((argb >> 8) & 0xFF) / 255;
+  final b = (argb & 0xFF) / 255;
+  final max = math.max(r, math.max(g, b));
+  final min = math.min(r, math.min(g, b));
+  final delta = max - min;
+  if (delta <= 0) return 0;
+  final lightness = (max + min) / 2;
+  return lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+}
+
+double _hueGap(double a, double b) {
+  final delta = (a - b).abs() % 360;
+  return delta > 180 ? 360 - delta : delta;
 }
 
 Uint8List _buildFlacFile({

@@ -375,6 +375,19 @@ class SettingsPage extends ConsumerWidget {
                                   .read(settingsProvider.notifier)
                                   .setUseDynamicColor(value),
                             ),
+                            const SizedBox(height: 4),
+                            SettingsSwitchAction(
+                              key: const ValueKey('flowing-light-setting'),
+                              icon: Icons.blur_on_rounded,
+                              title: '动态流光',
+                              subtitle: settings.flowingLightEnabled
+                                  ? '播放页背景取封面主色缓慢流动'
+                                  : '播放页使用静态封面模糊背景',
+                              value: settings.flowingLightEnabled,
+                              onChanged: (value) => ref
+                                  .read(settingsProvider.notifier)
+                                  .setFlowingLightEnabled(value),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 30),

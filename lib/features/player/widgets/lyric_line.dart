@@ -197,8 +197,9 @@ class LyricLineTile extends StatelessWidget {
     final translation = line.translation?.trim();
     final roman = line.roman?.trim();
     final hasTranslationLine = translation != null && translation.isNotEmpty;
+    final hasRomanLine = roman != null && roman.isNotEmpty;
     final showTranslationLine = showTranslation && hasTranslationLine;
-    final showRomanLine = roman != null && roman.isNotEmpty;
+    final showRomanLine = showTranslation && hasRomanLine;
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
         : AppMotion.medium;
@@ -241,18 +242,34 @@ class LyricLineTile extends StatelessWidget {
               );
             },
           ),
-        if (showRomanLine)
-          AnimatedPadding(
+        if (hasRomanLine)
+          TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0, end: showRomanLine ? 1 : 0),
             duration: duration,
             curve: AppMotion.emphasized,
-            padding: EdgeInsets.only(
-              top: hasTranslationLine && showTranslationLine ? 0 : 8,
+            child: Padding(
+              padding: EdgeInsets.only(top: hasTranslationLine ? 2 : 8),
+              child: Text(
+                roman,
+                textAlign: TextAlign.start,
+                style: subStyle.copyWith(fontSize: 12),
+              ),
             ),
-            child: Text(
-              roman,
-              textAlign: TextAlign.start,
-              style: subStyle.copyWith(fontSize: 12),
-            ),
+            builder: (context, value, child) {
+              return ClipRect(
+                child: Align(
+                  alignment: Alignment.topLeft,
+                  heightFactor: value,
+                  child: Opacity(
+                    opacity: value,
+                    child: Transform.translate(
+                      offset: Offset(0, 6 * (1 - value)),
+                      child: child,
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
       ],
     );

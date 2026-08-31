@@ -37,6 +37,11 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
       final translation = line.translation?.trim();
       return translation != null && translation.isNotEmpty;
     });
+    final hasRoman = vm.lyrics.lines.any((line) {
+      final roman = line.roman?.trim();
+      return roman != null && roman.isNotEmpty;
+    });
+    final hasExtraLyrics = hasTranslation || hasRoman;
     final Widget child;
     final String transitionKey;
     if (vm.lyricLoading) {
@@ -63,13 +68,15 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
             child: KaraokeLyricsView(
               key: ValueKey('lyrics-view-$lyricsKey'),
               lyrics: vm.lyrics,
-              showTranslation: hasTranslation && _showTranslation,
+              showTranslation: hasExtraLyrics && _showTranslation,
               edgeFadeEnabled: widget.edgeFadeEnabled,
             ),
           ),
-          if (hasTranslation)
+          if (hasExtraLyrics)
             _LyricsTranslationToggle(
               showTranslation: _showTranslation,
+              hasTranslation: hasTranslation,
+              hasRoman: hasRoman,
               onTap: () {
                 setState(() => _showTranslation = !_showTranslation);
               },
@@ -90,17 +97,40 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
 class _LyricsTranslationToggle extends StatelessWidget {
   const _LyricsTranslationToggle({
     required this.showTranslation,
+    required this.hasTranslation,
+    required this.hasRoman,
     required this.onTap,
   });
 
   final bool showTranslation;
+  final bool hasTranslation;
+  final bool hasRoman;
   final VoidCallback onTap;
+
+  String get _buttonText {
+    if (!hasTranslation && hasRoman) {
+      return showTranslation ? '隐藏罗马音' : '显示罗马音';
+    }
+    return showTranslation ? '隐藏翻译' : '显示翻译';
+  }
+
+  String get _tooltipMessage {
+    if (!hasTranslation && hasRoman) {
+      return showTranslation ? '隐藏罗马音歌词' : '显示罗马音歌词';
+    }
+    if (hasTranslation && hasRoman) {
+      return showTranslation ? '隐藏歌词翻译及罗马音' : '显示歌词翻译及罗马音';
+    }
+    return showTranslation ? '隐藏歌词翻译' : '显示歌词翻译';
+  }
 
   @override
   Widget build(BuildContext context) {
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
         : AppMotion.medium;
+    final buttonText = _buttonText;
+    final tooltipMessage = _tooltipMessage;
     return Padding(
       // Horizontal 16 mirrors the lyric rows' blur-bleed inset: the page
       // keeps 16px less outer padding, so this restores the toggle's
@@ -109,7 +139,7 @@ class _LyricsTranslationToggle extends StatelessWidget {
       child: Align(
         alignment: Alignment.centerRight,
         child: Tooltip(
-          message: showTranslation ? '隐藏歌词翻译' : '显示歌词翻译',
+          message: tooltipMessage,
           child: AnimatedContainer(
             duration: duration,
             curve: AppMotion.emphasized,
@@ -164,8 +194,8 @@ class _LyricsTranslationToggle extends StatelessWidget {
                             );
                           },
                           child: Text(
-                            showTranslation ? '隐藏翻译' : '显示翻译',
-                            key: ValueKey(showTranslation),
+                            buttonText,
+                            key: ValueKey(buttonText),
                             style: TextStyle(
                               color: playerInk(context).withValues(alpha: 0.78),
                               fontSize: 12,
