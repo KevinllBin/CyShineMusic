@@ -169,6 +169,20 @@ class SettingsPage extends ConsumerWidget {
                               ],
                             ),
                             SettingsSwitchAction(
+                              key: const ValueKey(
+                                'allow-mix-with-others-setting',
+                              ),
+                              icon: Icons.multitrack_audio_rounded,
+                              title: '允许与其他 APP 共同播放',
+                              subtitle: settings.allowMixWithOthers
+                                  ? '不会抢占其他 APP 的音频，可同时播放'
+                                  : '播放时保持独占音频',
+                              value: settings.allowMixWithOthers,
+                              onChanged: (value) => ref
+                                  .read(settingsProvider.notifier)
+                                  .setAllowMixWithOthers(value),
+                            ),
+                            SettingsSwitchAction(
                               key: const ValueKey('bluetooth-lyric-setting'),
                               icon: Icons.bluetooth_audio_rounded,
                               title: '显示蓝牙歌词',

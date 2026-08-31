@@ -35,6 +35,7 @@ void main() {
       expect(settings.onlinePlaybackQuality, OnlinePlaybackQuality.highest);
       expect(settings.batchDownloadQuality, OnlinePlaybackQuality.highest);
       expect(settings.showMiniLyrics, isTrue);
+      expect(settings.allowMixWithOthers, isFalse);
       expect(settings.bluetoothLyricEnabled, isFalse);
       expect(settings.bluetoothFullLyricEnabled, isFalse);
       expect(settings.bluetoothLyricNoticeSeen, isFalse);
@@ -136,12 +137,13 @@ void main() {
     );
   });
 
-  test('player lyric preferences persist', () async {
+  test('player preferences persist', () async {
     final prefs = await SharedPreferences.getInstance();
     final container = _settingsContainer(prefs);
     final notifier = container.read(settingsProvider.notifier);
 
     await notifier.setShowMiniLyrics(false);
+    await notifier.setAllowMixWithOthers(true);
     await notifier.setBluetoothLyricEnabled(true);
     await notifier.setBluetoothFullLyricEnabled(true);
     await notifier.markBluetoothLyricNoticeSeen();
@@ -151,6 +153,7 @@ void main() {
     addTearDown(restored.dispose);
     final settings = restored.read(settingsProvider);
     expect(settings.showMiniLyrics, isFalse);
+    expect(settings.allowMixWithOthers, isTrue);
     expect(settings.bluetoothLyricEnabled, isTrue);
     expect(settings.bluetoothFullLyricEnabled, isTrue);
     expect(settings.bluetoothLyricNoticeSeen, isTrue);
@@ -283,6 +286,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('音源管理'), findsOneWidget);
     expect(find.text('WebDAV 同步'), findsOneWidget);
+    expect(find.text('允许与其他 APP 共同播放'), findsOneWidget);
     expect(find.text('批量下载音质'), findsOneWidget);
     expect(find.text('扫描文件夹'), findsOneWidget);
     expect(find.text('浏览U盘'), findsNWidgets(2));

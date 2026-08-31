@@ -27,7 +27,9 @@ Future<void> main() async {
   }
   final prefs = await SharedPreferences.getInstance();
   hydrateNetworkAdapterPreference(prefs);
-  final audioHandler = await initializePlayerAudioHandler();
+  final audioHandler = await initializePlayerAudioHandler(
+    allowMixWithOthers: readAllowMixWithOthersPreference(prefs),
+  );
   runApp(
     ProviderScope(
       overrides: [

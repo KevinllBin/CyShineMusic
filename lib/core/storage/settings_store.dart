@@ -24,6 +24,7 @@ const String _kEnabledSearchSourcesKey = 'enabled_search_source_codes';
 const String _kOnlinePlaybackQualityKey = 'online_playback_quality';
 const String _kBatchDownloadQualityKey = 'batch_download_quality';
 const String _kShowMiniLyricsKey = 'show_mini_lyrics';
+const String _kAllowMixWithOthersKey = 'allow_mix_with_others';
 const String _kBluetoothLyricEnabledKey = 'bluetooth_lyric_enabled';
 const String _kBluetoothFullLyricEnabledKey = 'bluetooth_full_lyric_enabled';
 const String _kBluetoothLyricNoticeSeenKey = 'bluetooth_lyric_notice_seen';
@@ -45,6 +46,7 @@ class AppSettings {
     required this.onlinePlaybackQuality,
     required this.batchDownloadQuality,
     required this.showMiniLyrics,
+    required this.allowMixWithOthers,
     required this.bluetoothLyricEnabled,
     required this.bluetoothFullLyricEnabled,
     required this.bluetoothLyricNoticeSeen,
@@ -66,6 +68,10 @@ class AppSettings {
   final OnlinePlaybackQuality onlinePlaybackQuality;
   final OnlinePlaybackQuality batchDownloadQuality;
   final bool showMiniLyrics;
+
+  /// Whether playback should avoid taking exclusive audio focus so other apps
+  /// can continue playing at the same time.
+  final bool allowMixWithOthers;
   final bool bluetoothLyricEnabled;
   final bool bluetoothFullLyricEnabled;
   final bool bluetoothLyricNoticeSeen;
@@ -84,6 +90,7 @@ class AppSettings {
     OnlinePlaybackQuality? onlinePlaybackQuality,
     OnlinePlaybackQuality? batchDownloadQuality,
     bool? showMiniLyrics,
+    bool? allowMixWithOthers,
     bool? bluetoothLyricEnabled,
     bool? bluetoothFullLyricEnabled,
     bool? bluetoothLyricNoticeSeen,
@@ -101,6 +108,7 @@ class AppSettings {
     onlinePlaybackQuality: onlinePlaybackQuality ?? this.onlinePlaybackQuality,
     batchDownloadQuality: batchDownloadQuality ?? this.batchDownloadQuality,
     showMiniLyrics: showMiniLyrics ?? this.showMiniLyrics,
+    allowMixWithOthers: allowMixWithOthers ?? this.allowMixWithOthers,
     bluetoothLyricEnabled: bluetoothLyricEnabled ?? this.bluetoothLyricEnabled,
     bluetoothFullLyricEnabled:
         bluetoothFullLyricEnabled ?? this.bluetoothFullLyricEnabled,
@@ -122,6 +130,7 @@ class AppSettings {
     onlinePlaybackQuality: OnlinePlaybackQuality.highest,
     batchDownloadQuality: OnlinePlaybackQuality.highest,
     showMiniLyrics: true,
+    allowMixWithOthers: false,
     bluetoothLyricEnabled: false,
     bluetoothFullLyricEnabled: false,
     bluetoothLyricNoticeSeen: false,
@@ -154,8 +163,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
       ),
       colorStyle: AppColorStyle.fromCode(_prefs.getString(_kColorStyleKey)),
       useDynamicColor: _prefs.getBool(_kUseDynamicColorKey) ?? false,
-      flowingLightEnabled:
-          _prefs.getBool(_kFlowingLightEnabledKey) ?? true,
+      flowingLightEnabled: _prefs.getBool(_kFlowingLightEnabledKey) ?? true,
       networkAdapterMode: NetworkAdapterPreference.current,
       enabledSearchSources: decodeEnabledSearchSources(
         _prefs.getStringList(_kEnabledSearchSourcesKey),
@@ -167,6 +175,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
         _prefs.getString(_kBatchDownloadQualityKey),
       ),
       showMiniLyrics: _prefs.getBool(_kShowMiniLyricsKey) ?? true,
+      allowMixWithOthers: readAllowMixWithOthersPreference(_prefs),
       bluetoothLyricEnabled:
           _prefs.getBool(_kBluetoothLyricEnabledKey) ?? false,
       bluetoothFullLyricEnabled:
@@ -328,6 +337,11 @@ class SettingsNotifier extends Notifier<AppSettings> {
     state = state.copyWith(showMiniLyrics: value);
   }
 
+  Future<void> setAllowMixWithOthers(bool value) async {
+    await _prefs.setBool(_kAllowMixWithOthersKey, value);
+    state = state.copyWith(allowMixWithOthers: value);
+  }
+
   Future<void> setBluetoothLyricEnabled(bool value) async {
     await _prefs.setBool(_kBluetoothLyricEnabledKey, value);
     state = state.copyWith(bluetoothLyricEnabled: value);
@@ -353,6 +367,9 @@ class SettingsNotifier extends Notifier<AppSettings> {
 final settingsProvider = NotifierProvider<SettingsNotifier, AppSettings>(
   SettingsNotifier.new,
 );
+
+bool readAllowMixWithOthersPreference(SharedPreferences preferences) =>
+    preferences.getBool(_kAllowMixWithOthersKey) ?? false;
 
 String _encodeThemeMode(ThemeMode mode) {
   switch (mode) {

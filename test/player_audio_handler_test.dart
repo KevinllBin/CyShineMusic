@@ -1,12 +1,53 @@
 import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:cy_shine_music/features/player/player_audio_handler.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('shared playback skips Android focus and enables iOS mixing', () {
+    expect(
+      shouldActivatePlayerAudioSession(
+        allowMixWithOthers: false,
+        isAndroid: true,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldActivatePlayerAudioSession(
+        allowMixWithOthers: true,
+        isAndroid: true,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldActivatePlayerAudioSession(
+        allowMixWithOthers: true,
+        isAndroid: false,
+      ),
+      isTrue,
+    );
+
+    final configuration = playerAudioSessionConfiguration(
+      allowMixWithOthers: true,
+    );
+    expect(
+      configuration.avAudioSessionCategoryOptions,
+      AVAudioSessionCategoryOptions.mixWithOthers,
+    );
+    expect(
+      configuration.androidAudioAttributes?.contentType,
+      AndroidAudioContentType.music,
+    );
+    expect(
+      configuration.androidAudioAttributes?.usage,
+      AndroidAudioUsage.media,
+    );
+  });
 
   testWidgets(
     'track transition keeps the media session alive with new metadata',

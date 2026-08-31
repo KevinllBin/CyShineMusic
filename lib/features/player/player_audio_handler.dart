@@ -35,19 +35,44 @@ const playerAudioServiceConfig = AudioServiceConfig(
   artDownscaleHeight: 512,
 );
 
-Future<PlayerAudioHandler> initializePlayerAudioHandler() async {
+AudioSessionConfiguration playerAudioSessionConfiguration({
+  required bool allowMixWithOthers,
+}) {
+  if (!allowMixWithOthers) {
+    return const AudioSessionConfiguration.music();
+  }
+  return const AudioSessionConfiguration(
+    avAudioSessionCategory: AVAudioSessionCategory.playback,
+    avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions.mixWithOthers,
+    avAudioSessionMode: AVAudioSessionMode.defaultMode,
+    androidAudioAttributes: AndroidAudioAttributes(
+      contentType: AndroidAudioContentType.music,
+      usage: AndroidAudioUsage.media,
+    ),
+    androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
+  );
+}
+
+bool shouldActivatePlayerAudioSession({
+  required bool allowMixWithOthers,
+  required bool isAndroid,
+}) => !allowMixWithOthers || !isAndroid;
+
+Future<PlayerAudioHandler> initializePlayerAudioHandler({
+  bool allowMixWithOthers = false,
+}) async {
   final handler = await AudioService.init<PlayerAudioHandler>(
-    builder: PlayerAudioHandler.new,
+    builder: () => PlayerAudioHandler(allowMixWithOthers: allowMixWithOthers),
     config: playerAudioServiceConfig,
   );
 
-  final session = await AudioSession.instance;
-  await session.configure(const AudioSessionConfiguration.music());
+  await handler.setAllowMixWithOthers(allowMixWithOthers);
   return handler;
 }
 
 class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
-  PlayerAudioHandler() {
+  PlayerAudioHandler({bool allowMixWithOthers = false})
+    : _allowMixWithOthers = allowMixWithOthers {
     _playbackSubscription = _player.playbackEventStream.listen(_broadcastState);
     _durationSubscription = _player.durationStream.listen(_updateDuration);
     _errorSubscription = _player.errorStream.listen((error) {
@@ -56,7 +81,13 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _broadcastState(_player.playbackEvent);
   }
 
-  final AudioPlayer _player = AudioPlayer();
+  final AudioPlayer _player = AudioPlayer(
+    // Audio focus is activated below so the setting can skip the Android
+    // focus request without replacing the player instance.
+    handleAudioSessionActivation: false,
+  );
+  bool _allowMixWithOthers;
+  bool _audioSessionConfigured = false;
   StreamSubscription<PlaybackEvent>? _playbackSubscription;
   StreamSubscription<Duration?>? _durationSubscription;
   StreamSubscription<PlayerException>? _errorSubscription;
@@ -85,6 +116,23 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   Duration? get duration => _player.duration;
   bool get playing => _player.playing;
   ProcessingState get processingState => _player.processingState;
+
+  Future<void> setAllowMixWithOthers(bool value) async {
+    _allowMixWithOthers = value;
+    final session = await AudioSession.instance;
+    await session.configure(
+      playerAudioSessionConfiguration(allowMixWithOthers: value),
+    );
+    _audioSessionConfigured = true;
+
+    if (Platform.isAndroid && value) {
+      // Release focus acquired under the normal mode so another app can
+      // resume immediately while this player keeps rendering audio.
+      await session.setActive(false);
+    } else if (_player.playing) {
+      await session.setActive(true);
+    }
+  }
 
   void bindTransportCallbacks({
     required Object owner,
@@ -222,6 +270,16 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     if (_trackTransitionActive) return;
     if (_player.processingState == ProcessingState.completed) {
       await _player.seek(Duration.zero);
+    }
+    if (!_audioSessionConfigured) {
+      await setAllowMixWithOthers(_allowMixWithOthers);
+    }
+    if (shouldActivatePlayerAudioSession(
+      allowMixWithOthers: _allowMixWithOthers,
+      isAndroid: Platform.isAndroid,
+    )) {
+      final session = await AudioSession.instance;
+      if (!await session.setActive(true)) return;
     }
     await _player.play();
   }

@@ -85,6 +85,9 @@ class PlayerController extends StateNotifier<PlayerState>
       _audioHandler.errorStream.listen(_handlePlaybackError),
     ];
     _ref.listen<AppSettings>(settingsProvider, (previous, next) {
+      if (previous?.allowMixWithOthers != next.allowMixWithOthers) {
+        unawaited(_applyAudioMixingPreference(next.allowMixWithOthers));
+      }
       if (previous?.bluetoothLyricEnabled != next.bluetoothLyricEnabled ||
           previous?.bluetoothFullLyricEnabled !=
               next.bluetoothFullLyricEnabled) {
@@ -100,6 +103,17 @@ class PlayerController extends StateNotifier<PlayerState>
       _pendingRestoredSession = restored;
       _hydrateRestoredSession(restored);
       unawaited(_restorePersistedSession(restored));
+    }
+  }
+
+  Future<void> _applyAudioMixingPreference(bool value) async {
+    try {
+      await _audioHandler.setAllowMixWithOthers(value);
+    } catch (error) {
+      await AppLogger.write(
+        'player',
+        'apply shared playback setting failed: $error',
+      );
     }
   }
 
