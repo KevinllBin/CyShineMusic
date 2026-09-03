@@ -253,6 +253,30 @@ void main() {
     expect(harness.resolver.requestedQualities, [Quality.k128, Quality.k320]);
   });
 
+  test('quality switch succeeds even if restore seek fails with error 7', () async {
+    final harness = await _Harness.create(loadFailures: 0);
+    addTearDown(harness.dispose);
+
+    await harness.controller.playFromMusic(_music());
+    await _waitUntil(
+      () => harness.container.read(playerControllerProvider).lyricInfo != null,
+    );
+    await harness.controller.seek(const Duration(seconds: 42));
+    expect(
+      harness.container.read(playerControllerProvider).track?.availableQualities,
+      contains(Quality.k320),
+    );
+
+    // Simulate seek error 7 on next seek (restore seek)
+    harness.audio.failNextSeek = true;
+
+    expect(await harness.controller.switchQuality(Quality.k320), isTrue);
+
+    final after = harness.container.read(playerControllerProvider);
+    expect(after.track?.qualityLabel, Quality.k320.code);
+    expect(harness.resolver.requestedQualities, [Quality.k128, Quality.k320]);
+  });
+
   test('failed quality switch keeps the previous quality retryable', () async {
     final harness = await _Harness.create(loadFailures: 0);
     addTearDown(harness.dispose);
@@ -494,6 +518,7 @@ class _FakeAudioHandler extends PlayerAudioHandler {
   int failTransitionCount = 0;
   int playCount = 0;
   int pauseCount = 0;
+  bool failNextSeek = false;
   final List<Duration> seekPositions = [];
   Duration? _duration;
   Duration _position = Duration.zero;
@@ -564,6 +589,13 @@ class _FakeAudioHandler extends PlayerAudioHandler {
 
   @override
   Future<void> seek(Duration position) async {
+    if (failNextSeek) {
+      failNextSeek = false;
+      throw const bass.BassPlayerException(
+        code: 7,
+        message: 'position is not seekable',
+      );
+    }
     _position = position;
     seekPositions.add(position);
   }

@@ -7,6 +7,7 @@ import android.os.HandlerThread
 import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
 import com.un4seen.bass.BASS
 import com.un4seen.bass.BASS_FX
@@ -233,7 +234,7 @@ class BassPlayerPlugin :
         setConfig(BASS.BASS_CONFIG_UPDATEPERIOD, 50, "update period")
         setConfig(BASS.BASS_CONFIG_NET_TIMEOUT, 15_000, "network connect timeout")
         setConfig(BASS.BASS_CONFIG_NET_READTIMEOUT, 20_000, "network read timeout")
-        setConfig(BASS.BASS_CONFIG_NET_BUFFER, 10_000, "network buffer")
+        setConfig(BASS.BASS_CONFIG_NET_BUFFER, 60_000, "network buffer")
         setConfig(BASS.BASS_CONFIG_NET_PREBUF, 20, "network prebuffer")
 
         if (!BASS.BASS_Init(-1, 44_100, 0)) {
@@ -423,10 +424,33 @@ class BassPlayerPlugin :
             requestedMs.coerceIn(0, end)
         }
         val bytePosition = BASS.BASS_ChannelSeconds2Bytes(stream, targetMs / 1000.0)
-        if (bytePosition < 0 ||
-            !BASS.BASS_ChannelSetPosition(stream, bytePosition, BASS.BASS_POS_BYTE)
-        ) {
-            fail("seek")
+        var success = bytePosition >= 0 && BASS.BASS_ChannelSetPosition(stream, bytePosition, BASS.BASS_POS_BYTE)
+        if (!success && remoteSource && BASS.BASS_ErrorGetCode() == BASS.BASS_ERROR_POSITION) {
+            val startWait = SystemClock.uptimeMillis()
+            val maxWaitMs = 1500L
+            while (!success && (SystemClock.uptimeMillis() - startWait) < maxWaitMs) {
+                try {
+                    Thread.sleep(50)
+                } catch (_: InterruptedException) {
+                    break
+                }
+                if (stream == 0) break
+                success = BASS.BASS_ChannelSetPosition(stream, bytePosition, BASS.BASS_POS_BYTE)
+            }
+        }
+        if (!success) {
+            if (remoteSource) {
+                Log.w(
+                    TAG,
+                    "Remote stream seek to ${targetMs}ms failed (bassCode=${BASS.BASS_ErrorGetCode()}), falling back to 0ms",
+                )
+                val zeroPos = BASS.BASS_ChannelSeconds2Bytes(stream, 0.0)
+                if (zeroPos >= 0) {
+                    BASS.BASS_ChannelSetPosition(stream, zeroPos, BASS.BASS_POS_BYTE)
+                }
+            } else {
+                fail("seek")
+            }
         }
         completed = false
         processingState = if (playing) STATE_READY else STATE_READY

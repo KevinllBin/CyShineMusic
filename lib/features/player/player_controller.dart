@@ -284,10 +284,6 @@ class PlayerController extends StateNotifier<PlayerState>
                 sourceUri: Uri.parse(resolved.url),
                 queueIndex: _hasCurrentQueueTrack ? _queueIndex : null,
               );
-              if (!identical(_requestToken, token)) {
-                throw const MusicSourceFallbackCancelledException();
-              }
-              await _seekAfterRestore(initialPosition, token);
               return resolved;
             },
           );
@@ -318,6 +314,8 @@ class PlayerController extends StateNotifier<PlayerState>
       );
       if (!identical(_requestToken, token)) return false;
       _endTransportSuppression(token);
+      await _seekAfterRestore(initialPosition, token);
+      if (!identical(_requestToken, token)) return false;
       state = state.copyWith(
         track: track,
         loading: false,
@@ -1454,7 +1452,15 @@ class PlayerController extends StateNotifier<PlayerState>
         duration != null && duration > Duration.zero && requested > duration
         ? duration
         : requested;
-    await _audioHandler.seek(target);
+    try {
+      await _audioHandler.seek(target);
+    } catch (error, stackTrace) {
+      await AppLogger.write(
+        'player',
+        'seek after restore non-fatal error target=${target.inMilliseconds}ms: $error\n'
+            '$stackTrace',
+      );
+    }
   }
 
   void _schedulePositionCheckpoint() {
