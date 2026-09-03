@@ -44,6 +44,7 @@ bool _isPlayerReturnLocation(String location) {
     '/songs/search' ||
     '/settings' ||
     '/settings/sources' ||
+    '/settings/equalizer' ||
     '/debug' => true,
     _ => false,
   };

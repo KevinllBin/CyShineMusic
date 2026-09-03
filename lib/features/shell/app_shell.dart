@@ -397,6 +397,7 @@ class _AppShellState extends ConsumerState<AppShell>
       context.go('/songs');
     } else if (widget.location == '/settings/sources' ||
         widget.location == '/settings/webdav' ||
+        widget.location == '/settings/equalizer' ||
         widget.location == '/debug') {
       context.go('/settings');
     } else if (context.canPop()) {

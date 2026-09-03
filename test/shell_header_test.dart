@@ -14,6 +14,7 @@ void main() {
   ) async {
     for (final entry in <String, String>{
       '/settings/sources': '音源管理',
+      '/settings/equalizer': '均衡器',
       '/playlists': '歌单管理',
       '/downloads': '下载',
       '/songs/search': '搜索本地歌曲',

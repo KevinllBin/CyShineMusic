@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'features/debug/debug_log_page.dart';
 import 'features/discovery/online_playlist_detail_page.dart';
 import 'features/downloads/download_history_page.dart';
+import 'features/equalizer/equalizer_page.dart';
 import 'core/models/enums.dart';
 import 'core/models/playlist_summary.dart';
 import 'features/playlists/online_playlist_import_page.dart';
@@ -152,6 +153,12 @@ GoRouter createAppRouter({
             ),
           ),
           GoRoute(
+            path: '/settings/equalizer',
+            pageBuilder: (context, state) => const NoTransitionPage(
+              child: ShellPageStorage(child: EqualizerPage()),
+            ),
+          ),
+          GoRoute(
             path: '/debug',
             pageBuilder: (context, state) => const NoTransitionPage(
               child: ShellPageStorage(child: DebugLogPage()),
@@ -181,6 +188,7 @@ bool _isPlayerReturnLocation(String location) {
     '/settings' ||
     '/settings/sources' ||
     '/settings/webdav' ||
+    '/settings/equalizer' ||
     '/debug' => true,
     _ => false,
   };

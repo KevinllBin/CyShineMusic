@@ -81,6 +81,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     _ascending = prefs.getBool(_songSortAscendingKey) ?? true;
     _toolbarStateController = ref.read(songsToolbarStateProvider.notifier);
     _scanCache = ref.read(localSongScanCacheProvider);
+    _seedFromScanCache();
     _scanCache.addListener(_handleScanCacheChanged);
     if (widget.searchMode) _enableSearchFocusHandling();
     _firstRouteTransitionSettled = _waitForFirstRouteTransition();
@@ -95,6 +96,22 @@ class _SongsPageState extends ConsumerState<SongsPage> {
       },
     );
     unawaited(_initializeScan());
+  }
+
+  void _seedFromScanCache() {
+    // Restore against the real list on the first frame; an empty loading frame
+    // would clamp PageStorage's saved scroll offset back to zero.
+    final snapshot = _scanCache.snapshot;
+    if (snapshot == null ||
+        snapshot.directory != ref.read(settingsProvider).localMusicDir) {
+      return;
+    }
+    _scannedFiles = [
+      for (final file in snapshot.files) ScannedSongFile.fromSnapshot(file),
+    ];
+    _scanError = snapshot.error;
+    _tagCache.addAll(songTagCacheSnapshot);
+    _tagModifiedAt.addAll(songTagModifiedAtSnapshot);
   }
 
   @override
@@ -149,6 +166,14 @@ class _SongsPageState extends ConsumerState<SongsPage> {
 
   void _enableSearchFocusHandling() {
     _searchFocusNode.addListener(_handleSearchFocusChanged);
+    if (!ref.read(songsSearchAutoFocusProvider)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !widget.searchMode) return;
+        final toolbar = ref.read(shellToolbarVisibleProvider.notifier);
+        if (toolbar.mounted) toolbar.state = true;
+      });
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && widget.searchMode) _searchFocusNode.requestFocus();
     });
@@ -449,6 +474,11 @@ class _SongsPageState extends ConsumerState<SongsPage> {
       entry,
     );
     if (!available || !mounted) return;
+    if (widget.searchMode) {
+      ref.read(songsSearchAutoFocusProvider.notifier).state = false;
+      _searchFocusNode.unfocus();
+      _restoreToolbarAfterSearchFocus();
+    }
     context.go(
       '/player',
       extra: widget.searchMode ? '/songs/search' : '/songs',
@@ -656,6 +686,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
   }
 
   void _openSearch() {
+    ref.read(songsSearchAutoFocusProvider.notifier).state = true;
     context.go('/songs/search');
   }
 
@@ -1029,7 +1060,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
                   controller: _searchController,
                   focusNode: _searchFocusNode,
                   query: _searchQuery,
-                  autofocus: true,
+                  autofocus: ref.watch(songsSearchAutoFocusProvider),
                   onChanged: _updateSearchQuery,
                   onClear: _clearSearch,
                 ),

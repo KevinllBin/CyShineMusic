@@ -1,0 +1,150 @@
+BASSAPE 2.4
+Copyright (c) 2022-2026 Un4seen Developments Ltd. All rights reserved.
+
+
+BASSAPE is an extension to the BASS audio library, enabling the playing of
+Monkey's Audio encoded files.
+
+
+Requirements
+============
+BASS 2.4 is required.
+
+
+Using BASSAPE
+==============
+The plugin system (see BASS_PluginLoad) can be used to add Monkey's Audio
+support to the standard BASS stream (and sample) creation functions. Dedicated
+Monkey's Audio stream creation functions are also provided by BASSAPE.
+
+The usage information in the BASS.TXT file (from the BASS package) is also
+applicable to BASSAPE and other add-ons.
+
+TIP: The BASSAPE.CHM file should be put in the same directory as the BASS.CHM
+     file, so that the BASSAPE documentation can be accessed from within the
+     BASS documentation.
+
+Android version
+---------------
+BASSAPE uses the libc++ library. The default BASSAPE libraries have that
+built-in, while those in the C++_SHARED folder depend on the LIBC++_SHARED.SO
+library instead. The latter could be used when the app already includes the
+LIBC++_SHARED.SO library for other things.
+
+
+Included files
+==============
+Win32 version
+-------------
+BASSAPE.TXT     This file
+BASSAPE.DLL     32-bit BASSAPE module
+BASSAPE.CHM     BASSAPE documentation
+X64\
+  BASSAPE.DLL     64-bit BASSAPE module
+C\
+  BASSAPE.H       BASSAPE C/C++ header file
+  BASSAPE.LIB     32-bit BASSAPE import library
+  X64\
+    BASSAPE.LIB     64-bit BASSAPE import library
+DELPHI\
+  BASSAPE.PAS     BASSAPE Delphi unit
+VB\
+  BASSAPE.BAS     BASSAPE Visual Basic module
+
+macOS version
+-------------
+BASSAPE.TXT     This file
+LIBBASSAPE.DYLIB  BASSAPE module
+BASSAPE.CHM     BASSAPE documentation
+C\
+  BASSAPE.H       BASSAPE C/C++/Objective-C header file
+DELPHI\
+  BASSAPE.PAS     BASSAPE Delphi/Pascal unit
+
+Linux version
+-------------
+BASSAPE.TXT     This file
+BASSAPE.CHM     BASSAPE documentation
+LIBS\           BASSAPE modules
+  ...
+C\
+  BASSAPE.H       BASSAPE C/C++ header file
+DELPHI\
+  BASSAPE.PAS     BASSAPE Delphi/Pascal unit
+
+Android version
+---------------
+BASSAPE.TXT     This file
+BASSAPE.CHM     BASSAPE documentation
+LIBS\           BASSAPE modules
+  ...
+C++_SHARED\LIBS\  BASSAPE modules using shared libc++
+  ...
+C\
+  BASSAPE.H       BASSAPE C/C++ header file
+JAVA\COM\UN4SEEN\BASS\
+  BASSAPE.JAVA    BASSAPE Java class
+
+iOS version
+-----------
+BASSAPE.TXT     This file
+BASSAPE.XCFRAMEWORK  BASSAPE framework
+BASSAPE.CHM     BASSAPE documentation
+BASSAPE.H       BASSAPE C/C++/Objective-C header file
+
+
+Latest Version
+==============
+The latest versions of BASSAPE & BASS can be found at the BASS website:
+
+	www.un4seen.com
+
+
+Licence
+=======
+BASSAPE is free to use with BASS.
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, BASSAPE IS PROVIDED
+"AS IS", WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY
+AND/OR FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS SHALL NOT BE HELD
+LIABLE FOR ANY DAMAGE THAT MAY RESULT FROM THE USE OF BASSAPE. YOU USE
+BASSAPE ENTIRELY AT YOUR OWN RISK.
+
+Usage of BASSAPE indicates that you agree to the above conditions.
+
+All trademarks and other registered names contained in the BASSAPE
+package are the property of their respective owners.
+
+
+Credits
+=======
+Monkey's Audio SDK, Copyright (c) 2000-2025 Matthew T. Ashland
+
+
+History
+=======
+These are the major (and not so major) changes in each release, along with the
+functions/options that are introduced/affected by them. There are other little
+tweaks and fixes made along the way too.
+
+2.4.1 - 20/2/2026
+-----------------
+* Support for floating-point files
+	BASS_APE_StreamCreateFile/User/URL
+* Updated to Monkey's Audio SDK 10.96
+
+2.4.0.1 - 18/7/2024
+-------------------
+* Updated to Monkey's Audio SDK 10.74
+
+2.4 - 4/3/2022
+--------------
+* First release
+
+
+Bug reports, Suggestions, Comments, Enquiries, etc
+==================================================
+If you have any of the aforementioned, please visit the BASS forum at the
+website.
+

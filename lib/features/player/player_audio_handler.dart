@@ -4,12 +4,13 @@ import 'dart:typed_data';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
+import 'package:bass_player/bass_player.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../core/services/app_logger.dart';
 import 'media_item_copy.dart';
 
 typedef PlayerTransportCallback = Future<void> Function();
@@ -34,6 +35,18 @@ const playerAudioServiceConfig = AudioServiceConfig(
   artDownscaleWidth: 512,
   artDownscaleHeight: 512,
 );
+
+/// Upper bound for a single [PlayerAudioHandler.load] attempt.
+const playerLoadTimeout = Duration(seconds: 40);
+
+class PlayerLoadTimeoutException implements Exception {
+  const PlayerLoadTimeoutException(this.timeout);
+
+  final Duration timeout;
+
+  @override
+  String toString() => '加载超时（${timeout.inSeconds} 秒），文件可能过大或音源响应过慢';
+}
 
 AudioSessionConfiguration playerAudioSessionConfiguration({
   required bool allowMixWithOthers,
@@ -71,26 +84,29 @@ Future<PlayerAudioHandler> initializePlayerAudioHandler({
 }
 
 class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
-  PlayerAudioHandler({bool allowMixWithOthers = false})
-    : _allowMixWithOthers = allowMixWithOthers {
+  PlayerAudioHandler({bool allowMixWithOthers = false, BassPlayer? player})
+    : _player = player ?? BassPlayer(),
+      _allowMixWithOthers = allowMixWithOthers {
     _playbackSubscription = _player.playbackEventStream.listen(_broadcastState);
     _durationSubscription = _player.durationStream.listen(_updateDuration);
     _errorSubscription = _player.errorStream.listen((error) {
       _broadcastError(error, StackTrace.current);
     });
-    _broadcastState(_player.playbackEvent);
+    _broadcastState(_player.snapshot);
   }
 
-  final AudioPlayer _player = AudioPlayer(
-    // Audio focus is activated below so the setting can skip the Android
-    // focus request without replacing the player instance.
-    handleAudioSessionActivation: false,
-  );
+  final BassPlayer _player;
   bool _allowMixWithOthers;
   bool _audioSessionConfigured = false;
-  StreamSubscription<PlaybackEvent>? _playbackSubscription;
+  bool _engineInitialized = false;
+  BassEqualizerConfiguration? _pendingEqualizer;
+  StreamSubscription<BassPlaybackSnapshot>? _playbackSubscription;
   StreamSubscription<Duration?>? _durationSubscription;
-  StreamSubscription<PlayerException>? _errorSubscription;
+  StreamSubscription<BassPlayerException>? _errorSubscription;
+  StreamSubscription<AudioInterruptionEvent>? _interruptionSubscription;
+  StreamSubscription<void>? _becomingNoisySubscription;
+  bool _resumeAfterInterruption = false;
+  bool _ducked = false;
 
   Object? _callbackOwner;
   PlayerTransportCallback? _onPrevious;
@@ -108,18 +124,35 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   Stream<Duration> get positionStream => _player.positionStream;
   Stream<Duration?> get durationStream => _player.durationStream;
-  Stream<PlayerState> get playerStateStream => _player.playerStateStream;
-  Stream<PlayerException> get errorStream => _player.errorStream;
+  Stream<BassPlaybackSnapshot> get playerStateStream =>
+      _player.playbackEventStream;
+  Stream<BassPlayerException> get errorStream => _player.errorStream;
   MediaItem? get currentMediaItem => _currentMediaItem;
 
   Duration get position => _player.position;
   Duration? get duration => _player.duration;
   bool get playing => _player.playing;
-  ProcessingState get processingState => _player.processingState;
+  BassProcessingState get processingState => _player.processingState;
+
+  Future<void> initializeEngine() async {
+    final info = await _player.initialize();
+    _engineInitialized = true;
+    final pendingEqualizer = _pendingEqualizer;
+    _pendingEqualizer = null;
+    if (pendingEqualizer != null) {
+      await _player.setEqualizer(pendingEqualizer);
+    }
+    await AppLogger.write(
+      'player-engine',
+      'BASS ${info.version}; BASS_FX ${info.fxVersion}; '
+          'plugins=${info.plugins.entries.map((entry) => '${entry.key}:${entry.value}').join(',')}',
+    );
+  }
 
   Future<void> setAllowMixWithOthers(bool value) async {
     _allowMixWithOthers = value;
     final session = await AudioSession.instance;
+    _bindAudioSessionEvents(session);
     await session.configure(
       playerAudioSessionConfiguration(allowMixWithOthers: value),
     );
@@ -132,6 +165,35 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     } else if (_player.playing) {
       await session.setActive(true);
     }
+  }
+
+  void _bindAudioSessionEvents(AudioSession session) {
+    _interruptionSubscription ??= session.interruptionEventStream.listen(
+      (event) => unawaited(_handleAudioInterruption(event)),
+    );
+    _becomingNoisySubscription ??= session.becomingNoisyEventStream.listen(
+      (_) => unawaited(pause()),
+    );
+  }
+
+  Future<void> _handleAudioInterruption(AudioInterruptionEvent event) async {
+    if (event.type == AudioInterruptionType.duck) {
+      _ducked = event.begin;
+      await _player.setVolume(event.begin ? 0.2 : 1);
+      return;
+    }
+    if (event.begin) {
+      _resumeAfterInterruption = _player.playing;
+      if (_resumeAfterInterruption) await pause();
+      return;
+    }
+    if (!_resumeAfterInterruption) return;
+    _resumeAfterInterruption = false;
+    if (_ducked) {
+      _ducked = false;
+      await _player.setVolume(1);
+    }
+    await play();
   }
 
   void bindTransportCallbacks({
@@ -148,7 +210,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _onQueueItem = onQueueItem;
     _onRepeatMode = onRepeatMode;
     _onShuffleMode = onShuffleMode;
-    _broadcastState(_player.playbackEvent);
+    _broadcastState(_player.snapshot);
   }
 
   void unbindTransportCallbacks(Object owner) {
@@ -173,7 +235,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _queueIndex = queueIndex;
     _currentMediaItem = item;
     mediaItem.add(item);
-    _broadcastState(_player.playbackEvent);
+    _broadcastState(_player.snapshot);
     if (_player.playing) await _player.pause();
   }
 
@@ -187,7 +249,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     }
     _trackTransitionActive = false;
     _clearTransitionSnapshot();
-    final restoredState = _transformEvent(_player.playbackEvent);
+    final restoredState = _transformEvent(_player.snapshot);
     playbackState.add(
       restoredState.copyWith(
         processingState:
@@ -209,14 +271,69 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _queueIndex = queueIndex;
     _currentMediaItem = item;
     mediaItem.add(item);
-    final resolvedDuration = await _player.setAudioSource(
-      AudioSource.uri(sourceUri),
+    final resolvedDuration = await _loadSourceBounded(
+      sourceUri,
+      formatHint: item.extras?['quality']?.toString(),
     );
     _trackTransitionActive = false;
     _clearTransitionSnapshot();
     _updateDuration(resolvedDuration);
-    _broadcastState(_player.playbackEvent);
+    _broadcastState(_player.snapshot);
     return resolvedDuration;
+  }
+
+  Future<Duration?> _loadSourceBounded(
+    Uri sourceUri, {
+    String? formatHint,
+  }) async {
+    if (!_engineInitialized) await initializeEngine();
+    final stopwatch = Stopwatch()..start();
+    unawaited(
+      AppLogger.write(
+        'player-load',
+        'START scheme=${sourceUri.scheme} host=${sourceUri.host} '
+            'format=${formatHint ?? 'unknown'}',
+      ),
+    );
+    final loading = _player.load(sourceUri, formatHint: formatHint);
+    try {
+      final resolvedDuration = await loading.timeout(playerLoadTimeout);
+      stopwatch.stop();
+      unawaited(
+        AppLogger.write(
+          'player-load',
+          'OK scheme=${sourceUri.scheme} host=${sourceUri.host} '
+              'format=${formatHint ?? 'unknown'} '
+              'elapsed=${stopwatch.elapsedMilliseconds}ms '
+              'duration=${resolvedDuration?.inMilliseconds ?? -1}ms',
+        ),
+      );
+      return resolvedDuration;
+    } on TimeoutException {
+      stopwatch.stop();
+      unawaited(loading.then((_) {}, onError: (Object _) {}));
+      try {
+        await _player.stop();
+      } catch (_) {
+        // Best effort: the load already failed, keep the original reason.
+      }
+      await AppLogger.write(
+        'player-load',
+        'TIMEOUT scheme=${sourceUri.scheme} host=${sourceUri.host} '
+            'format=${formatHint ?? 'unknown'} '
+            'after=${stopwatch.elapsedMilliseconds}ms',
+      );
+      throw const PlayerLoadTimeoutException(playerLoadTimeout);
+    } catch (error) {
+      stopwatch.stop();
+      await AppLogger.write(
+        'player-load',
+        'FAIL scheme=${sourceUri.scheme} host=${sourceUri.host} '
+            'format=${formatHint ?? 'unknown'} '
+            'elapsed=${stopwatch.elapsedMilliseconds}ms: $error',
+      );
+      rethrow;
+    }
   }
 
   void updateMediaMetadata(MediaItem item) {
@@ -233,7 +350,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   void publishQueue(List<MediaItem> items, {int? currentIndex}) {
     _queueIndex = currentIndex;
     queue.add(List<MediaItem>.unmodifiable(items));
-    _broadcastState(_player.playbackEvent);
+    _broadcastState(_player.snapshot);
   }
 
   void updatePlaybackModes({
@@ -242,7 +359,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   }) {
     _repeatMode = repeatMode;
     _shuffleMode = shuffleMode;
-    _broadcastState(_player.playbackEvent);
+    _broadcastState(_player.snapshot);
   }
 
   Future<Uri?> cacheArtwork(Uint8List? bytes) async {
@@ -268,7 +385,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> play() async {
     if (_trackTransitionActive) return;
-    if (_player.processingState == ProcessingState.completed) {
+    _logTransport('play');
+    if (_player.processingState == BassProcessingState.completed) {
       await _player.seek(Duration.zero);
     }
     if (!_audioSessionConfigured) {
@@ -285,12 +403,43 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   @override
-  Future<void> pause() => _player.pause();
+  Future<void> pause() {
+    _logTransport('pause');
+    return _player.pause();
+  }
+
+  @override
+  Future<void> click([MediaButton button = MediaButton.media]) async {
+    switch (button) {
+      case MediaButton.media:
+        if (_player.playing) {
+          await pause();
+        } else {
+          await play();
+        }
+        return;
+      case MediaButton.next:
+        await skipToNext();
+        return;
+      case MediaButton.previous:
+        await skipToPrevious();
+        return;
+    }
+  }
 
   @override
   Future<void> seek(Duration position) {
     if (_trackTransitionActive) return Future<void>.value();
+    _logTransport('seek', target: position);
     return _player.seek(position);
+  }
+
+  Future<void> setEqualizer(BassEqualizerConfiguration configuration) async {
+    if (!_engineInitialized) {
+      _pendingEqualizer = configuration;
+      return;
+    }
+    await _player.setEqualizer(configuration);
   }
 
   @override
@@ -311,19 +460,20 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) async {
     _repeatMode = repeatMode;
-    _broadcastState(_player.playbackEvent);
+    _broadcastState(_player.snapshot);
     await _onRepeatMode?.call(repeatMode);
   }
 
   @override
   Future<void> setShuffleMode(AudioServiceShuffleMode shuffleMode) async {
     _shuffleMode = shuffleMode;
-    _broadcastState(_player.playbackEvent);
+    _broadcastState(_player.snapshot);
     await _onShuffleMode?.call(shuffleMode);
   }
 
   @override
   Future<void> stop() async {
+    _logTransport('stop');
     await _player.stop();
     await super.stop();
   }
@@ -332,6 +482,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     await _playbackSubscription?.cancel();
     await _durationSubscription?.cancel();
     await _errorSubscription?.cancel();
+    await _interruptionSubscription?.cancel();
+    await _becomingNoisySubscription?.cancel();
     await _player.dispose();
   }
 
@@ -352,12 +504,21 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   void _broadcastError(Object error, StackTrace stackTrace) {
+    unawaited(
+      AppLogger.write(
+        'player-error',
+        'engine_error state=${_player.processingState.name} '
+            'playing=${_player.playing} positionMs=${_player.position.inMilliseconds} '
+            'bufferedMs=${_player.bufferedPosition.inMilliseconds} '
+            'error=$error',
+      ),
+    );
     if (_trackTransitionActive) {
-      playbackState.add(_transitionState(_player.playbackEvent));
+      playbackState.add(_transitionState(_player.snapshot));
       return;
     }
     playbackState.add(
-      _transformEvent(_player.playbackEvent).copyWith(
+      _transformEvent(_player.snapshot).copyWith(
         processingState: AudioProcessingState.error,
         errorCode: 1,
         errorMessage: error.toString(),
@@ -365,13 +526,13 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     );
   }
 
-  void _broadcastState(PlaybackEvent event) {
+  void _broadcastState(BassPlaybackSnapshot event) {
     playbackState.add(
       _trackTransitionActive ? _transitionState(event) : _transformEvent(event),
     );
   }
 
-  PlaybackState _transitionState(PlaybackEvent event) {
+  PlaybackState _transitionState(BassPlaybackSnapshot event) {
     return _transformEvent(event).copyWith(
       processingState: AudioProcessingState.loading,
       playing: false,
@@ -381,7 +542,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     );
   }
 
-  PlaybackState _transformEvent(PlaybackEvent event) {
+  PlaybackState _transformEvent(BassPlaybackSnapshot event) {
     final hasItem = _currentMediaItem != null;
     final controls = hasItem
         ? <MediaControl>[
@@ -403,11 +564,12 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
             }
           : const {},
       processingState: switch (_player.processingState) {
-        ProcessingState.idle => AudioProcessingState.idle,
-        ProcessingState.loading => AudioProcessingState.loading,
-        ProcessingState.buffering => AudioProcessingState.buffering,
-        ProcessingState.ready => AudioProcessingState.ready,
-        ProcessingState.completed => AudioProcessingState.completed,
+        BassProcessingState.idle => AudioProcessingState.idle,
+        BassProcessingState.loading => AudioProcessingState.loading,
+        BassProcessingState.buffering => AudioProcessingState.buffering,
+        BassProcessingState.ready => AudioProcessingState.ready,
+        BassProcessingState.completed => AudioProcessingState.completed,
+        BassProcessingState.error => AudioProcessingState.error,
       },
       playing: _player.playing,
       updatePosition: _player.position,
@@ -416,6 +578,22 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       queueIndex: _queueIndex,
       repeatMode: _repeatMode,
       shuffleMode: _shuffleMode,
+    );
+  }
+
+  void _logTransport(String action, {Duration? target}) {
+    final extras = _currentMediaItem?.extras;
+    final kind = extras?['trackKind']?.toString() ?? 'none';
+    final source = extras?['source']?.toString() ?? 'none';
+    final quality = extras?['quality']?.toString() ?? 'none';
+    unawaited(
+      AppLogger.write(
+        'player-transport',
+        'action=$action state=${_player.processingState.name} '
+            'playing=${_player.playing} positionMs=${_player.position.inMilliseconds} '
+            'targetMs=${target?.inMilliseconds ?? -1} '
+            'kind=$kind source=$source quality=$quality',
+      ),
     );
   }
 

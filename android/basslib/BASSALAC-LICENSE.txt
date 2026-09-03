@@ -1,0 +1,135 @@
+BASSALAC 2.4
+Copyright (c) 2016-2024 Un4seen Developments Ltd. All rights reserved.
+
+
+BASSALAC is an extension to the BASS audio library, enabling the playing of
+ALAC (Apple Lossless Audio Codec) encoded files.
+
+NOTE: The ALAC format is supported as standard by BASS via the OS's codecs on
+      macOS and iOS, and also on Windows 10.
+
+
+Requirements
+============
+BASS 2.4 is required.
+
+
+Using BASSALAC
+==============
+The plugin system (see BASS_PluginLoad) can be used to add ALAC support to the
+standard BASS stream (and sample) creation functions. Dedicated ALAC stream
+creation functions are also provided by BASSALAC.
+
+The usage information in the BASS.TXT file (from the BASS package) is also
+applicable to BASSALAC and other add-ons.
+
+TIP: The BASSALAC.CHM file should be put in the same directory as the BASS.CHM
+     file, so that the BASSALAC documentation can be accessed from within the
+     BASS documentation.
+
+
+Included files
+==============
+Win32 version
+-------------
+BASSALAC.TXT    This file
+BASSALAC.DLL    32-bit BASSALAC module
+BASSALAC.CHM    BASSALAC documentation
+X64\
+  BASSALAC.DLL    64-bit BASSALAC module
+C\
+  BASSALAC.H      BASSALAC C/C++ header file
+  BASSALAC.LIB    32-bit BASSALAC import library
+  X64\
+    BASSALAC.LIB    64-bit BASSALAC import library
+DELPHI\
+  BASSALAC.PAS    BASSALAC Delphi/Pascal unit
+VB\
+  BASSALAC.BAS    BASSALAC Visual Basic module
+
+Linux version
+-------------
+BASSALAC.TXT    This file
+BASSALAC.CHM    BASSALAC documentation
+LIBS\           BASSALAC modules
+  ...
+C\
+  BASSALAC.H      BASSALAC C/C++ header file
+DELPHI\
+  BASSALAC.PAS    BASSALAC Delphi/Pascal unit
+
+Android version
+---------------
+BASSALAC.TXT    This file
+BASSALAC.CHM    BASSALAC documentation
+LIBS\           BASSALAC modules
+  ...
+C\
+  BASSALAC.H      BASSALAC C/C++ header file
+JAVA\COM\UN4SEEN\BASS\
+  BASSALAC.JAVA   BASSALAC Java class
+
+
+Latest Version
+==============
+The latest versions of BASSALAC & BASS can be found at the BASS website:
+
+	www.un4seen.com
+
+
+Licence
+=======
+BASSALAC is free to use with BASS.
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, BASSALAC IS PROVIDED
+"AS IS", WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY
+AND/OR FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS SHALL NOT BE HELD
+LIABLE FOR ANY DAMAGE THAT MAY RESULT FROM THE USE OF BASSALAC. YOU USE
+BASSALAC ENTIRELY AT YOUR OWN RISK.
+
+Usage of BASSALAC indicates that you agree to the above conditions.
+
+All trademarks and other registered names contained in the BASSALAC
+package are the property of their respective owners.
+
+
+Credits
+=======
+BASSALAC contains code from Apple's ALAC decoder (http://alac.macosforge.org/),
+Copyright (c) 2011 Apple Inc. And from David Hammerton's ALAC decoder,
+Copyright (c) 2005 David Hammerton.
+
+
+History
+=======
+These are the major (and not so major) changes in each release, along with the
+functions/options that are introduced/affected by them. There are other little
+tweaks and fixes made along the way too.
+
+2.4.1 - 31/7/2024
+-----------------
+* Support for 64-bit MP4 atoms (very large files)
+	BASS_ALAC_StreamCreateFile/User/URL
+* Error code for unstreamable atom order changed to match BASS
+    BASS_ERROR_UNSTREAMABLE (BASS_ALAC_StreamCreateURL error code)
+    BASS_ERROR_MP4_NOSTREAM removed
+* MP4 tag reading removed and handled by BASS instead on all platforms
+    BASS_TAG_MP4 (BASS_ChannelGetTags type)
+* Channel order fix for 3/5/7 channel files
+
+2.4.0.2 - 6/1/2021
+------------------
+* Fix for mono 24-bit ALAC files
+* Support for Description/Keywords/Category/Grouping/Lyrics tags on Linux (already on other platforms)
+
+2.4 - 2/2/2016
+--------------
+* First release
+
+
+Bug reports, Suggestions, Comments, Enquiries, etc
+==================================================
+If you have any of the aforementioned, please visit the BASS forum at the
+website.
+

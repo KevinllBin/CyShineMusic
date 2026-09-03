@@ -59,3 +59,7 @@ CLAUDE.md
 
 # Icon/design source assets — kept locally, not tracked
 /design/
+
+# Gradle
+.gradle/
+**/.gradle/

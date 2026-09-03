@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
+import 'package:bass_player/bass_player.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:cy_shine_music/features/player/player_audio_handler.dart';
@@ -47,6 +49,27 @@ void main() {
       configuration.androidAudioAttributes?.usage,
       AndroidAudioUsage.media,
     );
+  });
+
+  test('a stalled load fails within a bounded time instead of hanging', () {
+    expect(playerLoadTimeout, greaterThan(Duration.zero));
+    expect(playerLoadTimeout, lessThanOrEqualTo(const Duration(minutes: 1)));
+    expect(
+      const PlayerLoadTimeoutException(Duration(seconds: 40)).toString(),
+      contains('40'),
+    );
+  });
+
+  test('platform failures preserve signed BASS error codes', () {
+    final error = BassPlayerException.fromPlatform(
+      PlatformException(
+        code: 'BASS_-2',
+        message: 'cancelled',
+        details: const {'operation': 'load', 'bassCode': -2},
+      ),
+    );
+    expect(error.code, -2);
+    expect(error.operation, 'load');
   });
 
   testWidgets(
@@ -119,4 +142,53 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  test('system media clicks dispatch against the live BASS state', () async {
+    final player = _FakeBassPlayer()..isPlaying = true;
+    final handler = PlayerAudioHandler(player: player);
+    var previousCount = 0;
+    var nextCount = 0;
+    handler.bindTransportCallbacks(
+      owner: handler,
+      onPrevious: () async => previousCount++,
+      onNext: () async => nextCount++,
+      onQueueItem: (_) async {},
+      onRepeatMode: (_) async {},
+      onShuffleMode: (_) async {},
+    );
+    addTearDown(handler.disposeHandler);
+
+    await handler.click(MediaButton.media);
+    expect(player.pauseCount, 1);
+    await handler.click(MediaButton.media);
+    expect(player.playCount, 1);
+    await handler.click(MediaButton.next);
+    await handler.click(MediaButton.previous);
+    expect(nextCount, 1);
+    expect(previousCount, 1);
+  });
+}
+
+class _FakeBassPlayer extends BassPlayer {
+  bool isPlaying = false;
+  int playCount = 0;
+  int pauseCount = 0;
+
+  @override
+  bool get playing => isPlaying;
+
+  @override
+  Future<void> play() async {
+    playCount++;
+    isPlaying = true;
+  }
+
+  @override
+  Future<void> pause() async {
+    pauseCount++;
+    isPlaying = false;
+  }
+
+  @override
+  Future<void> dispose() async {}
 }

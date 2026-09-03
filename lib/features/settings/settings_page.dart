@@ -17,6 +17,7 @@ import '../../core/storage/settings_store.dart';
 import '../../core/sync/webdav_sync_controller.dart';
 import '../../core/ui/app_toast.dart';
 import '../../theme/dynamic_color_status.dart';
+import '../equalizer/equalizer_store.dart';
 import '../shell/shell_toolbar_visibility.dart';
 import '../songs/local_song_scan_cache.dart';
 import '../update/app_update_prompt.dart';
@@ -37,6 +38,7 @@ class SettingsPage extends ConsumerWidget {
     final sourceState = ref.watch(musicSourceControllerProvider);
     final webDavState = ref.watch(webDavSyncControllerProvider);
     final dynamicColor = ref.watch(dynamicColorStatusProvider);
+    final equalizer = ref.watch(equalizerProvider);
     final versionLabel = ref.watch(appVersionLabelProvider);
     final baseTheme = Theme.of(context);
     final scheme = baseTheme.colorScheme;
@@ -167,6 +169,14 @@ class SettingsPage extends ConsumerWidget {
                                     ),
                                   ),
                               ],
+                            ),
+                            SettingsAction(
+                              key: const ValueKey('equalizer-setting'),
+                              icon: Icons.graphic_eq_rounded,
+                              title: '均衡器',
+                              subtitle: equalizer.summary,
+                              trailing: Symbols.chevron_right,
+                              onTap: () => context.go('/settings/equalizer'),
                             ),
                             SettingsSwitchAction(
                               key: const ValueKey(
@@ -439,7 +449,7 @@ class SettingsPage extends ConsumerWidget {
                               SettingsAction(
                                 icon: Icons.terminal_rounded,
                                 title: '日志控制台',
-                                subtitle: '实时查看搜索、下载和网络错误',
+                                subtitle: '实时查看播放、缓冲、音源和网络错误',
                                 trailing: Symbols.chevron_right,
                                 onTap: () => context.go('/debug'),
                               ),

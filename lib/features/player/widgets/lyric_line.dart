@@ -476,7 +476,7 @@ class _KaraokeLineText extends StatefulWidget {
   final Color dimColor;
 
   /// Latest value from the player's position stream — an anchor, not a
-  /// per-frame clock (just_audio emits it only every ~200 ms).
+  /// per-frame clock (the native engine publishes only periodic anchors).
   final ValueListenable<int> anchorMs;
   final ValueListenable<bool> playing;
   final ValueListenable<bool> buffering;

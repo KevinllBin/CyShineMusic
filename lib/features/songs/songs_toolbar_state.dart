@@ -128,3 +128,8 @@ final songsLibraryPlaylistIdProvider =
 final songsToolbarStateProvider = StateProvider<SongsToolbarState>(
   (ref) => const SongsToolbarState(),
 );
+
+/// The dedicated search route normally focuses its field on entry. Playing a
+/// result temporarily leaves that route; when the player returns, focus must
+/// stay released so the persistent bottom toolbar is not hidden again.
+final songsSearchAutoFocusProvider = StateProvider<bool>((ref) => true);

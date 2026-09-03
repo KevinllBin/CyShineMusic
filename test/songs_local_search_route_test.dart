@@ -9,6 +9,7 @@ import 'package:cy_shine_music/core/storage/settings_store.dart';
 import 'package:cy_shine_music/features/player/player_audio_handler.dart';
 import 'package:cy_shine_music/features/shell/shell_toolbar_visibility.dart';
 import 'package:cy_shine_music/features/songs/songs_page.dart';
+import 'package:cy_shine_music/features/songs/songs_toolbar_state.dart';
 import 'package:cy_shine_music/features/songs/widgets/songs_placeholders.dart';
 import 'package:cy_shine_music/router.dart';
 
@@ -129,6 +130,43 @@ void main() {
     expect(find.byType(SongsPage), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'returning from a search result keeps the bottom toolbar visible',
+    (tester) async {
+      _useNarrowPhone(tester);
+      final prefs = await SharedPreferences.getInstance();
+      final audioHandler = PlayerAudioHandler();
+      final router = createAppRouter(initialLocation: '/songs/search');
+      addTearDown(() {
+        router.dispose();
+        unawaited(audioHandler.disposeHandler());
+      });
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            sharedPreferencesProvider.overrideWithValue(prefs),
+            playerAudioHandlerProvider.overrideWithValue(audioHandler),
+            songsSearchAutoFocusProvider.overrideWith((ref) => false),
+          ],
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      );
+      await _pumpUi(tester);
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SongsPage)),
+      );
+      expect(router.routeInformationProvider.value.uri.path, '/songs/search');
+      expect(
+        tester.widget<SearchBar>(find.byType(SearchBar)).focusNode?.hasFocus,
+        isFalse,
+      );
+      expect(container.read(shellToolbarVisibleProvider), isTrue);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 void _expectBackwardSongsSlide(WidgetTester tester) {

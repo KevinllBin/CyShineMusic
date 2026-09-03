@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
+import 'package:bass_player/bass_player.dart' as bass;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:just_audio/just_audio.dart' as audio;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:cy_shine_music/core/api/music_api.dart';
@@ -15,6 +15,7 @@ import 'package:cy_shine_music/core/models/music_url.dart';
 import 'package:cy_shine_music/core/music_sources/music_source_models.dart';
 import 'package:cy_shine_music/core/music_sources/music_source_runtime.dart';
 import 'package:cy_shine_music/core/music_sources/music_url_resolver.dart';
+import 'package:cy_shine_music/core/services/app_logger.dart';
 import 'package:cy_shine_music/core/storage/settings_store.dart';
 import 'package:cy_shine_music/features/player/player_audio_handler.dart';
 import 'package:cy_shine_music/features/player/player_controller.dart';
@@ -148,7 +149,9 @@ void main() {
       'https://audio.test/first.mp3',
     );
 
-    harness.audio.emitError(audio.PlayerException(1, 'stream failed', 0));
+    harness.audio.emitError(
+      const bass.BassPlayerException(code: 1, message: 'stream failed'),
+    );
     await _waitUntil(() => harness.audio.loadedUris.length == 2);
     final state = harness.container.read(playerControllerProvider);
 
@@ -159,6 +162,70 @@ void main() {
     expect(state.error, isNull);
     expect(state.track?.remoteUrl, 'https://audio.test/second.mp3');
   });
+
+  test('brief buffering resumes without watchdog interference', () async {
+    final harness = await _Harness.create(
+      loadFailures: 0,
+      stallRecoveryDelay: const Duration(milliseconds: 40),
+    );
+    addTearDown(harness.dispose);
+
+    await harness.controller.playFromMusic(_music());
+    final logStart = AppLogger.recentMemoryLines.length;
+    final playCount = harness.audio.playCount;
+    harness.audio.emitPlaybackState(bass.BassProcessingState.buffering);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    harness.audio.emitPlaybackState(bass.BassProcessingState.ready);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    expect(harness.audio.pauseCount, 0);
+    expect(harness.audio.playCount, playCount);
+    expect(
+      harness.container.read(playerControllerProvider).processingState,
+      PlayerProcessingState.ready,
+    );
+    final logs = AppLogger.recentMemoryLines.skip(logStart).join('\n');
+    expect(logs, contains('[player-playback] buffering_start'));
+    expect(logs, contains('[player-playback] buffering_end'));
+    expect(logs, isNot(contains('https://audio.test')));
+  });
+
+  test(
+    'prolonged buffering restarts once then resumes from a fallback',
+    () async {
+      final harness = await _Harness.create(
+        loadFailures: 0,
+        stallRecoveryDelay: const Duration(milliseconds: 10),
+      );
+      addTearDown(harness.dispose);
+
+      await harness.controller.playFromMusic(_music());
+      await harness.controller.seek(const Duration(seconds: 42));
+      final playCount = harness.audio.playCount;
+
+      harness.audio.emitPlaybackState(bass.BassProcessingState.buffering);
+      await _waitUntil(
+        () =>
+            harness.audio.pauseCount == 1 &&
+            harness.audio.playCount == playCount + 1,
+      );
+
+      harness.audio.emitPlaybackState(bass.BassProcessingState.buffering);
+      await _waitUntil(
+        () =>
+            harness.audio.loadedUris.length == 2 &&
+            harness.container.read(playerControllerProvider).track?.remoteUrl ==
+                'https://audio.test/second.mp3',
+      );
+
+      expect(
+        harness.audio.loadedUris.last,
+        Uri.parse('https://audio.test/second.mp3'),
+      );
+      expect(harness.audio.seekPositions.last, const Duration(seconds: 42));
+      expect(harness.container.read(playerControllerProvider).error, isNull);
+    },
+  );
 
   test('quality switch keeps position, lyrics, and paused state', () async {
     final harness = await _Harness.create(loadFailures: 0);
@@ -311,7 +378,10 @@ class _Harness {
   PlayerController get controller =>
       container.read(playerControllerProvider.notifier);
 
-  static Future<_Harness> create({required int loadFailures}) async {
+  static Future<_Harness> create({
+    required int loadFailures,
+    Duration stallRecoveryDelay = const Duration(seconds: 12),
+  }) async {
     final preferences = await SharedPreferences.getInstance();
     final audio = _FakeAudioHandler(loadFailures: loadFailures);
     final resolver = _ScriptedResolver([_record('first'), _record('second')]);
@@ -322,6 +392,9 @@ class _Harness {
         playerAudioHandlerProvider.overrideWithValue(audio),
         musicUrlResolverProvider.overrideWithValue(resolver),
         musicApiProvider.overrideWithValue(api),
+        playbackStallRecoveryDelayProvider.overrideWithValue(
+          stallRecoveryDelay,
+        ),
       ],
     );
     container.read(playerControllerProvider);
@@ -414,13 +487,18 @@ class _FakeAudioHandler extends PlayerAudioHandler {
 
   final int loadFailures;
   final List<Uri> loadedUris = [];
-  final StreamController<audio.PlayerException> _errors =
-      StreamController<audio.PlayerException>.broadcast(sync: true);
+  final StreamController<bass.BassPlayerException> _errors =
+      StreamController<bass.BassPlayerException>.broadcast(sync: true);
+  final StreamController<bass.BassPlaybackSnapshot> _states =
+      StreamController<bass.BassPlaybackSnapshot>.broadcast(sync: true);
   int failTransitionCount = 0;
+  int playCount = 0;
+  int pauseCount = 0;
+  final List<Duration> seekPositions = [];
   Duration? _duration;
   Duration _position = Duration.zero;
   bool _playing = false;
-  audio.ProcessingState _processingState = audio.ProcessingState.idle;
+  bass.BassProcessingState _processingState = bass.BassProcessingState.idle;
 
   @override
   Stream<Duration> get positionStream => const Stream<Duration>.empty();
@@ -429,11 +507,10 @@ class _FakeAudioHandler extends PlayerAudioHandler {
   Stream<Duration?> get durationStream => const Stream<Duration?>.empty();
 
   @override
-  Stream<audio.PlayerState> get playerStateStream =>
-      const Stream<audio.PlayerState>.empty();
+  Stream<bass.BassPlaybackSnapshot> get playerStateStream => _states.stream;
 
   @override
-  Stream<audio.PlayerException> get errorStream => _errors.stream;
+  Stream<bass.BassPlayerException> get errorStream => _errors.stream;
 
   @override
   Duration get position => _position;
@@ -445,7 +522,7 @@ class _FakeAudioHandler extends PlayerAudioHandler {
   bool get playing => _playing;
 
   @override
-  audio.ProcessingState get processingState => _processingState;
+  bass.BassProcessingState get processingState => _processingState;
 
   @override
   Future<void> beginTrackTransition({
@@ -453,7 +530,7 @@ class _FakeAudioHandler extends PlayerAudioHandler {
     int? queueIndex,
   }) async {
     _playing = false;
-    _processingState = audio.ProcessingState.loading;
+    _processingState = bass.BassProcessingState.loading;
   }
 
   @override
@@ -464,21 +541,31 @@ class _FakeAudioHandler extends PlayerAudioHandler {
   }) async {
     loadedUris.add(sourceUri);
     if (loadedUris.length <= loadFailures) {
-      throw audio.PlayerException(1, 'load failed', 0);
+      throw const bass.BassPlayerException(code: 1, message: 'load failed');
     }
     _duration = const Duration(minutes: 3);
-    _processingState = audio.ProcessingState.ready;
+    _processingState = bass.BassProcessingState.ready;
     return _duration;
   }
 
   @override
   Future<void> play() async {
+    playCount++;
     _playing = true;
+    _processingState = bass.BassProcessingState.ready;
+  }
+
+  @override
+  Future<void> pause() async {
+    pauseCount++;
+    _playing = false;
+    _processingState = bass.BassProcessingState.ready;
   }
 
   @override
   Future<void> seek(Duration position) async {
     _position = position;
+    seekPositions.add(position);
   }
 
   @override
@@ -486,11 +573,25 @@ class _FakeAudioHandler extends PlayerAudioHandler {
     failTransitionCount++;
   }
 
-  void emitError(audio.PlayerException error) => _errors.add(error);
+  void emitError(bass.BassPlayerException error) => _errors.add(error);
+
+  void emitPlaybackState(bass.BassProcessingState processingState) {
+    _processingState = processingState;
+    _states.add(
+      bass.BassPlaybackSnapshot(
+        playing: _playing,
+        processingState: processingState,
+        position: _position,
+        bufferedPosition: _position,
+        duration: _duration,
+      ),
+    );
+  }
 
   @override
   Future<void> disposeHandler() async {
     await _errors.close();
+    await _states.close();
     await super.disposeHandler();
   }
 }

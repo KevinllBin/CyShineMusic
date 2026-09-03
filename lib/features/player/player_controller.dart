@@ -4,9 +4,10 @@ import 'dart:math' as math;
 
 import 'package:audio_service/audio_service.dart'
     show AudioServiceRepeatMode, AudioServiceShuffleMode, MediaItem;
+import 'package:bass_player/bass_player.dart'
+    show BassPlaybackSnapshot, BassProcessingState;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:just_audio/just_audio.dart' show ProcessingState;
 
 import '../../core/api/music_api.dart';
 import '../../core/models/enums.dart';
@@ -18,6 +19,7 @@ import '../../core/services/tagger.dart';
 import '../../core/storage/settings_store.dart';
 import '../../core/ui/cover_image_source.dart';
 import '../downloads/download_history_store.dart';
+import '../equalizer/equalizer_store.dart';
 import 'bluetooth_lyric_metadata.dart';
 import 'lyric_parser.dart';
 import 'player_audio_handler.dart';
@@ -27,24 +29,32 @@ import 'player_session_store.dart';
 
 export 'player_models.dart';
 
-PlayerProcessingState _mapProcessingState(ProcessingState value) =>
+PlayerProcessingState _mapProcessingState(BassProcessingState value) =>
     switch (value) {
-      ProcessingState.idle => PlayerProcessingState.idle,
-      ProcessingState.loading => PlayerProcessingState.loading,
-      ProcessingState.buffering => PlayerProcessingState.buffering,
-      ProcessingState.ready => PlayerProcessingState.ready,
-      ProcessingState.completed => PlayerProcessingState.completed,
+      BassProcessingState.idle => PlayerProcessingState.idle,
+      BassProcessingState.loading => PlayerProcessingState.loading,
+      BassProcessingState.buffering => PlayerProcessingState.buffering,
+      BassProcessingState.ready => PlayerProcessingState.ready,
+      BassProcessingState.completed => PlayerProcessingState.completed,
+      BassProcessingState.error => PlayerProcessingState.idle,
     };
 
 const _lyricLoadTimeout = Duration(seconds: 8);
 const _embeddedTagReadTimeout = Duration(seconds: 8);
 const _positionCheckpointInterval = Duration(seconds: 2);
+const _stalledPlaybackRecoveryDelay = Duration(seconds: 12);
+const _stallProgressResetThreshold = Duration(seconds: 1);
+
+final playbackStallRecoveryDelayProvider = Provider<Duration>(
+  (_) => _stalledPlaybackRecoveryDelay,
+);
 
 class PlayerController extends StateNotifier<PlayerState>
     with WidgetsBindingObserver {
   PlayerController(this._ref)
     : _audioHandler = _ref.read(playerAudioHandlerProvider),
       _sessionStore = PlayerSessionStore(_ref.read(sharedPreferencesProvider)),
+      _stallRecoveryDelay = _ref.read(playbackStallRecoveryDelayProvider),
       super(const PlayerState()) {
     _audioHandler.bindTransportCallbacks(
       owner: this,
@@ -58,6 +68,7 @@ class PlayerController extends StateNotifier<PlayerState>
       _audioHandler.positionStream.listen((position) {
         if (!mounted || _transportSuppressionToken != null) return;
         state = state.copyWith(position: position);
+        _recordPlaybackProgress(position);
         _syncBluetoothMetadata();
         _schedulePositionCheckpoint();
       }),
@@ -75,12 +86,14 @@ class PlayerController extends StateNotifier<PlayerState>
         );
         _syncBluetoothMetadata();
         if ((wasPlaying && !playerState.playing) ||
-            playerState.processingState == ProcessingState.completed) {
+            playerState.processingState == BassProcessingState.completed) {
           _persistPositionCheckpoint();
         }
-        if (playerState.processingState == ProcessingState.completed) {
+        if (playerState.processingState == BassProcessingState.completed) {
           _autoAdvanceAfterCompletion();
         }
+        _logPlaybackState(playerState);
+        _updateStallRecovery(playerState);
       }),
       _audioHandler.errorStream.listen(_handlePlaybackError),
     ];
@@ -94,6 +107,9 @@ class PlayerController extends StateNotifier<PlayerState>
         _syncBluetoothMetadata(force: true);
       }
     });
+    _ref.listen<EqualizerSettings>(equalizerProvider, (_, next) {
+      _scheduleEqualizerApply(next);
+    }, fireImmediately: true);
     WidgetsBinding.instance.addObserver(this);
 
     final restored = _sessionStore.read();
@@ -120,8 +136,10 @@ class PlayerController extends StateNotifier<PlayerState>
   final Ref _ref;
   final PlayerAudioHandler _audioHandler;
   final PlayerSessionStore _sessionStore;
+  final Duration _stallRecoveryDelay;
   late final List<StreamSubscription<Object?>> _subscriptions;
   Timer? _positionCheckpointTimer;
+  Timer? _stallRecoveryTimer;
   Future<void> _persistChain = Future<void>.value();
   Object? _requestToken;
   Object? _transportSuppressionToken;
@@ -136,6 +154,11 @@ class PlayerController extends StateNotifier<PlayerState>
   String? _completionHandledForTrackId;
   Set<String> _attemptedRemoteSourceIds = <String>{};
   bool _lateSourceFallbackActive = false;
+  int _softStallRecoveryAttempts = 0;
+  Duration _stallProgressAnchor = Duration.zero;
+  BassProcessingState? _lastLoggedProcessingState;
+  bool? _lastLoggedPlaying;
+  Stopwatch? _bufferingStopwatch;
   final BluetoothLyricMetadataCoordinator _bluetoothLyricMetadata =
       BluetoothLyricMetadataCoordinator();
 
@@ -167,6 +190,12 @@ class PlayerController extends StateNotifier<PlayerState>
           _ref.read(settingsProvider).onlinePlaybackQuality,
         );
     _currentMusic = music;
+    _logPlayback(
+      'load_start kind=remote music=${music.source.code}:${music.id} '
+      'requestedQuality=${selectedQuality.code} '
+      'initialPositionMs=${initialPosition.inMilliseconds} '
+      'autoPlay=$autoPlay excludedSources=${excludedSourceIds.length}',
+    );
     if (excludedSourceIds.isEmpty) {
       _attemptedRemoteSourceIds = <String>{};
     }
@@ -298,6 +327,13 @@ class PlayerController extends StateNotifier<PlayerState>
         processingState: _mapProcessingState(_audioHandler.processingState),
         error: null,
       );
+      _logPlayback(
+        'load_ready kind=remote music=${music.source.code}:${music.id} '
+        'resolverSource=${fallback.source.id} quality=${resolvedQuality.code} '
+        'attemptedSources=${fallback.attemptedSourceIds.join(',')} '
+        'positionMs=${state.position.inMilliseconds} '
+        'durationMs=${state.duration.inMilliseconds}',
+      );
       _publishMediaMetadata(finalItem);
       _syncQueueAvailability();
       _persistFullSession();
@@ -352,10 +388,19 @@ class PlayerController extends StateNotifier<PlayerState>
   }
 
   void _handlePlaybackError(Object error) {
-    if (!mounted ||
-        _transportSuppressionToken != null ||
+    if (!mounted) return;
+    if (_transportSuppressionToken != null ||
         _lateSourceFallbackActive ||
         state.loading) {
+      // The active load pipeline owns this failure and reports it through its
+      // own catch. Log it anyway so a stall that never reaches that catch is
+      // not completely invisible.
+      unawaited(
+        AppLogger.write(
+          'player',
+          'playback error while loading (handled by load path): $error',
+        ),
+      );
       return;
     }
     final music = _currentMusic;
@@ -383,6 +428,160 @@ class PlayerController extends StateNotifier<PlayerState>
         _lateSourceFallbackActive = false;
       }
     }());
+  }
+
+  void _updateStallRecovery(BassPlaybackSnapshot playerState) {
+    final track = state.track;
+    final stalled =
+        !state.loading &&
+        track != null &&
+        !track.isLocal &&
+        playerState.playing &&
+        playerState.processingState == BassProcessingState.buffering;
+    if (!stalled) {
+      _cancelStallRecoveryTimer();
+      return;
+    }
+    if (_stallRecoveryTimer?.isActive ?? false) return;
+
+    final trackId = track.id;
+    final requestToken = _requestToken;
+    _stallRecoveryTimer = Timer(_stallRecoveryDelay, () {
+      _stallRecoveryTimer = null;
+      if (!mounted ||
+          state.loading ||
+          state.track?.id != trackId ||
+          !identical(_requestToken, requestToken) ||
+          !_audioHandler.playing ||
+          _audioHandler.processingState != BassProcessingState.buffering) {
+        return;
+      }
+      unawaited(_recoverStalledPlayback(trackId, requestToken));
+    });
+  }
+
+  void _logPlaybackState(BassPlaybackSnapshot playerState) {
+    final previousState = _lastLoggedProcessingState;
+    final previousPlaying = _lastLoggedPlaying;
+    if (previousState == playerState.processingState &&
+        previousPlaying == playerState.playing) {
+      return;
+    }
+    _lastLoggedProcessingState = playerState.processingState;
+    _lastLoggedPlaying = playerState.playing;
+
+    if (playerState.processingState == BassProcessingState.buffering &&
+        previousState != BassProcessingState.buffering) {
+      _bufferingStopwatch = Stopwatch()..start();
+      _logPlayback('buffering_start ${_playbackLogContext(playerState)}');
+      return;
+    }
+
+    if (previousState == BassProcessingState.buffering) {
+      final stopwatch = _bufferingStopwatch;
+      stopwatch?.stop();
+      _bufferingStopwatch = null;
+      _logPlayback(
+        'buffering_end elapsedMs=${stopwatch?.elapsedMilliseconds ?? -1} '
+        '${_playbackLogContext(playerState)}',
+      );
+      return;
+    }
+
+    _logPlayback('state_change ${_playbackLogContext(playerState)}');
+  }
+
+  String _playbackLogContext(BassPlaybackSnapshot playerState) {
+    final track = state.track;
+    final trackKind = track == null
+        ? 'none'
+        : track.isLocal
+        ? 'local'
+        : 'remote';
+    final source = _singleLine(track?.sourceLabel ?? 'none');
+    final quality = _singleLine(track?.qualityLabel ?? 'none');
+    final title = _singleLine(track?.title ?? 'none');
+    return 'state=${playerState.processingState.name} '
+        'playing=${playerState.playing} positionMs=${playerState.position.inMilliseconds} '
+        'bufferedMs=${playerState.bufferedPosition.inMilliseconds} '
+        'durationMs=${playerState.duration?.inMilliseconds ?? -1} '
+        'trackKind=$trackKind source=$source quality=$quality '
+        'queueIndex=$_queueIndex title="$title"';
+  }
+
+  void _logPlayback(String message) {
+    unawaited(AppLogger.write('player-playback', message));
+  }
+
+  String _singleLine(String value) =>
+      value.replaceAll(RegExp(r'[\r\n]+'), ' ').replaceAll('"', "'").trim();
+
+  Future<void> _recoverStalledPlayback(
+    String trackId,
+    Object? requestToken,
+  ) async {
+    if (_softStallRecoveryAttempts == 0) {
+      _softStallRecoveryAttempts++;
+      await AppLogger.write(
+        'player',
+        'playback stalled for ${_stallRecoveryDelay.inSeconds}s; '
+            'restarting transport at ${state.position.inMilliseconds}ms',
+      );
+      try {
+        await _audioHandler.pause();
+        if (!mounted ||
+            state.loading ||
+            state.track?.id != trackId ||
+            !identical(_requestToken, requestToken)) {
+          return;
+        }
+        await _audioHandler.play();
+      } catch (error) {
+        _handlePlaybackError(error);
+      }
+      return;
+    }
+
+    _handlePlaybackError(
+      TimeoutException('网络音频持续缓冲，自动切换备用音源', _stallRecoveryDelay),
+    );
+  }
+
+  void _recordPlaybackProgress(Duration position) {
+    final track = state.track;
+    if (track == null ||
+        track.isLocal ||
+        !state.playing ||
+        state.processingState != PlayerProcessingState.ready) {
+      return;
+    }
+    final progress = position - _stallProgressAnchor;
+    if (progress >= _stallProgressResetThreshold || progress.isNegative) {
+      _softStallRecoveryAttempts = 0;
+      _stallProgressAnchor = position;
+    }
+  }
+
+  void _cancelStallRecoveryTimer() {
+    _stallRecoveryTimer?.cancel();
+    _stallRecoveryTimer = null;
+  }
+
+  void _resetStallRecovery({Duration position = Duration.zero}) {
+    _cancelStallRecoveryTimer();
+    _softStallRecoveryAttempts = 0;
+    _stallProgressAnchor = position;
+  }
+
+  void _scheduleEqualizerApply(EqualizerSettings settings) {
+    unawaited(
+      _audioHandler.setEqualizer(settings.toBassConfiguration()).catchError((
+        Object error,
+        StackTrace stackTrace,
+      ) {
+        return AppLogger.write('player-equalizer', 'apply failed: $error');
+      }),
+    );
   }
 
   Future<void> playFromHistory(DownloadHistoryEntry entry) async {
@@ -543,6 +742,12 @@ class PlayerController extends StateNotifier<PlayerState>
     _transportSuppressionToken = token;
     _currentMusic = fallbackMusic;
     _currentQuality = Quality.tryFromCode(track.qualityLabel);
+    _logPlayback(
+      'load_start kind=local source=${_singleLine(track.sourceLabel)} '
+      'quality=${_singleLine(track.qualityLabel)} '
+      'initialPositionMs=${initialPosition.inMilliseconds} autoPlay=$autoPlay '
+      'title="${_singleLine(track.title)}"',
+    );
     state = state.beginTrackLoading(
       nextTrack: track,
       canPlayPrevious: _canPlayPrevious,
@@ -559,26 +764,16 @@ class PlayerController extends StateNotifier<PlayerState>
     if (!identical(_requestToken, token)) return false;
 
     try {
-      final embedded = await _readEmbeddedTagsForLocal(path);
-      if (!identical(_requestToken, token)) return false;
-      var resolvedTrack = track;
-      if (embedded != null) {
-        resolvedTrack = track.withEmbeddedTags(embedded);
-        state = state.copyWith(track: resolvedTrack);
-      }
-      final embeddedLyrics = embedded?.lyrics;
-      if (embeddedLyrics != null && embeddedLyrics.trim().isNotEmpty) {
-        final info = LyricInfo(lyric: embeddedLyrics);
-        state = state.withLoadedLyrics(
-          info: info,
-          parsed: KaraokeLyricsParser.parseEmbedded(embeddedLyrics),
-        );
-      }
+      // Reading embedded tags on a large lossless file can burn the whole
+      // 8 s budget before the audio pipeline is even touched. Start the read
+      // here but let the player load in parallel, then fold the tags in once
+      // playback is already under way.
+      final tagsFuture = _readEmbeddedTagsForLocal(path);
 
       await _audioHandler.load(
         item: _buildMediaItem(
-          resolvedTrack,
-          artUri: _networkArtworkUri(resolvedTrack.coverUrl),
+          track,
+          artUri: _networkArtworkUri(track.coverUrl),
         ),
         sourceUri: File(path).uri,
         queueIndex: _hasCurrentQueueTrack ? _queueIndex : null,
@@ -595,9 +790,14 @@ class PlayerController extends StateNotifier<PlayerState>
         processingState: _mapProcessingState(_audioHandler.processingState),
         error: null,
       );
+      _logPlayback(
+        'load_ready kind=local positionMs=${state.position.inMilliseconds} '
+        'durationMs=${state.duration.inMilliseconds} '
+        'quality=${_singleLine(track.qualityLabel)} '
+        'title="${_singleLine(track.title)}"',
+      );
       _syncBluetoothMetadata(force: true);
       _syncQueueAvailability();
-      unawaited(_publishEmbeddedArtworkAfterEntrance(resolvedTrack, token));
       _persistFullSession();
       if (!identical(_requestToken, token)) return false;
       if (autoPlay) {
@@ -605,13 +805,41 @@ class PlayerController extends StateNotifier<PlayerState>
         if (!identical(_requestToken, token)) return false;
       }
 
-      if (embeddedLyrics != null && embeddedLyrics.trim().isNotEmpty) {
-        state = state.copyWith(
-          lyricLoading: false,
-          position: _audioHandler.position,
-          duration: _audioHandler.duration ?? state.duration,
-          playing: _audioHandler.playing,
+      final embedded = await tagsFuture;
+      if (!identical(_requestToken, token)) return false;
+      var resolvedTrack = track;
+      if (embedded != null) {
+        resolvedTrack = track.withEmbeddedTags(embedded);
+        state = state.copyWith(track: resolvedTrack);
+        // Refreshes the system media session and Bluetooth metadata with the
+        // tags that were still being read while playback started.
+        _publishMediaMetadata(
+          _buildMediaItem(
+            resolvedTrack,
+            duration: _audioHandler.duration,
+            artUri: _networkArtworkUri(resolvedTrack.coverUrl),
+          ),
         );
+        _persistFullSession();
+      }
+      unawaited(_publishEmbeddedArtworkAfterEntrance(resolvedTrack, token));
+
+      final rawLyrics = embedded?.lyrics;
+      final embeddedLyrics = rawLyrics != null && rawLyrics.trim().isNotEmpty
+          ? rawLyrics
+          : null;
+      if (embeddedLyrics != null) {
+        state = state
+            .withLoadedLyrics(
+              info: LyricInfo(lyric: embeddedLyrics),
+              parsed: KaraokeLyricsParser.parseEmbedded(embeddedLyrics),
+            )
+            .copyWith(
+              position: _audioHandler.position,
+              duration: _audioHandler.duration ?? state.duration,
+              playing: _audioHandler.playing,
+            );
+        _syncBluetoothMetadata(force: true);
         return true;
       }
 
@@ -647,9 +875,10 @@ class PlayerController extends StateNotifier<PlayerState>
         _transportSuppressionToken != null) {
       return;
     }
+    _resetStallRecovery(position: state.position);
     final pendingRestore = _pendingRestoredSession;
     if (pendingRestore != null &&
-        _audioHandler.processingState == ProcessingState.idle) {
+        _audioHandler.processingState == BassProcessingState.idle) {
       await _restorePersistedSession(
         pendingRestore,
         autoPlay: true,
@@ -675,6 +904,7 @@ class PlayerController extends StateNotifier<PlayerState>
     await _audioHandler.seek(position);
     if (!mounted || state.track?.id != trackId) return;
     state = state.copyWith(position: _audioHandler.position);
+    _resetStallRecovery(position: state.position);
     _persistPositionCheckpoint();
   }
 
@@ -1378,6 +1608,11 @@ class PlayerController extends StateNotifier<PlayerState>
   }
 
   Future<void> _beginAudioTransition(Object token, MediaItem item) async {
+    _resetStallRecovery();
+    _bufferingStopwatch?.stop();
+    _bufferingStopwatch = null;
+    _lastLoggedProcessingState = null;
+    _lastLoggedPlaying = null;
     try {
       await _audioHandler.beginTrackTransition(
         item: item,
@@ -1440,6 +1675,7 @@ class PlayerController extends StateNotifier<PlayerState>
     WidgetsBinding.instance.removeObserver(this);
     _persistPositionCheckpoint();
     _positionCheckpointTimer?.cancel();
+    _stallRecoveryTimer?.cancel();
     _audioHandler.unbindTransportCallbacks(this);
     for (final subscription in _subscriptions) {
       subscription.cancel();
