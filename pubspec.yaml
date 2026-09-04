@@ -30,7 +30,7 @@ dependencies:
   archive: ^4.0.2
   native_dio_adapter: 1.5.1
   flutter_slidable: ^4.0.3
-  dynamic_color: ^1.8.1
+  dynamic_color: 1.8.1
   material_color_utilities: 0.13.0
   material_symbols_icons: ^4.2951.0
   material_new_shapes: ^1.0.0

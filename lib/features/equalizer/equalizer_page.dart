@@ -37,7 +37,6 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
     final settings = ref.watch(equalizerProvider);
     final notifier = ref.read(equalizerProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
-    final activeBandCount = settings.bands.where((band) => band.enabled).length;
 
     return CustomScrollView(
       key: const PageStorageKey('equalizer-scroll'),
