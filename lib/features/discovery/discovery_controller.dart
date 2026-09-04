@@ -2,7 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/music_api.dart';
 import '../../core/models/enums.dart';
+import '../../core/models/leaderboard_info.dart';
 import '../../core/models/music_info.dart';
+import '../../core/models/online_collection_kind.dart';
 import '../../core/models/playlist_category.dart';
 import '../../core/models/playlist_info.dart';
 import '../../core/models/playlist_summary.dart';
@@ -19,13 +21,23 @@ const List<MusicSource> kDiscoverySources = <MusicSource>[
   MusicSource.mg,
 ];
 
-typedef OnlinePlaylistIdentity = ({MusicSource source, String id});
+typedef OnlinePlaylistIdentity = ({
+  MusicSource source,
+  String id,
+  OnlineCollectionKind kind,
+});
+
+typedef LeaderboardIdentity = ({MusicSource source, String boardId});
 
 final onlinePlaylistSummaryCacheProvider =
     Provider<Map<OnlinePlaylistIdentity, PlaylistSummary>>((ref) => {});
 
-String onlinePlaylistArtworkHeroTag(MusicSource source, String playlistId) {
-  return 'online-playlist-artwork:${source.code}:$playlistId';
+String onlinePlaylistArtworkHeroTag(
+  MusicSource source,
+  String playlistId, {
+  OnlineCollectionKind kind = OnlineCollectionKind.playlist,
+}) {
+  return 'online-${kind.name}-artwork:${source.code}:$playlistId';
 }
 
 final selectedDiscoverySourceProvider = StateProvider<MusicSource>(
@@ -50,15 +62,37 @@ final featuredPlaylistsProvider =
           );
     });
 
+final leaderboardBoardsProvider =
+    FutureProvider.family<List<LeaderboardSummary>, MusicSource>((ref, source) {
+      return ref.watch(musicApiProvider).getLeaderboards(source);
+    });
+
+final leaderboardPreviewProvider =
+    FutureProvider.family<LeaderboardSummary, LeaderboardIdentity>((
+      ref,
+      key,
+    ) async {
+      final boards = await ref.watch(
+        leaderboardBoardsProvider(key.source).future,
+      );
+      final board = boards.firstWhere(
+        (item) => item.boardId == key.boardId,
+        orElse: () => throw StateError('排行榜不存在'),
+      );
+      return ref.watch(musicApiProvider).getLeaderboardPreview(board);
+    });
+
 class OnlinePlaylistKey {
   const OnlinePlaylistKey({
     required this.source,
     required this.id,
+    this.kind = OnlineCollectionKind.playlist,
     this.maxTracks = onlinePlaylistDetailInitialTrackLimit,
   });
 
   final MusicSource source;
   final String id;
+  final OnlineCollectionKind kind;
   final int? maxTracks;
 
   @override
@@ -66,21 +100,28 @@ class OnlinePlaylistKey {
       other is OnlinePlaylistKey &&
       other.source == source &&
       other.id == id &&
+      other.kind == kind &&
       other.maxTracks == maxTracks;
 
   @override
-  int get hashCode => Object.hash(source, id, maxTracks);
+  int get hashCode => Object.hash(source, id, kind, maxTracks);
 }
 
 final onlinePlaylistDetailProvider =
     FutureProvider.family<PlaylistInfo, OnlinePlaylistKey>((ref, key) {
-      return ref
-          .watch(musicApiProvider)
-          .parsePlaylist(
-            input: key.id,
-            source: key.source,
-            maxTracks: key.maxTracks,
-          );
+      final api = ref.watch(musicApiProvider);
+      return switch (key.kind) {
+        OnlineCollectionKind.playlist => api.parsePlaylist(
+          input: key.id,
+          source: key.source,
+          maxTracks: key.maxTracks,
+        ),
+        OnlineCollectionKind.leaderboard => api.getLeaderboard(
+          source: key.source,
+          boardId: key.id,
+          maxTracks: key.maxTracks,
+        ),
+      };
     });
 
 class OnlineTrackCoverKey {

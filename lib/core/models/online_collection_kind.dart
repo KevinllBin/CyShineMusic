@@ -1,0 +1,1 @@
+enum OnlineCollectionKind { playlist, leaderboard }

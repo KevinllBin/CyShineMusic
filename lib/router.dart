@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'features/debug/debug_log_page.dart';
+import 'features/discovery/leaderboards_page.dart';
 import 'features/discovery/online_playlist_detail_page.dart';
 import 'features/downloads/download_history_page.dart';
 import 'features/equalizer/equalizer_page.dart';
 import 'core/models/enums.dart';
+import 'core/models/leaderboard_info.dart';
+import 'core/models/online_collection_kind.dart';
 import 'core/models/playlist_summary.dart';
 import 'features/playlists/online_playlist_import_page.dart';
 import 'features/playlists/playlist_detail_page.dart';
@@ -79,6 +82,63 @@ GoRouter createAppRouter({
                 ),
                 // Keep the page opaque while the non-zero route duration
                 // drives the shared artwork Hero transition.
+                transitionsBuilder: (_, _, _, child) => child,
+              );
+            },
+          ),
+          GoRoute(
+            path: '/discover/leaderboards/:source',
+            pageBuilder: (context, state) {
+              final source = MusicSource.tryFromCode(
+                state.pathParameters['source'] ?? '',
+              );
+              return NoTransitionPage(
+                child: ShellPageStorage(
+                  child: LeaderboardsPage(
+                    source: source == null || source == MusicSource.all
+                        ? MusicSource.kw
+                        : source,
+                  ),
+                ),
+              );
+            },
+          ),
+          GoRoute(
+            path: '/discover/leaderboards/:source/:id',
+            pageBuilder: (context, state) {
+              final source = MusicSource.tryFromCode(
+                state.pathParameters['source'] ?? '',
+              );
+              final resolvedSource = source == null || source == MusicSource.all
+                  ? MusicSource.kw
+                  : source;
+              final id = state.pathParameters['id'] ?? '';
+              final extra = state.extra;
+              final board = extra is LeaderboardSummary ? extra : null;
+              final reduceMotion = MediaQuery.disableAnimationsOf(context);
+              return CustomTransitionPage<void>(
+                key: state.pageKey,
+                transitionDuration: reduceMotion
+                    ? Duration.zero
+                    : AppMotion.long,
+                reverseTransitionDuration: reduceMotion
+                    ? Duration.zero
+                    : AppMotion.medium,
+                child: ShellPageStorage(
+                  child: OnlinePlaylistDetailPage(
+                    source: resolvedSource,
+                    playlistId: id,
+                    kind: OnlineCollectionKind.leaderboard,
+                    summary: board == null
+                        ? null
+                        : PlaylistSummary(
+                            id: board.boardId,
+                            name: board.name,
+                            source: board.source,
+                            coverUrl: board.coverUrl,
+                          ),
+                  ),
+                ),
                 transitionsBuilder: (_, _, _, child) => child,
               );
             },
@@ -176,7 +236,10 @@ String _playerReturnLocationFromExtra(Object? extra) {
 }
 
 bool _isPlayerReturnLocation(String location) {
-  if (location.startsWith('/discover/playlists/')) return true;
+  if (location.startsWith('/discover/playlists/') ||
+      location.startsWith('/discover/leaderboards/')) {
+    return true;
+  }
   if (location == '/playlists' || location.startsWith('/playlists/')) {
     return true;
   }

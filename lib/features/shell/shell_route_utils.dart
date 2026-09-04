@@ -17,8 +17,12 @@ bool isPlaylistDetailLocation(String location) {
 }
 
 bool isImmersivePlaylistDetailLocation(String location) {
+  final leaderboardDetail =
+      location.startsWith('/discover/leaderboards/') &&
+      location.split('/').length > 4;
   return isPlaylistDetailLocation(location) ||
-      location.startsWith('/discover/playlists/');
+      location.startsWith('/discover/playlists/') ||
+      leaderboardDetail;
 }
 
 bool isDiscoveryLocation(String location) =>

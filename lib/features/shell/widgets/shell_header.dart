@@ -22,11 +22,17 @@ class ShellHeader extends ConsumerWidget {
     final scheme = shellSchemeFor(location, Theme.of(context).colorScheme);
     final textTheme = Theme.of(context).textTheme;
     final top = MediaQuery.viewPaddingOf(context).top;
-    final onlinePlaylistDetail = location.startsWith('/discover/playlists/');
+    final leaderboardDetail =
+        location.startsWith('/discover/leaderboards/') &&
+        location.split('/').length > 4;
+    final onlineCollectionDetail =
+        location.startsWith('/discover/playlists/') || leaderboardDetail;
+    final leaderboardIndex =
+        location.startsWith('/discover/leaderboards/') && !leaderboardDetail;
     final compact =
         location == '/' ||
         isSongsLibraryLocation(location) ||
-        onlinePlaylistDetail;
+        onlineCollectionDetail;
     final headerTitle =
         location == '/songs/search' &&
             ref.watch(songsLibraryPlaylistIdProvider) != null
@@ -50,14 +56,14 @@ class ShellHeader extends ConsumerWidget {
       ),
       child: Row(
         children: [
-          if (location == '/playlists/import') ...[
+          if (location == '/playlists/import' || leaderboardIndex) ...[
             IconButton(
               tooltip: '返回上一页',
               onPressed: () {
                 if (context.canPop()) {
                   context.pop();
                 } else {
-                  context.go(playlistBackLocation);
+                  context.go(leaderboardIndex ? '/' : playlistBackLocation);
                 }
               },
               icon: Icon(
@@ -75,7 +81,7 @@ class ShellHeader extends ConsumerWidget {
               overflow: TextOverflow.ellipsis,
               style: textTheme.headlineSmall?.copyWith(
                 color: scheme.onSurface,
-                fontSize: onlinePlaylistDetail ? 18 : (compact ? 22 : null),
+                fontSize: onlineCollectionDetail ? 18 : (compact ? 22 : null),
                 fontWeight: FontWeight.w600,
                 height: 1.05,
               ),
@@ -89,6 +95,9 @@ class ShellHeader extends ConsumerWidget {
   String _titleFor(String location) {
     if (location == '/') return '发现';
     if (location.startsWith('/discover/playlists/')) return '歌单详情';
+    if (location.startsWith('/discover/leaderboards/')) {
+      return location.split('/').length > 4 ? '榜单详情' : '排行榜';
+    }
     if (location == '/playlists') return '歌单管理';
     if (location == '/playlists/import') return '导入歌单';
     if (location.startsWith('/playlists/')) return '歌单详情';

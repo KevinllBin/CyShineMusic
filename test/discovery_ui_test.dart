@@ -11,7 +11,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cy_shine_music/core/api/music_api.dart';
 import 'package:cy_shine_music/core/models/download_capabilities.dart';
 import 'package:cy_shine_music/core/models/enums.dart';
+import 'package:cy_shine_music/core/models/leaderboard_info.dart';
 import 'package:cy_shine_music/core/models/music_info.dart';
+import 'package:cy_shine_music/core/models/online_collection_kind.dart';
 import 'package:cy_shine_music/core/models/playlist_info.dart';
 import 'package:cy_shine_music/core/models/playlist_summary.dart';
 import 'package:cy_shine_music/core/models/search_response.dart';
@@ -73,6 +75,33 @@ void main() {
     expect(_cardPositions(tester, MusicSource.kw, 9), before);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'discovery shows independent leaderboard previews above playlists',
+    (tester) async {
+      await _useViewport(tester, const Size(390, 844));
+      final fake = _FakeDiscoveryApi();
+      final container = ProviderContainer(
+        overrides: [musicApiProvider.overrideWithValue(fake)],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        _appWithContainer(container, const DiscoveryContent()),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('官方排行榜'), findsOneWidget);
+      expect(find.text('精选歌单'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('leaderboard-preview-kw:1')),
+        findsOneWidget,
+      );
+      expect(find.text('榜单歌曲 1'), findsWidgets);
+      expect(find.text('榜单歌曲 3'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('opening an online playlist never fades through the shell', (
     tester,
@@ -325,7 +354,7 @@ void main() {
 
     final scrollable = tester.state<ScrollableState>(
       find.descendant(
-        of: find.byType(ListView),
+        of: find.byKey(const PageStorageKey('discovery-kw-scroll')),
         matching: find.byType(Scrollable),
       ),
     );
@@ -476,6 +505,34 @@ void main() {
 
       expect(fake.detailRequests, 1);
       expect(fake.detailTrackLimits, [onlinePlaylistDetailInitialTrackLimit]);
+    },
+  );
+
+  test(
+    'online detail provider routes leaderboard keys independently',
+    () async {
+      final fake = _FakeDiscoveryApi();
+      final container = ProviderContainer(
+        overrides: [musicApiProvider.overrideWithValue(fake)],
+      );
+      addTearDown(container.dispose);
+      const playlistKey = OnlinePlaylistKey(source: MusicSource.kw, id: '1');
+      const boardKey = OnlinePlaylistKey(
+        source: MusicSource.kw,
+        id: '1',
+        kind: OnlineCollectionKind.leaderboard,
+      );
+
+      final playlist = await container.read(
+        onlinePlaylistDetailProvider(playlistKey).future,
+      );
+      final leaderboard = await container.read(
+        onlinePlaylistDetailProvider(boardKey).future,
+      );
+
+      expect(playlist.name, '酷我精选歌单 1');
+      expect(leaderboard.name, '酷我榜单 1');
+      expect(playlistKey, isNot(boardKey));
     },
   );
 
@@ -978,6 +1035,52 @@ class _FakeDiscoveryApi extends MusicApi {
           playCount: 1000 + index,
         ),
     ];
+  }
+
+  @override
+  Future<List<LeaderboardSummary>> getLeaderboards(MusicSource source) async {
+    return [
+      for (var index = 1; index <= 4; index++)
+        LeaderboardSummary(
+          id: '${source.code}__$index',
+          boardId: '$index',
+          name: '${source.label}榜单 $index',
+          source: source,
+        ),
+    ];
+  }
+
+  @override
+  Future<LeaderboardSummary> getLeaderboardPreview(
+    LeaderboardSummary board, {
+    int limit = 3,
+  }) async {
+    return board.copyWith(
+      previewTracks: [
+        for (var index = 1; index <= limit; index++)
+          _music(board.source, index, '榜单歌曲 $index'),
+      ],
+    );
+  }
+
+  @override
+  Future<PlaylistInfo> getLeaderboard({
+    required MusicSource source,
+    required String boardId,
+    int? maxTracks,
+  }) async {
+    final count = maxTracks ?? detailTrackCount;
+    return PlaylistInfo(
+      id: boardId,
+      name: '${source.label}榜单 $boardId',
+      source: source,
+      creator: source.label,
+      trackCount: detailTrackCount,
+      tracks: [
+        for (var index = 1; index <= count.clamp(0, detailTrackCount); index++)
+          _music(source, index, '榜单歌曲 $index'),
+      ],
+    );
   }
 
   @override

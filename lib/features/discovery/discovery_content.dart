@@ -12,6 +12,7 @@ import 'discovery_controller.dart';
 import 'widgets/discovery_helpers.dart';
 import 'widgets/discovery_placeholders.dart';
 import 'widgets/discovery_source_selector.dart';
+import 'widgets/leaderboard_spotlight.dart';
 import 'widgets/masonry_playlist_grid.dart';
 
 class DiscoveryContent extends ConsumerStatefulWidget {
@@ -83,7 +84,11 @@ class _DiscoveryContentState extends ConsumerState<DiscoveryContent> {
             initialItems: items,
             onRefresh: () async {
               ref.invalidate(featuredPlaylistsProvider(source));
-              await ref.read(featuredPlaylistsProvider(source).future);
+              ref.invalidate(leaderboardBoardsProvider(source));
+              await Future.wait([
+                ref.read(featuredPlaylistsProvider(source).future),
+                ref.read(leaderboardBoardsProvider(source).future),
+              ]);
             },
             onLoadMore: (page) => ref
                 .read(musicApiProvider)
@@ -240,6 +245,30 @@ class _DiscoveryListState extends State<_DiscoveryList> {
         ),
         padding: const EdgeInsets.fromLTRB(12, 2, 12, 156),
         children: [
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 960),
+              child: LeaderboardSpotlight(source: widget.source),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 960),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(2, 0, 2, 10),
+                  child: Text(
+                    '精选歌单',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
           Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 960),

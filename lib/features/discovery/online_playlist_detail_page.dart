@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/music_api.dart';
 import '../../core/models/enums.dart';
 import '../../core/models/music_info.dart';
+import '../../core/models/online_collection_kind.dart';
 import '../../core/models/playlist_info.dart';
 import '../../core/models/playlist_summary.dart';
 import '../../core/services/app_logger.dart';
@@ -32,11 +33,13 @@ class OnlinePlaylistDetailPage extends ConsumerStatefulWidget {
     super.key,
     required this.source,
     required this.playlistId,
+    this.kind = OnlineCollectionKind.playlist,
     this.summary,
   });
 
   final MusicSource source;
   final String playlistId;
+  final OnlineCollectionKind kind;
   final PlaylistSummary? summary;
 
   @override
@@ -56,16 +59,21 @@ class _OnlinePlaylistDetailPageState
   final ScrollController _scrollController = ScrollController();
 
   OnlinePlaylistIdentity get _identity =>
-      (source: widget.source, id: widget.playlistId);
+      (source: widget.source, id: widget.playlistId, kind: widget.kind);
 
   OnlinePlaylistKey get _key => OnlinePlaylistKey(
     source: widget.source,
     id: widget.playlistId,
+    kind: widget.kind,
     maxTracks: _trackLimit,
   );
 
-  String get _returnLocation =>
-      '/discover/playlists/${widget.source.code}/${widget.playlistId}';
+  String get _returnLocation => widget.kind == OnlineCollectionKind.leaderboard
+      ? '/discover/leaderboards/${widget.source.code}/${widget.playlistId}'
+      : '/discover/playlists/${widget.source.code}/${widget.playlistId}';
+
+  String get _detailLabel =>
+      widget.kind == OnlineCollectionKind.leaderboard ? '榜单详情' : '歌单详情';
 
   @override
   void initState() {
@@ -81,7 +89,8 @@ class _OnlinePlaylistDetailPageState
     super.didUpdateWidget(oldWidget);
     final identityChanged =
         oldWidget.source != widget.source ||
-        oldWidget.playlistId != widget.playlistId;
+        oldWidget.playlistId != widget.playlistId ||
+        oldWidget.kind != widget.kind;
     if (identityChanged) {
       _trackLimit = onlinePlaylistDetailInitialTrackLimit;
       _lastPlaylist = null;
@@ -135,11 +144,13 @@ class _OnlinePlaylistDetailPageState
         summary: _summary,
         source: widget.source,
         playlistId: widget.playlistId,
+        kind: widget.kind,
       ),
       error: (error, _) => _DetailError(
         summary: _summary,
         source: widget.source,
         playlistId: widget.playlistId,
+        kind: widget.kind,
         message: _friendlyError(error),
         onRetry: () => ref.invalidate(onlinePlaylistDetailProvider(_key)),
       ),
@@ -156,7 +167,9 @@ class _OnlinePlaylistDetailPageState
       name: playlist.name,
       source: playlist.source,
       tracks: playlist.tracks,
-      coverUrl: summary.coverUrl,
+      coverUrl: summary.coverUrl?.trim().isNotEmpty == true
+          ? summary.coverUrl
+          : playlist.coverUrl,
       creator: playlist.creator,
       description: playlist.description,
       playCount: playlist.playCount,
@@ -194,6 +207,7 @@ class _OnlinePlaylistDetailPageState
         widget.source,
         widget.playlistId,
         playlist.coverUrl,
+        kind: widget.kind,
       ),
       immersiveStatusBar: !wide,
       child: Builder(
@@ -215,6 +229,9 @@ class _OnlinePlaylistDetailPageState
               saving: _saving,
               removingFavorite: _removingFavorite,
               saved: local != null,
+              favoriteLabel: widget.kind == OnlineCollectionKind.leaderboard
+                  ? (local != null ? '已收藏' : '收藏榜单')
+                  : null,
               padding: padding,
             );
           }
@@ -231,9 +248,15 @@ class _OnlinePlaylistDetailPageState
               ),
             ),
             if (playlist.tracks.isEmpty)
-              const SliverFillRemaining(
+              SliverFillRemaining(
                 hasScrollBody: false,
-                child: Center(child: Text('这个歌单暂时没有可用歌曲')),
+                child: Center(
+                  child: Text(
+                    widget.kind == OnlineCollectionKind.leaderboard
+                        ? '这个榜单暂时没有可用歌曲'
+                        : '这个歌单暂时没有可用歌曲',
+                  ),
+                ),
               )
             else
               SliverPadding(
@@ -283,8 +306,8 @@ class _OnlinePlaylistDetailPageState
             backgroundColor: scheme.surface,
             body: wide
                 ? PlaylistWideBody(
-                    topBar: const ImmersivePlaylistTopBar(
-                      title: '歌单详情',
+                    topBar: ImmersivePlaylistTopBar(
+                      title: _detailLabel,
                       onImage: false,
                     ),
                     infoPane: PlaylistWideInfoPane(
@@ -292,6 +315,7 @@ class _OnlinePlaylistDetailPageState
                       artworkHeroTag: onlinePlaylistArtworkHeroTag(
                         playlist.source,
                         playlist.id,
+                        kind: widget.kind,
                       ),
                       title: playlist.name,
                       metadata: metadata,
@@ -334,9 +358,10 @@ class _OnlinePlaylistDetailPageState
                               artworkHeroTag: onlinePlaylistArtworkHeroTag(
                                 playlist.source,
                                 playlist.id,
+                                kind: widget.kind,
                               ),
-                              topBar: const ImmersivePlaylistTopBar(
-                                title: '歌单详情',
+                              topBar: ImmersivePlaylistTopBar(
+                                title: _detailLabel,
                               ),
                             ),
                           ),
@@ -387,6 +412,7 @@ class _OnlinePlaylistDetailPageState
           api: api,
           player: player,
           playlist: playlist,
+          kind: widget.kind,
           initialQueue: queue,
         ),
       );
@@ -407,11 +433,17 @@ class _OnlinePlaylistDetailPageState
     try {
       final notifier = ref.read(localPlaylistsProvider.notifier);
       if (savedPlaylist == null) {
-        final fullPlaylist = _withDiscoveryArtwork(
-          await ref
-              .read(musicApiProvider)
-              .parsePlaylist(input: playlist.id, source: playlist.source),
-        );
+        final api = ref.read(musicApiProvider);
+        final loaded = widget.kind == OnlineCollectionKind.leaderboard
+            ? await api.getLeaderboard(
+                source: playlist.source,
+                boardId: playlist.id,
+              )
+            : await api.parsePlaylist(
+                input: playlist.id,
+                source: playlist.source,
+              );
+        final fullPlaylist = _withDiscoveryArtwork(loaded);
         await notifier.importOnline(fullPlaylist);
       } else {
         await notifier.delete(savedPlaylist.id);
@@ -516,11 +548,13 @@ class _DetailLoading extends StatelessWidget {
     required this.summary,
     required this.source,
     required this.playlistId,
+    required this.kind,
   });
 
   final PlaylistSummary? summary;
   final MusicSource source;
   final String playlistId;
+  final OnlineCollectionKind kind;
 
   @override
   Widget build(BuildContext context) {
@@ -530,12 +564,22 @@ class _DetailLoading extends StatelessWidget {
       size: discoveryPlaylistArtworkSize,
     );
     final wide = playlistDetailUsesWideLayout(context);
-    final title = item?.name ?? '歌单详情';
-    final metadata = item == null ? '正在读取歌单信息' : _summaryMetadata(item);
+    final detailLabel = kind == OnlineCollectionKind.leaderboard
+        ? '榜单详情'
+        : '歌单详情';
+    final title = item?.name ?? detailLabel;
+    final metadata = item == null
+        ? '正在读取${kind == OnlineCollectionKind.leaderboard ? '榜单' : '歌单'}信息'
+        : _summaryMetadata(item);
     final descriptionLoading = item?.description?.trim().isEmpty ?? true;
     return PlaylistArtworkTheme(
       artworkProvider: artworkProvider,
-      cacheKey: _onlineArtworkCacheKey(source, playlistId, item?.coverUrl),
+      cacheKey: _onlineArtworkCacheKey(
+        source,
+        playlistId,
+        item?.coverUrl,
+        kind: kind,
+      ),
       immersiveStatusBar: !wide,
       child: Builder(
         builder: (context) {
@@ -552,8 +596,8 @@ class _DetailLoading extends StatelessWidget {
             backgroundColor: scheme.surface,
             body: wide
                 ? PlaylistWideBody(
-                    topBar: const ImmersivePlaylistTopBar(
-                      title: '歌单详情',
+                    topBar: ImmersivePlaylistTopBar(
+                      title: detailLabel,
                       onImage: false,
                     ),
                     infoPane: PlaylistWideInfoPane(
@@ -562,6 +606,7 @@ class _DetailLoading extends StatelessWidget {
                       artworkHeroTag: onlinePlaylistArtworkHeroTag(
                         source,
                         playlistId,
+                        kind: kind,
                       ),
                       title: title,
                       metadata: metadata,
@@ -598,8 +643,9 @@ class _DetailLoading extends StatelessWidget {
                           artworkHeroTag: onlinePlaylistArtworkHeroTag(
                             source,
                             playlistId,
+                            kind: kind,
                           ),
-                          topBar: const ImmersivePlaylistTopBar(title: '歌单详情'),
+                          topBar: ImmersivePlaylistTopBar(title: detailLabel),
                         ),
                       ),
                       SliverToBoxAdapter(
@@ -631,6 +677,7 @@ class _DetailError extends StatelessWidget {
     required this.summary,
     required this.source,
     required this.playlistId,
+    required this.kind,
     required this.message,
     required this.onRetry,
   });
@@ -638,6 +685,7 @@ class _DetailError extends StatelessWidget {
   final PlaylistSummary? summary;
   final MusicSource source;
   final String playlistId;
+  final OnlineCollectionKind kind;
   final String message;
   final VoidCallback onRetry;
 
@@ -649,7 +697,10 @@ class _DetailError extends StatelessWidget {
       size: discoveryPlaylistArtworkSize,
     );
     final wide = playlistDetailUsesWideLayout(context);
-    final title = item?.name ?? '歌单详情';
+    final detailLabel = kind == OnlineCollectionKind.leaderboard
+        ? '榜单详情'
+        : '歌单详情';
+    final title = item?.name ?? detailLabel;
     final metadata = item == null ? source.label : _summaryMetadata(item);
     final errorContent = Center(
       child: Padding(
@@ -672,7 +723,12 @@ class _DetailError extends StatelessWidget {
     );
     return PlaylistArtworkTheme(
       artworkProvider: artworkProvider,
-      cacheKey: _onlineArtworkCacheKey(source, playlistId, item?.coverUrl),
+      cacheKey: _onlineArtworkCacheKey(
+        source,
+        playlistId,
+        item?.coverUrl,
+        kind: kind,
+      ),
       immersiveStatusBar: !wide,
       child: Builder(
         builder: (context) {
@@ -681,8 +737,8 @@ class _DetailError extends StatelessWidget {
             backgroundColor: scheme.surface,
             body: wide
                 ? PlaylistWideBody(
-                    topBar: const ImmersivePlaylistTopBar(
-                      title: '歌单详情',
+                    topBar: ImmersivePlaylistTopBar(
+                      title: detailLabel,
                       onImage: false,
                     ),
                     infoPane: PlaylistWideInfoPane(
@@ -690,6 +746,7 @@ class _DetailError extends StatelessWidget {
                       artworkHeroTag: onlinePlaylistArtworkHeroTag(
                         source,
                         playlistId,
+                        kind: kind,
                       ),
                       title: title,
                       metadata: metadata,
@@ -708,8 +765,9 @@ class _DetailError extends StatelessWidget {
                           artworkHeroTag: onlinePlaylistArtworkHeroTag(
                             source,
                             playlistId,
+                            kind: kind,
                           ),
-                          topBar: const ImmersivePlaylistTopBar(title: '歌单详情'),
+                          topBar: ImmersivePlaylistTopBar(title: detailLabel),
                         ),
                       ),
                       SliverToBoxAdapter(
@@ -918,9 +976,11 @@ String _summaryMetadata(PlaylistSummary summary) {
 String _onlineArtworkCacheKey(
   MusicSource source,
   String playlistId,
-  String? coverUrl,
-) {
-  return 'online:${source.code}:$playlistId:${coverUrl?.trim() ?? ''}';
+  String? coverUrl, {
+  OnlineCollectionKind kind = OnlineCollectionKind.playlist,
+}) {
+  return 'online:${kind.name}:${source.code}:$playlistId:'
+      '${coverUrl?.trim() ?? ''}';
 }
 
 List<DownloadHistoryEntry> _onlinePlaylistQueue(PlaylistInfo playlist) {
@@ -953,13 +1013,16 @@ Future<void> _expandOnlinePlaylistQueue({
   required MusicApi api,
   required PlayerController player,
   required PlaylistInfo playlist,
+  required OnlineCollectionKind kind,
   required List<DownloadHistoryEntry> initialQueue,
 }) async {
   try {
-    final fullPlaylist = await api.parsePlaylist(
-      input: playlist.id,
-      source: playlist.source,
-    );
+    final fullPlaylist = kind == OnlineCollectionKind.leaderboard
+        ? await api.getLeaderboard(
+            source: playlist.source,
+            boardId: playlist.id,
+          )
+        : await api.parsePlaylist(input: playlist.id, source: playlist.source);
     final fullQueue = _onlinePlaylistQueue(fullPlaylist);
     player.expandPlaylistQueue(
       expectedQueue: initialQueue,
