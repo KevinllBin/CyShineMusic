@@ -1,9 +1,14 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:test/test.dart';
 
 import 'package:cy_shine_music/core/models/enums.dart';
 import 'package:cy_shine_music/core/models/playlist_category.dart';
+import 'package:cy_shine_music/core/models/playlist_info.dart';
+import 'package:cy_shine_music/core/sdk/internal/crypto_util.dart';
+import 'package:cy_shine_music/core/sdk/leaderboard_catalog.dart';
+import 'package:cy_shine_music/core/sdk/leaderboard_sdk.dart';
 import 'package:cy_shine_music/core/sdk/playlist_adapters/kg_playlist_adapter.dart';
 import 'package:cy_shine_music/core/sdk/playlist_adapters/kw_playlist_adapter.dart';
 import 'package:cy_shine_music/core/sdk/playlist_adapters/mg_playlist_adapter.dart';
@@ -128,6 +133,231 @@ void main() {
       );
       expect(playlistCatalogCategoriesFor(MusicSource.wy), hasLength(1));
       expect(playlistCatalogCategoriesFor(MusicSource.mg), hasLength(1));
+    });
+  });
+
+  group('LeaderboardSdk', () {
+    test('exposes stable source-specific directories', () {
+      expect(leaderboardCatalogFor(MusicSource.kw).first.boardId, '93');
+      expect(leaderboardCatalogFor(MusicSource.kg).first.boardId, '8888');
+      expect(leaderboardCatalogFor(MusicSource.tx).first.boardId, '4');
+      expect(leaderboardCatalogFor(MusicSource.wy).first.boardId, '19723756');
+      expect(leaderboardCatalogFor(MusicSource.mg).first.boardId, '27553319');
+      expect(leaderboardCatalogFor(MusicSource.all), isEmpty);
+      expect(
+        leaderboardCatalogFor(MusicSource.wy).map((board) => board.key).toSet(),
+        hasLength(leaderboardCatalogFor(MusicSource.wy).length),
+      );
+    });
+
+    test('delegates NetEase boards to the playlist detail path', () async {
+      String? requestedId;
+      MusicSource? requestedSource;
+      int? requestedLimit;
+
+      final detail = await LeaderboardSdk.get(
+        source: MusicSource.wy,
+        boardId: '19723756',
+        maxTracks: 3,
+        playlistLoader: (id, {required source, maxTracks}) async {
+          requestedId = id;
+          requestedSource = source;
+          requestedLimit = maxTracks;
+          return const PlaylistInfo(
+            id: '19723756',
+            name: '网易云飙升榜',
+            source: MusicSource.wy,
+            tracks: [],
+          );
+        },
+      );
+
+      expect(requestedId, '19723756');
+      expect(requestedSource, MusicSource.wy);
+      expect(requestedLimit, 3);
+      expect(detail.name, '网易云飙升榜');
+    });
+
+    test('maps QQ board metadata, tracks and quality options', () async {
+      Object? requestBody;
+      final detail = await LeaderboardSdk.get(
+        source: MusicSource.tx,
+        boardId: '26',
+        maxTracks: 3,
+        jsonPoster: (url, {headers, body}) async {
+          expect(url, contains('musicu.fcg'));
+          requestBody = body;
+          return _qqLeaderboardFixture;
+        },
+      );
+
+      final params = (((requestBody as Map)['toplist'] as Map)['param'] as Map);
+      expect(params['topid'], 26);
+      expect(params['num'], 3);
+      expect(params, isNot(contains('period')));
+      expect(detail.name, '热歌榜');
+      expect(detail.coverUrl, startsWith('https://'));
+      expect(detail.playCount, 19800000);
+      expect(detail.trackCount, 300);
+      expect(detail.tracks.single.name, 'QQ榜单歌曲');
+      expect(detail.tracks.single.meta.songId, 'MID-26');
+      expect(detail.tracks.single.meta.qualitys.map((item) => item.type), [
+        Quality.k128,
+        Quality.k320,
+        Quality.flac,
+      ]);
+    });
+
+    test('maps Kugou rank songs and native total', () async {
+      String? requestedUrl;
+      final detail = await LeaderboardSdk.get(
+        source: MusicSource.kg,
+        boardId: '8888',
+        maxTracks: 3,
+        jsonLoader: (url, {headers}) async {
+          requestedUrl = url;
+          return _kugouLeaderboardFixture;
+        },
+      );
+
+      expect(Uri.parse(requestedUrl!).queryParameters['pagesize'], '3');
+      expect(detail.name, 'TOP500');
+      expect(detail.trackCount, 500);
+      expect(detail.tracks.single.singer, '榜单歌手');
+      expect(detail.tracks.single.meta.hash, 'KG-HASH');
+      expect(detail.tracks.single.meta.qualitys.map((item) => item.type), [
+        Quality.k128,
+        Quality.k320,
+        Quality.flac,
+      ]);
+    });
+
+    test('paginates Kugou boards past the first hundred tracks', () async {
+      final pages = <int>[];
+      final detail = await LeaderboardSdk.get(
+        source: MusicSource.kg,
+        boardId: '8888',
+        maxTracks: 101,
+        jsonLoader: (url, {headers}) async {
+          final query = Uri.parse(url).queryParameters;
+          final page = int.parse(query['page']!);
+          final pageSize = int.parse(query['pagesize']!);
+          pages.add(page);
+          final start = (page - 1) * 100;
+          return {
+            'errcode': 0,
+            'data': {
+              'total': 101,
+              'info': [
+                for (var index = 0; index < pageSize; index++)
+                  {
+                    'audio_id': start + index,
+                    'hash': 'HASH-$page-$index',
+                    'songname': '歌曲 ${start + index}',
+                    'duration': 180,
+                    'filesize': 3145728,
+                  },
+              ],
+            },
+          };
+        },
+      );
+
+      expect(pages, [1, 2]);
+      expect(detail.tracks, hasLength(101));
+      expect(detail.totalTracks, 101);
+    });
+
+    test('maps Migu column metadata and legacy rateFormats', () async {
+      final detail = await LeaderboardSdk.get(
+        source: MusicSource.mg,
+        boardId: '27553319',
+        maxTracks: 3,
+        jsonLoader: (url, {headers}) async {
+          expect(headers, containsPair('channel', '0146921'));
+          return _miguLeaderboardFixture;
+        },
+      );
+
+      expect(detail.name, '尖叫新歌榜');
+      expect(detail.coverUrl, 'https://img.test/mg-rank.jpg');
+      expect(detail.playCount, 12345);
+      expect(detail.tracks.single.singer, '咪咕榜单歌手');
+      expect(detail.tracks.single.interval, '03:45');
+      expect(detail.tracks.single.meta.copyrightId, 'MG-COPY');
+      expect(detail.tracks.single.meta.qualitys.map((item) => item.type), [
+        Quality.k128,
+        Quality.flac24bit,
+      ]);
+    });
+
+    test('encrypts Kuwo request and decrypts its board response', () async {
+      final detail = await LeaderboardSdk.get(
+        source: MusicSource.kw,
+        boardId: '93',
+        maxTracks: 3,
+        jsonLoader: (url, {headers}) async {
+          final uri = Uri.parse(url);
+          final clearRequest = _decodeKuwoFixture(uri.queryParameters['data']!);
+          expect(clearRequest['id'], '93');
+          expect(clearRequest['rn'], 3);
+          expect(uri.queryParameters['appId'], 'y67sprxhhpws');
+          return Uri.encodeComponent(
+            _encodeKuwoFixture(_kuwoLeaderboardFixture),
+          );
+        },
+      );
+
+      expect(detail.name, '酷我飙升榜');
+      expect(detail.description, '实时流行趋势');
+      expect(detail.trackCount, 200);
+      expect(detail.tracks.single.name, '酷我榜单歌曲');
+      expect(detail.tracks.single.meta.picUrl, 'https://img.test/kw-rank.jpg');
+      expect(detail.tracks.single.meta.qualitys.map((item) => item.type), [
+        Quality.flac,
+        Quality.k320,
+      ]);
+    });
+
+    test('paginates encrypted Kuwo boards past the first page', () async {
+      final pages = <int>[];
+      final detail = await LeaderboardSdk.get(
+        source: MusicSource.kw,
+        boardId: '93',
+        maxTracks: 101,
+        jsonLoader: (url, {headers}) async {
+          final request = _decodeKuwoFixture(
+            Uri.parse(url).queryParameters['data']!,
+          );
+          final page = request['pn'] as int;
+          final pageSize = request['rn'] as int;
+          pages.add(page);
+          final start = page * 100;
+          return Uri.encodeComponent(
+            _encodeKuwoFixture({
+              'code': 200,
+              'data': {
+                'name': '酷我飙升榜',
+                'total': 101,
+                'musiclist': [
+                  for (var index = 0; index < pageSize; index++)
+                    {
+                      'id': start + index,
+                      'name': '歌曲 ${start + index}',
+                      'artist': '歌手',
+                      'duration': 180,
+                      'n_minfo': 'level:high,bitrate:320,format:mp3,size:8Mb',
+                    },
+                ],
+              },
+            }),
+          );
+        },
+      );
+
+      expect(pages, [0, 1]);
+      expect(detail.tracks, hasLength(101));
+      expect(detail.totalTracks, 101);
     });
   });
 
@@ -398,6 +628,157 @@ void main() {
       ]);
     });
   });
+}
+
+const _qqLeaderboardFixture = {
+  'code': 0,
+  'toplist': {
+    'code': 0,
+    'data': {
+      'data': {
+        'title': '热歌榜',
+        'frontPicUrl': 'http://img.test/qq-rank.jpg',
+        'intro': '每日更新<br>热门歌曲',
+        'listenNum': 19800000,
+        'totalNum': 300,
+      },
+      'songInfoList': [
+        {
+          'id': 26,
+          'mid': 'MID-26',
+          'title': 'QQ榜单歌曲',
+          'interval': 201,
+          'singer': [
+            {'name': 'QQ榜单歌手'},
+          ],
+          'album': {'name': 'QQ榜单专辑', 'mid': 'ALBUM-MID'},
+          'file': {
+            'media_mid': 'MEDIA-MID',
+            'size_128mp3': 3145728,
+            'size_320mp3': 6291456,
+            'size_flac': 12582912,
+            'size_hires': 0,
+          },
+        },
+      ],
+    },
+  },
+};
+
+const _kugouLeaderboardFixture = {
+  'errcode': 0,
+  'status': 1,
+  'data': {
+    'total': 500,
+    'info': [
+      {
+        'audio_id': 701,
+        'hash': 'KG-HASH',
+        'songname': '酷狗榜单歌曲',
+        'authors': [
+          {'author_name': '榜单歌手'},
+        ],
+        'remark': '酷狗榜单专辑',
+        'duration': 180,
+        'filesize': 3145728,
+        '320filesize': 6291456,
+        '320hash': 'KG-320',
+        'sqfilesize': 12582912,
+        'sqhash': 'KG-FLAC',
+      },
+    ],
+  },
+};
+
+const _miguLeaderboardFixture = {
+  'code': '000000',
+  'columnInfo': {
+    'columnTitle': '尖叫新歌榜',
+    'columnPicUrl': 'http://img.test/mg-rank.jpg',
+    'columnDes': '咪咕榜单简介',
+    'contentsCount': 50,
+    'opNumItem': {'playNum': 12345},
+    'contents': [
+      {
+        'objectInfo': {
+          'songId': 'MG-SONG',
+          'copyrightId': 'MG-COPY',
+          'songName': '咪咕榜单歌曲',
+          'artists': [
+            {'name': '咪咕榜单歌手'},
+          ],
+          'album': '咪咕榜单专辑',
+          'length': '03:45',
+          'albumImgs': [
+            {'img': 'https://img.test/mg-song.jpg'},
+          ],
+          'newRateFormats': [
+            {'formatType': 'PQ', 'size': 3145728},
+            {'formatType': 'ZQ', 'size': 25165824},
+          ],
+        },
+      },
+    ],
+  },
+};
+
+const _kuwoLeaderboardFixture = {
+  'code': 200,
+  'data': {
+    'name': '酷我飙升榜',
+    'info': '实时流行趋势',
+    'pic': 'http://img.test/kw-board.jpg',
+    'total': 200,
+    'musiclist': [
+      {
+        'id': 801,
+        'name': '酷我榜单歌曲',
+        'artist': '酷我榜单歌手',
+        'duration': 210,
+        'album': '酷我榜单专辑',
+        'albumId': 88,
+        'pic': 'http://img.test/kw-rank.jpg',
+        'n_minfo':
+            'level:lossless,bitrate:2000,format:flac,size:24.96Mb;'
+            'level:high,bitrate:320,format:mp3,size:9.16Mb',
+      },
+    ],
+  },
+};
+
+final _kuwoLeaderboardKey = Uint8List.fromList(const [
+  112,
+  87,
+  39,
+  61,
+  199,
+  250,
+  41,
+  191,
+  57,
+  68,
+  45,
+  114,
+  221,
+  94,
+  140,
+  228,
+]);
+
+String _encodeKuwoFixture(Object value) {
+  final encrypted = CryptoUtil.aesEncryptEcbPkcs7(
+    Uint8List.fromList(utf8.encode(jsonEncode(value))),
+    _kuwoLeaderboardKey,
+  );
+  return base64.encode(encrypted);
+}
+
+Map<String, dynamic> _decodeKuwoFixture(String value) {
+  final clear = CryptoUtil.aesDecryptEcbPkcs7(
+    base64.decode(value),
+    _kuwoLeaderboardKey,
+  );
+  return jsonDecode(utf8.decode(clear)) as Map<String, dynamic>;
 }
 
 Future<dynamic> _catalogFixture(

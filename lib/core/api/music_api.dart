@@ -2,11 +2,13 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/enums.dart';
+import '../models/leaderboard_info.dart';
 import '../models/lyric_info.dart';
 import '../models/music_info.dart';
 import '../models/playlist_info.dart';
 import '../models/playlist_summary.dart';
 import '../models/search_response.dart';
+import '../sdk/leaderboard_sdk.dart';
 import '../sdk/music_sdk.dart' as sdk;
 import '../sdk/playlist_catalog_sdk.dart';
 import '../sdk/playlist_sdk.dart';
@@ -87,6 +89,29 @@ class MusicApi {
       page: page,
       limit: limit,
       categoryId: categoryId,
+    );
+  }
+
+  Future<List<LeaderboardSummary>> getLeaderboards(MusicSource source) async {
+    return LeaderboardSdk.boards(source);
+  }
+
+  Future<LeaderboardSummary> getLeaderboardPreview(
+    LeaderboardSummary board, {
+    int limit = 3,
+  }) {
+    return LeaderboardSdk.preview(board, limit: limit);
+  }
+
+  Future<PlaylistInfo> getLeaderboard({
+    required MusicSource source,
+    required String boardId,
+    int? maxTracks,
+  }) {
+    return LeaderboardSdk.get(
+      source: source,
+      boardId: boardId,
+      maxTracks: maxTracks,
     );
   }
 

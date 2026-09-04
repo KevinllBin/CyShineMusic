@@ -1,0 +1,155 @@
+import '../../models/enums.dart';
+import '../../models/leaderboard_info.dart';
+
+const txLeaderboards = <LeaderboardSummary>[
+  LeaderboardSummary(
+    id: 'tx__4',
+    boardId: '4',
+    name: '流行指数榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__26',
+    boardId: '26',
+    name: '热歌榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__27',
+    boardId: '27',
+    name: '新歌榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__62',
+    boardId: '62',
+    name: '飙升榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__58',
+    boardId: '58',
+    name: '说唱榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__57',
+    boardId: '57',
+    name: '喜力电音榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__28',
+    boardId: '28',
+    name: '网络歌曲榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__5',
+    boardId: '5',
+    name: '内地榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__3',
+    boardId: '3',
+    name: '欧美榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__59',
+    boardId: '59',
+    name: '香港地区榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__16',
+    boardId: '16',
+    name: '韩国榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__60',
+    boardId: '60',
+    name: '抖快榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__29',
+    boardId: '29',
+    name: '影视金曲榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__17',
+    boardId: '17',
+    name: '日本榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__52',
+    boardId: '52',
+    name: '腾讯音乐人原创榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__36',
+    boardId: '36',
+    name: 'K歌金曲榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__61',
+    boardId: '61',
+    name: '台湾地区榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__63',
+    boardId: '63',
+    name: 'DJ舞曲榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__64',
+    boardId: '64',
+    name: '综艺新歌榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__65',
+    boardId: '65',
+    name: '国风热歌榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__67',
+    boardId: '67',
+    name: '听歌识曲榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__72',
+    boardId: '72',
+    name: '动漫音乐榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__73',
+    boardId: '73',
+    name: '游戏音乐榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__75',
+    boardId: '75',
+    name: '有声榜',
+    source: MusicSource.tx,
+  ),
+  LeaderboardSummary(
+    id: 'tx__131',
+    boardId: '131',
+    name: '校园音乐人排行榜',
+    source: MusicSource.tx,
+  ),
+];

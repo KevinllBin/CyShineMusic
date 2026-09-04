@@ -69,7 +69,7 @@ class MgPlaylistAdapter {
 
     final tracks = songs
         .take(expected > 0 ? expected : songs.length)
-        .map(_parseSong)
+        .map(parseTrack)
         .whereType<MusicInfo>()
         .toList(growable: false);
     final image = info['imgItem'] as Map?;
@@ -87,12 +87,14 @@ class MgPlaylistAdapter {
     );
   }
 
-  static MusicInfo? _parseSong(Map item) {
+  static MusicInfo? parseTrack(Map item) {
     final songId = item['songId'];
     final copyrightId = _text(item['copyrightId']);
     if (songId == null || copyrightId == null) return null;
     final qualities = <QualityOption>[];
-    for (final format in (item['audioFormats'] as List? ?? const [])) {
+    final formats =
+        item['audioFormats'] ?? item['newRateFormats'] ?? item['rateFormats'];
+    for (final format in (formats as List? ?? const [])) {
       if (format is! Map) continue;
       final quality = _qualityMap[format['formatType']?.toString()];
       if (quality == null) continue;
@@ -110,21 +112,36 @@ class MgPlaylistAdapter {
     }
     return buildMusicInfo(
       name: item['songName']?.toString() ?? item['name']?.toString() ?? '',
-      singer: formatSingerName(item['singerList']),
+      singer: item['singerList'] != null
+          ? formatSingerName(item['singerList'])
+          : formatSingerName(item['artists'] ?? item['singer']),
       source: MusicSource.mg,
       songId: songId,
       qualitys: qualities,
-      interval: formatPlayTime(
-        num.tryParse(item['duration']?.toString() ?? '0') ?? 0,
-      ),
+      interval: _duration(item),
       albumName: item['album']?.toString() ?? '',
       albumId: item['albumId'],
-      picUrl: _image(item['img3'] ?? item['img2'] ?? item['img1']),
+      picUrl: _image(
+        item['img3'] ??
+            item['img2'] ??
+            item['img1'] ??
+            ((item['albumImgs'] as List?)?.firstOrNull as Map?)?['img'],
+      ),
       copyrightId: copyrightId,
       lrcUrl: _text(item['lrcUrl']),
       mrcUrl: _text(item['mrcUrl'] ?? item['mrcurl']),
       trcUrl: _text(item['trcUrl']),
     );
+  }
+
+  static String? _duration(Map item) {
+    final seconds = num.tryParse(item['duration']?.toString() ?? '');
+    if (seconds != null) return formatPlayTime(seconds);
+    final length = _text(item['length']);
+    final match = length == null
+        ? null
+        : RegExp(r'(\d{2}:\d{2})$').firstMatch(length);
+    return match?.group(1);
   }
 
   static int? _int(Object? value) =>

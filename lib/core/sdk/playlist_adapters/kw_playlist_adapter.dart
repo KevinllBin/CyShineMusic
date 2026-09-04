@@ -50,7 +50,7 @@ class KwPlaylistAdapter {
     if (info == null) throw Exception('酷我歌单为空或不可访问');
     final tracks = songs
         .take(expected > 0 ? expected : songs.length)
-        .map(_parseSong)
+        .map(parseTrack)
         .whereType<MusicInfo>()
         .toList(growable: false);
     return PlaylistInfo(
@@ -66,10 +66,16 @@ class KwPlaylistAdapter {
     );
   }
 
-  static MusicInfo? _parseSong(Map item) {
+  static MusicInfo? parseTrack(Map item) {
     final id = item['id'];
     if (id == null) return null;
-    final qualities = parseKwQualityOptions(item['N_MINFO'] ?? item['MINFO']);
+    final qualities = parseKwQualityOptions(
+      item['N_MINFO'] ??
+          item['n_minfo'] ??
+          item['nMinfo'] ??
+          item['MINFO'] ??
+          item['minfo'],
+    );
     return buildMusicInfo(
       name: item['name']?.toString() ?? item['SONGNAME']?.toString() ?? '',
       singer: formatSingerName(item['artist'] ?? item['ARTIST']),
@@ -80,7 +86,7 @@ class KwPlaylistAdapter {
         num.tryParse(item['duration']?.toString() ?? '0') ?? 0,
       ),
       albumName: item['album']?.toString() ?? '',
-      albumId: item['albumid'],
+      albumId: item['albumId'] ?? item['albumid'],
       picUrl: _trackImage(item),
     );
   }
@@ -129,6 +135,8 @@ class KwPlaylistAdapter {
       'ALBUMPIC',
       'artistPic',
       'ARTISTPIC',
+      'pic300',
+      'pic',
     ]) {
       final url = _image(item[key]);
       if (url != null) return _upscaleImage(url);

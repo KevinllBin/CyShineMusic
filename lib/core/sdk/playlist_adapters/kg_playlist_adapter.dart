@@ -138,7 +138,7 @@ class KgPlaylistAdapter {
     final songs = await _completeSongs(rawSongs, post);
     final tracks = songs
         .take(expected > 0 ? expected : rawSongs.length)
-        .map(_parseSong)
+        .map(parseTrack)
         .whereType<MusicInfo>()
         .toList(growable: false);
     return PlaylistInfo(
@@ -172,7 +172,7 @@ class KgPlaylistAdapter {
     final songs = await _completeSongs(rawSongs, post);
     final tracks = songs
         .take(expected > 0 ? expected : rawSongs.length)
-        .map(_parseSong)
+        .map(parseTrack)
         .whereType<MusicInfo>()
         .toList(growable: false);
     return PlaylistInfo(
@@ -450,7 +450,7 @@ class KgPlaylistAdapter {
     return merged;
   }
 
-  static MusicInfo? _parseSong(Map item) {
+  static MusicInfo? parseTrack(Map item) {
     final audio = item['audio_info'] as Map?;
     final album = item['album_info'] as Map?;
     final baseHash =
@@ -493,7 +493,9 @@ class KgPlaylistAdapter {
     add(Quality.ape, item['filesize_ape'], item['hash_ape']);
 
     var name = _text(item['songname'] ?? item['SongName']);
-    var singer = _text(item['author_name'] ?? item['singername']) ?? '';
+    var singer =
+        _text(item['author_name'] ?? item['singername']) ??
+        formatSingerName(item['authors'], nameKey: 'author_name');
     final filename = _text(item['filename']) ?? '';
     if (name == null && filename.isNotEmpty) {
       final separator = filename.indexOf(' - ');
@@ -508,7 +510,9 @@ class KgPlaylistAdapter {
     final durationSeconds = durationMs == null
         ? num.tryParse(item['duration']?.toString() ?? '0') ?? 0
         : durationMs / 1000;
-    final albumName = _text(album?['album_name'] ?? item['album_name']);
+    final albumName = _text(
+      album?['album_name'] ?? item['album_name'] ?? item['remark'],
+    );
     final audioTrans = audio?['trans_param'] as Map?;
     final itemTrans = item['trans_param'] as Map?;
     return buildMusicInfo(
