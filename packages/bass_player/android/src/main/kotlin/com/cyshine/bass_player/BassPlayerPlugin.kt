@@ -237,7 +237,8 @@ class BassPlayerPlugin :
         setConfig(BASS.BASS_CONFIG_NET_BUFFER, 60_000, "network buffer")
         setConfig(BASS.BASS_CONFIG_NET_PREBUF, 20, "network prebuffer")
 
-        if (!BASS.BASS_Init(-1, 44_100, 0)) {
+        // Both output backends share the same BASS decoding and EQ chain.
+        if (!BASS.BASS_Init(-1, 44_100, OUTPUT_BACKEND.initFlags)) {
             fail("initialize output")
         }
         initialized = true
@@ -253,6 +254,7 @@ class BassPlayerPlugin :
             .apply { setReferenceCounted(false) }
         processingState = STATE_IDLE
         Log.i(TAG, "Initialized BASS $bassVersion, BASS_FX $bassFxVersion, formats=$pluginVersions")
+        logOutputState("initialize")
         emitSnapshot()
         return engineInfo()
     }
@@ -365,6 +367,7 @@ class BassPlayerPlugin :
             }
             installSynchronizers()
             applyEqualizerChain(equalizer, null)
+            logOutputState("load")
             durationMs = readDurationMs()
             processingState = STATE_READY
             refreshPlaybackState()
@@ -466,6 +469,7 @@ class BassPlayerPlugin :
         ) {
             fail("set volume")
         }
+        if (initialized) logOutputState("volume")
         return snapshot()
     }
 
@@ -479,6 +483,7 @@ class BassPlayerPlugin :
         try {
             applyEqualizerChain(configuration, previous)
             equalizer = configuration
+            if (configuration.enabled != previous.enabled) logOutputState("equalizer")
         } catch (failure: BassFailure) {
             detachEqualizer()
             try {
@@ -494,6 +499,28 @@ class BassPlayerPlugin :
             throw failure
         }
         return snapshot()
+    }
+
+    private fun logOutputState(reason: String) {
+        val info = BASS.BASS_INFO()
+        if (!BASS.BASS_GetInfo(info)) return
+        val backend = when {
+            info.initflags and BASS.BASS_DEVICE_AUDIOTRACK != 0 -> "AudioTrack"
+            info.initflags and BASS.BASS_DEVICE_OPENSLES != 0 -> "OpenSL ES"
+            else -> "AAudio"
+        }
+        val volume = BASS.FloatValue()
+        val actualVolume = if (stream != 0 &&
+            BASS.BASS_ChannelGetAttribute(stream, BASS.BASS_ATTRIB_VOL, volume)
+        ) volume.value else null
+        Log.i(
+            TAG,
+            "Output ($reason): backend=$backend, mixRate=${info.freq}Hz, " +
+                "mixChannels=${info.speakers}, initFlags=0x${info.initflags.toString(16)}, " +
+                "globalStreamVolume=${BASS.BASS_GetConfig(BASS.BASS_CONFIG_GVOL_STREAM)}, " +
+                "channelVolume=$actualVolume, eq=${equalizer.enabled}, " +
+                "inputGainFx=$inputGainFx, bandFxCount=${bandFx.size}, outputGainFx=$outputGainFx",
+        )
     }
 
     private fun installSynchronizers() {
@@ -1121,6 +1148,12 @@ class BassPlayerPlugin :
         val q: Double,
     )
 
+    private enum class OutputBackend(val initFlags: Int) {
+        AUDIO_TRACK(BASS.BASS_DEVICE_AUDIOTRACK),
+        // BASS defaults to AAudio on Android 8.1+, or OpenSL ES on older devices.
+        AAUDIO(0),
+    }
+
     private enum class EqualizerFilter(
         val bassValue: Int,
         val hasGain: Boolean = false,
@@ -1141,6 +1174,9 @@ class BassPlayerPlugin :
     ) : RuntimeException(message)
 
     private companion object {
+        // AudioTrack restored normal volume and timbre in the Redmi K90 A/B test.
+        // Switch to OutputBackend.AAUDIO here when testing that output path.
+        val OUTPUT_BACKEND = OutputBackend.AUDIO_TRACK
         const val POSITION_UPDATE_MS = 100L
         const val MAX_EQ_BANDS = 32
         const val MIN_FREQUENCY_HZ = 20.0
