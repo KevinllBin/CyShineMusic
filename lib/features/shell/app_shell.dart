@@ -6,15 +6,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/models/enums.dart';
-import '../../core/storage/settings_store.dart';
 import '../../core/ui/app_toast.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_theme.dart';
-import '../discovery/discovery_controller.dart';
 import '../player/player_page.dart';
 import '../playlists/playlist_detail_toolbar_state.dart';
-import '../search/search_controller.dart' as search;
 import '../songs/songs_toolbar_state.dart';
 import 'player_pull_scope.dart';
 import 'shell_route_utils.dart';
@@ -22,7 +18,6 @@ import 'shell_toolbar_visibility.dart';
 import 'tab_location_memory.dart';
 import 'widgets/bottom_toolbar.dart';
 import 'widgets/discovery_category_fab.dart';
-import 'widgets/horizontal_page_swipe.dart';
 import 'widgets/search_paging_fab.dart';
 import 'widgets/shell_header.dart';
 import 'widgets/toolbar_metrics.dart';
@@ -159,74 +154,6 @@ class _AppShellState extends ConsumerState<AppShell>
   void _handlePullWarm() {
     if (_playerLayerMounted || widget.location == '/player') return;
     setState(() => _playerLayerMounted = true);
-  }
-
-  /// 手势落指时发现页所处的音源，用来区分"这次滑动被 PageView 消费翻页
-  /// 了"与"已在边界页、应该升级为路由切换"。
-  MusicSource? _swipeStartDiscoverySource;
-
-  void _handlePageSwipeStart() {
-    _swipeStartDiscoverySource = widget.location == '/'
-        ? ref.read(selectedDiscoverySourceProvider)
-        : null;
-  }
-
-  void _handlePageSwipeLeft() {
-    switch (widget.location) {
-      case '/':
-        _moveDiscoverySource(1);
-        return;
-      case '/settings':
-        _navigateBySwipe('/');
-        return;
-    }
-  }
-
-  void _handlePageSwipeRight() {
-    switch (widget.location) {
-      case '/':
-        _moveDiscoverySource(-1);
-        return;
-      case '/songs':
-      case '/songs/search':
-        _navigateBySwipe('/');
-        return;
-    }
-  }
-
-  void _moveDiscoverySource(int step) {
-    final searchState = ref.read(search.searchControllerProvider);
-    if (searchState.isSearchActive) {
-      final enabled = ref.read(settingsProvider).enabledSearchSources;
-      final sources = <MusicSource>[
-        MusicSource.all,
-        for (final source in kManageableSearchSources)
-          if (enabled.contains(source)) source,
-      ];
-      final index = sources.indexOf(searchState.source);
-      final next = (index < 0 ? 0 : index) + step;
-      if (next >= 0 && next < sources.length) {
-        ref
-            .read(search.searchControllerProvider.notifier)
-            .setSource(sources[next]);
-        return;
-      }
-    } else {
-      // 非搜索态的音源翻页由发现页自己的 PageView 跟手接管；这里只在
-      // 落指时已处于边界页、且 PageView 没有翻页时升级为路由切换。
-      final MusicSource source =
-          _swipeStartDiscoverySource ??
-          ref.read(selectedDiscoverySourceProvider);
-      final index = kDiscoverySources.indexOf(source);
-      final next = (index < 0 ? 0 : index) + step;
-      if (next >= 0 && next < kDiscoverySources.length) return;
-    }
-    _navigateBySwipe(step > 0 ? '/songs' : '/settings');
-  }
-
-  void _navigateBySwipe(String location) {
-    FocusManager.instance.primaryFocus?.unfocus();
-    context.go(location);
   }
 
   void _handlePullStart() {
@@ -555,6 +482,11 @@ class _AppShellState extends ConsumerState<AppShell>
     final isImmersivePlaylist = isImmersivePlaylistDetailLocation(
       widget.location,
     );
+    // 发现区各页自绘顶栏（ShellSectionHeader）：导航器高度在「发现 ↔
+    // 歌单/榜单详情」之间保持不变，详情页的容器变换展开/收回时下层内容
+    // 才不会跳动。
+    final hidesShellHeader =
+        isPlayer || isImmersivePlaylist || isDiscoveryLocation(widget.location);
     final toolbarTravelExtent = _bottomToolbarTravelExtent(context);
     _toolbarTravelExtent = toolbarTravelExtent;
 
@@ -611,7 +543,7 @@ class _AppShellState extends ConsumerState<AppShell>
                     ),
                     child: Column(
                       children: [
-                        if (isPlayer || isImmersivePlaylist)
+                        if (hidesShellHeader)
                           const SizedBox.shrink()
                         else
                           AnimatedSize(
@@ -652,29 +584,14 @@ class _AppShellState extends ConsumerState<AppShell>
                                         _finishToolbarScrollSequence(),
                                     onPointerCancel: (_) =>
                                         _finishToolbarScrollSequence(),
-                                    child: NotificationListener<ScrollNotification>(
-                                      onNotification:
-                                          _handleToolbarScrollNotification,
-                                      child: HorizontalPageSwipe(
-                                        key: ValueKey(
-                                          'shell-page-swipe-${widget.location}',
+                                    child:
+                                        NotificationListener<
+                                          ScrollNotification
+                                        >(
+                                          onNotification:
+                                              _handleToolbarScrollNotification,
+                                          child: widget.child,
                                         ),
-                                        // 发现页由自己的 PageView 跟手翻页。
-                                        trackDrag: widget.location != '/',
-                                        onDragStart: _handlePageSwipeStart,
-                                        onSwipeLeft: switch (widget.location) {
-                                          '/' ||
-                                          '/settings' => _handlePageSwipeLeft,
-                                          _ => null,
-                                        },
-                                        onSwipeRight: switch (widget.location) {
-                                          '/' || '/songs' || '/songs/search' =>
-                                            _handlePageSwipeRight,
-                                          _ => null,
-                                        },
-                                        child: widget.child,
-                                      ),
-                                    ),
                                   ),
                                 ),
                               ),

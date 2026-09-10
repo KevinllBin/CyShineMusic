@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/models/playlist_summary.dart';
+import '../../../core/ui/container_transform.dart';
 import '../discovery_controller.dart';
 import 'discovery_helpers.dart';
 import 'discovery_playlist_cover.dart';
@@ -86,6 +87,15 @@ class _PlaylistDiscoveryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final path = discoveryPlaylistDetailPath(summary);
+    const radius = BorderRadius.all(Radius.circular(8));
+    // 详情页从这张卡片的矩形展开（容器变换），封面 Hero 沿同一条曲线飞到
+    // 头图；起点必须在 push 之前、卡片还在屏幕上时采集。
+    ContainerTransformOrigin? captureOrigin() =>
+        ContainerTransformOrigin.capture(
+          context,
+          borderRadius: radius,
+          color: scheme.surfaceContainer,
+        );
     return Card(
       key: ValueKey('discovery-card-${summary.key}'),
       margin: EdgeInsets.zero,
@@ -93,15 +103,22 @@ class _PlaylistDiscoveryCard extends StatelessWidget {
       color: scheme.surfaceContainer,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: radius,
         side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.24)),
       ),
       child: InkWell(
-        onTap: () => context.push(path, extra: summary),
-        onLongPress: () => showDialog<void>(
-          context: context,
-          builder: (_) => PlaylistPreviewDialog(summary: summary),
+        onTap: () => context.push(
+          path,
+          extra: ContainerTransformExtra(summary, origin: captureOrigin()),
         ),
+        onLongPress: () {
+          final origin = captureOrigin();
+          showDialog<void>(
+            context: context,
+            builder: (_) =>
+                PlaylistPreviewDialog(summary: summary, origin: origin),
+          );
+        },
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -110,9 +127,17 @@ class _PlaylistDiscoveryCard extends StatelessWidget {
               child: Hero(
                 tag: onlinePlaylistArtworkHeroTag(summary.source, summary.id),
                 transitionOnUserGestures: true,
-                createRectTween: (begin, end) =>
-                    RectTween(begin: begin, end: end),
-                child: DiscoveryPlaylistCover(url: summary.coverUrl, size: 36),
+                createRectTween: containerTransformHeroRectTween,
+                child: HeroArtworkShape(
+                  // 封面贴着卡片顶部，只有上方两角跟随卡片圆角。
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(8),
+                  ),
+                  child: DiscoveryPlaylistCover(
+                    url: summary.coverUrl,
+                    size: 36,
+                  ),
+                ),
               ),
             ),
             Padding(

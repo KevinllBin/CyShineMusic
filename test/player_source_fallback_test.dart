@@ -163,6 +163,95 @@ void main() {
     expect(state.track?.remoteUrl, 'https://audio.test/second.mp3');
   });
 
+  test(
+    'sleep timer pauses without losing the track or restarting a paused song',
+    () async {
+      final harness = await _Harness.create(loadFailures: 0);
+      addTearDown(harness.dispose);
+      await harness.controller.playFromMusic(_music());
+      await harness.controller.seek(const Duration(seconds: 23));
+      final track = harness.container.read(playerControllerProvider).track;
+
+      await harness.controller.pauseForSleepTimer();
+      expect(harness.audio.playing, isFalse);
+      expect(harness.audio.position, const Duration(seconds: 23));
+      expect(harness.container.read(playerControllerProvider).track, track);
+      await harness.controller.pauseForSleepTimer();
+      expect(harness.audio.playCount, 1);
+      expect(harness.audio.playing, isFalse);
+
+      await harness.controller.toggle();
+      expect(harness.audio.playing, isTrue);
+    },
+  );
+
+  test('sleep timer prevents a pending load from autoplaying', () async {
+    final harness = await _Harness.create(loadFailures: 0);
+    addTearDown(harness.dispose);
+    final gate = Completer<void>();
+    harness.audio.loadGate = gate;
+    final loading = harness.controller.playFromMusic(_music());
+    await _waitUntil(() => harness.audio.loadedUris.isNotEmpty);
+
+    await harness.controller.pauseForSleepTimer();
+    gate.complete();
+    await loading;
+    final state = harness.container.read(playerControllerProvider);
+    expect(state.loading, isFalse);
+    expect(state.track, isNotNull);
+    expect(state.playing, isFalse);
+    expect(harness.audio.playCount, 0);
+
+    await harness.controller.toggle();
+    expect(harness.audio.playCount, 1);
+  });
+
+  test(
+    'sleep timer blocks late completion and errors until playback resumes',
+    () async {
+      final harness = await _Harness.create(loadFailures: 0);
+      addTearDown(harness.dispose);
+      await harness.controller.playFromMusic(_music());
+      await harness.audio.setRepeatMode(AudioServiceRepeatMode.one);
+      await harness.controller.pauseForSleepTimer();
+      harness.audio.emitPlaybackState(bass.BassProcessingState.completed);
+      harness.audio.emitError(
+        const bass.BassPlayerException(code: 2, message: 'late error'),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(harness.audio.playCount, 1);
+      expect(harness.audio.loadedUris, hasLength(1));
+
+      await harness.controller.toggle();
+      harness.audio.emitPlaybackState(bass.BassProcessingState.buffering);
+      harness.audio.emitPlaybackState(bass.BassProcessingState.ready);
+      harness.audio.emitPlaybackState(bass.BassProcessingState.completed);
+      await _waitUntil(() => harness.audio.playCount == 3);
+    },
+  );
+
+  test(
+    'sleep timer prevents an in-flight stall recovery from resuming',
+    () async {
+      final harness = await _Harness.create(
+        loadFailures: 0,
+        stallRecoveryDelay: const Duration(milliseconds: 20),
+      );
+      addTearDown(harness.dispose);
+      await harness.controller.playFromMusic(_music());
+      final gate = Completer<void>();
+      harness.audio.pauseGate = gate;
+      harness.audio.emitPlaybackState(bass.BassProcessingState.buffering);
+      await _waitUntil(() => harness.audio.pauseCount == 1);
+      harness.audio.pauseGate = null;
+      await harness.controller.pauseForSleepTimer();
+      gate.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(harness.audio.playCount, 1);
+      expect(harness.audio.playing, isFalse);
+    },
+  );
+
   test('brief buffering resumes without watchdog interference', () async {
     final harness = await _Harness.create(
       loadFailures: 0,
@@ -253,29 +342,36 @@ void main() {
     expect(harness.resolver.requestedQualities, [Quality.k128, Quality.k320]);
   });
 
-  test('quality switch succeeds even if restore seek fails with error 7', () async {
-    final harness = await _Harness.create(loadFailures: 0);
-    addTearDown(harness.dispose);
+  test(
+    'quality switch succeeds even if restore seek fails with error 7',
+    () async {
+      final harness = await _Harness.create(loadFailures: 0);
+      addTearDown(harness.dispose);
 
-    await harness.controller.playFromMusic(_music());
-    await _waitUntil(
-      () => harness.container.read(playerControllerProvider).lyricInfo != null,
-    );
-    await harness.controller.seek(const Duration(seconds: 42));
-    expect(
-      harness.container.read(playerControllerProvider).track?.availableQualities,
-      contains(Quality.k320),
-    );
+      await harness.controller.playFromMusic(_music());
+      await _waitUntil(
+        () =>
+            harness.container.read(playerControllerProvider).lyricInfo != null,
+      );
+      await harness.controller.seek(const Duration(seconds: 42));
+      expect(
+        harness.container
+            .read(playerControllerProvider)
+            .track
+            ?.availableQualities,
+        contains(Quality.k320),
+      );
 
-    // Simulate seek error 7 on next seek (restore seek)
-    harness.audio.failNextSeek = true;
+      // Simulate seek error 7 on next seek (restore seek)
+      harness.audio.failNextSeek = true;
 
-    expect(await harness.controller.switchQuality(Quality.k320), isTrue);
+      expect(await harness.controller.switchQuality(Quality.k320), isTrue);
 
-    final after = harness.container.read(playerControllerProvider);
-    expect(after.track?.qualityLabel, Quality.k320.code);
-    expect(harness.resolver.requestedQualities, [Quality.k128, Quality.k320]);
-  });
+      final after = harness.container.read(playerControllerProvider);
+      expect(after.track?.qualityLabel, Quality.k320.code);
+      expect(harness.resolver.requestedQualities, [Quality.k128, Quality.k320]);
+    },
+  );
 
   test('failed quality switch keeps the previous quality retryable', () async {
     final harness = await _Harness.create(loadFailures: 0);
@@ -518,6 +614,8 @@ class _FakeAudioHandler extends PlayerAudioHandler {
   int failTransitionCount = 0;
   int playCount = 0;
   int pauseCount = 0;
+  Completer<void>? loadGate;
+  Completer<void>? pauseGate;
   bool failNextSeek = false;
   final List<Duration> seekPositions = [];
   Duration? _duration;
@@ -565,6 +663,7 @@ class _FakeAudioHandler extends PlayerAudioHandler {
     int? queueIndex,
   }) async {
     loadedUris.add(sourceUri);
+    await loadGate?.future;
     if (loadedUris.length <= loadFailures) {
       throw const bass.BassPlayerException(code: 1, message: 'load failed');
     }
@@ -583,6 +682,7 @@ class _FakeAudioHandler extends PlayerAudioHandler {
   @override
   Future<void> pause() async {
     pauseCount++;
+    await pauseGate?.future;
     _playing = false;
     _processingState = bass.BassProcessingState.ready;
   }

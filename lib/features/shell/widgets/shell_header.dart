@@ -20,15 +20,12 @@ class ShellHeader extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = shellSchemeFor(location, Theme.of(context).colorScheme);
-    final textTheme = Theme.of(context).textTheme;
     final top = MediaQuery.viewPaddingOf(context).top;
     final leaderboardDetail =
         location.startsWith('/discover/leaderboards/') &&
         location.split('/').length > 4;
     final onlineCollectionDetail =
         location.startsWith('/discover/playlists/') || leaderboardDetail;
-    final leaderboardIndex =
-        location.startsWith('/discover/leaderboards/') && !leaderboardDetail;
     final compact =
         location == '/' ||
         isSongsLibraryLocation(location) ||
@@ -47,23 +44,18 @@ class ShellHeader extends ConsumerWidget {
       );
     }
 
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        18,
-        top + (compact ? 10 : 16),
-        18,
-        compact ? 8 : 12,
-      ),
-      child: Row(
-        children: [
-          if (location == '/playlists/import' || leaderboardIndex) ...[
-            IconButton(
+    return ShellSectionHeader(
+      title: headerTitle,
+      compact: compact,
+      fontSize: onlineCollectionDetail ? 18 : (compact ? 22 : null),
+      leading: location == '/playlists/import'
+          ? IconButton(
               tooltip: '返回上一页',
               onPressed: () {
                 if (context.canPop()) {
                   context.pop();
                 } else {
-                  context.go(leaderboardIndex ? '/' : playlistBackLocation);
+                  context.go(playlistBackLocation);
                 }
               },
               icon: Icon(
@@ -71,24 +63,8 @@ class ShellHeader extends ConsumerWidget {
                 color: scheme.onSurface,
                 size: 21,
               ),
-            ),
-            const SizedBox(width: 4),
-          ],
-          Expanded(
-            child: Text(
-              headerTitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: textTheme.headlineSmall?.copyWith(
-                color: scheme.onSurface,
-                fontSize: onlineCollectionDetail ? 18 : (compact ? 22 : null),
-                fontWeight: FontWeight.w600,
-                height: 1.05,
-              ),
-            ),
-          ),
-        ],
-      ),
+            )
+          : null,
     );
   }
 
@@ -120,6 +96,68 @@ class ShellHeader extends ConsumerWidget {
       default:
         return '栖弦';
     }
+  }
+}
+
+/// 分区标题行：状态栏留白 + 可选 leading + 标题。AppShell 的顶栏与自绘顶栏
+/// 的发现区页面（`/` 的「发现」、排行榜列表）共用，保证同一套字号与留白。
+///
+/// 发现区页面自绘顶栏的原因：AppShell 对发现区全部路由不占顶栏空间，
+/// 「发现 ↔ 歌单/榜单详情」之间导航器高度不变，详情页的容器变换才不会
+/// 让下层列表跳动。
+class ShellSectionHeader extends StatelessWidget {
+  const ShellSectionHeader({
+    super.key,
+    required this.title,
+    this.compact = false,
+    this.fontSize,
+    this.leading,
+  });
+
+  final String title;
+
+  /// 紧凑留白（首页「发现」、歌曲库）。
+  final bool compact;
+
+  /// 为 null 时用 headlineSmall 的默认字号。
+  final double? fontSize;
+
+  final Widget? leading;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final top = MediaQuery.viewPaddingOf(context).top;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        18,
+        top + (compact ? 10 : 16),
+        18,
+        compact ? 8 : 12,
+      ),
+      child: Row(
+        children: [
+          if (leading case final leading?) ...[
+            leading,
+            const SizedBox(width: 4),
+          ],
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: textTheme.headlineSmall?.copyWith(
+                color: scheme.onSurface,
+                fontSize: fontSize,
+                fontWeight: FontWeight.w600,
+                height: 1.05,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

@@ -20,10 +20,13 @@ import 'package:cy_shine_music/core/models/search_response.dart';
 import 'package:cy_shine_music/core/music_sources/music_source_controller.dart';
 import 'package:cy_shine_music/core/storage/settings_store.dart';
 import 'package:cy_shine_music/core/ui/app_toast.dart';
+import 'package:cy_shine_music/core/ui/container_transform.dart';
 import 'package:cy_shine_music/core/ui/cover_placeholder.dart';
 import 'package:cy_shine_music/features/discovery/discovery_content.dart';
 import 'package:cy_shine_music/features/discovery/discovery_controller.dart';
+import 'package:cy_shine_music/features/discovery/leaderboards_page.dart';
 import 'package:cy_shine_music/features/discovery/online_playlist_detail_page.dart';
+import 'package:cy_shine_music/features/discovery/widgets/leaderboard_artwork.dart';
 import 'package:cy_shine_music/features/downloads/download_history_entry.dart';
 import 'package:cy_shine_music/features/player/player_audio_handler.dart';
 import 'package:cy_shine_music/features/player/player_controller.dart';
@@ -33,10 +36,41 @@ import 'package:cy_shine_music/features/search/search_controller.dart';
 import 'package:cy_shine_music/features/search/search_page.dart';
 import 'package:cy_shine_music/features/search/search_toolbar_state.dart';
 import 'package:cy_shine_music/features/shell/widgets/discovery_category_fab.dart';
+import 'package:cy_shine_music/features/shell/widgets/shell_header.dart';
 import 'package:cy_shine_music/router.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('leaderboard grid resolves missing covers from the first song', (
+    tester,
+  ) async {
+    await _useViewport(tester, const Size(390, 844));
+    final fake = _FakeDiscoveryApi(resolveCovers: true);
+    final container = ProviderContainer(
+      overrides: [musicApiProvider.overrideWithValue(fake)],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      _appWithContainer(
+        container,
+        const LeaderboardsPage(source: MusicSource.kw),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final artwork = tester.widgetList<LeaderboardArtwork>(
+      find.byType(LeaderboardArtwork),
+    );
+    expect(artwork, hasLength(4));
+    expect(
+      artwork.map((item) => item.coverUrl),
+      everyElement('https://img.test/kw_1.jpg'),
+    );
+    expect(fake.coverRequests, 1);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('discovery masonry uses two stable columns on phones', (
     tester,
@@ -97,18 +131,122 @@ void main() {
         find.byKey(const ValueKey('leaderboard-preview-kw:1')),
         findsOneWidget,
       );
-      expect(find.text('榜单歌曲 1'), findsWidgets);
-      expect(find.text('榜单歌曲 3'), findsWidgets);
+      expect(find.textContaining('榜单歌曲 1'), findsWidgets);
+      expect(find.textContaining('榜单歌曲 3'), findsWidgets);
       expect(tester.takeException(), isNull);
     },
   );
 
-  testWidgets('opening an online playlist never fades through the shell', (
+  testWidgets(
+    'opening an online playlist expands from the tapped card without shell fades',
+    (tester) async {
+      await _useViewport(tester, const Size(390, 844));
+      final prefs = await _freshPreferences();
+      final fake = _FakeDiscoveryApi(delayDetail: true);
+      final audioHandler = PlayerAudioHandler();
+      final router = createAppRouter();
+      final container = ProviderContainer(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          musicApiProvider.overrideWithValue(fake),
+          playerAudioHandlerProvider.overrideWithValue(audioHandler),
+        ],
+      );
+      addTearDown(() {
+        container.dispose();
+        router.dispose();
+        unawaited(audioHandler.disposeHandler());
+      });
+
+      await tester.pumpWidget(_routerApp(container, router));
+      for (var frame = 0; frame < 12; frame++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      const cardKey = ValueKey('discovery-card-kw:1');
+      const shuttleKey = ValueKey('artwork-hero-shuttle');
+      final cardRect = tester.getRect(find.byKey(cardKey));
+
+      await tester.tap(find.byKey(cardKey));
+      for (var frame = 0; frame < 6; frame++) {
+        await tester.pump(const Duration(milliseconds: 1));
+        if (find.byType(OnlinePlaylistDetailPage).evaluate().isNotEmpty) break;
+      }
+      await tester.pump();
+      _expectOnlineDetailFullyOpaque(tester);
+
+      // 容器变换从被点击卡片的矩形起步（起点在 Navigator 坐标系里采集，
+      // 发现区没有 shell 顶栏，所以与全局坐标一致）。
+      final transition = tester.widget<ContainerTransformTransition>(
+        find.byType(ContainerTransformTransition),
+      );
+      _expectRectCloseTo(transition.origin!.rect, cardRect);
+      _expectRectCloseTo(
+        tester.getRect(find.byKey(ContainerTransformTransition.surfaceKey)),
+        cardRect,
+        tolerance: 4,
+      );
+
+      await tester.pump(const Duration(milliseconds: 80));
+      _expectOnlineDetailFullyOpaque(tester);
+      final midRect = tester.getRect(
+        find.byKey(ContainerTransformTransition.surfaceKey),
+      );
+      expect(midRect.width, greaterThan(cardRect.width + 8));
+      expect(midRect.width, lessThan(390 - 8));
+      expect(midRect.left, lessThan(cardRect.left));
+      expect(midRect.top, lessThan(cardRect.top));
+      expect(find.byKey(shuttleKey), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump();
+      final pageRect = tester.getRect(find.byType(OnlinePlaylistDetailPage));
+      _expectRectCloseTo(
+        tester.getRect(find.byKey(ContainerTransformTransition.surfaceKey)),
+        pageRect,
+      );
+      expect(
+        tester
+            .widget<ClipRRect>(
+              find.byKey(ContainerTransformTransition.surfaceKey),
+            )
+            .clipBehavior,
+        Clip.none,
+      );
+      expect(find.byKey(shuttleKey), findsNothing);
+
+      // 返回：容器收回卡片，下层网格从未移动（导航器高度全程不变）。
+      expect(await tester.binding.handlePopRoute(), isTrue);
+      Rect? closingRect;
+      for (var frame = 0; frame < 8; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        final rect = tester.getRect(
+          find.byKey(ContainerTransformTransition.surfaceKey),
+        );
+        if (rect.width < pageRect.width - 8) {
+          closingRect = rect;
+          break;
+        }
+      }
+      expect(closingRect, isNotNull);
+      expect(closingRect!.width, greaterThan(cardRect.width + 8));
+      expect(find.byType(OnlinePlaylistDetailPage), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump();
+      expect(find.byType(OnlinePlaylistDetailPage), findsNothing);
+      expect(find.byKey(ContainerTransformTransition.surfaceKey), findsNothing);
+      expect(tester.getRect(find.byKey(cardKey)), cardRect);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('discovery routes draw their section titles inside the page', (
     tester,
   ) async {
     await _useViewport(tester, const Size(390, 844));
     final prefs = await _freshPreferences();
-    final fake = _FakeDiscoveryApi(delayDetail: true);
+    final fake = _FakeDiscoveryApi();
     final audioHandler = PlayerAudioHandler();
     final router = createAppRouter();
     final container = ProviderContainer(
@@ -124,35 +262,43 @@ void main() {
       unawaited(audioHandler.disposeHandler());
     });
 
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: MaterialApp.router(
-          debugShowCheckedModeBanner: false,
-          theme: ThemeData(
-            useMaterial3: true,
-            colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-          ),
-          builder: (context, child) =>
-              AppToastOverlay(child: child ?? const SizedBox.shrink()),
-          routerConfig: router,
-        ),
-      ),
-    );
+    await tester.pumpWidget(_routerApp(container, router));
     for (var frame = 0; frame < 12; frame++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
 
-    await tester.tap(find.byKey(const ValueKey('discovery-card-kw:1')));
-    for (var frame = 0; frame < 6; frame++) {
-      await tester.pump(const Duration(milliseconds: 1));
-      if (find.byType(OnlinePlaylistDetailPage).evaluate().isNotEmpty) break;
-    }
-    await tester.pump();
-    _expectOnlineDetailFullyOpaque(tester);
+    expect(find.byType(ShellHeader), findsNothing);
+    expect(
+      find.descendant(of: find.byType(SearchPage), matching: find.text('发现')),
+      findsOneWidget,
+    );
+    final pagerTop = tester
+        .getTopLeft(find.byKey(const PageStorageKey('discovery-source-pager')))
+        .dy;
 
-    await tester.pump(const Duration(milliseconds: 80));
-    _expectOnlineDetailFullyOpaque(tester);
+    await tester.tap(find.byKey(const ValueKey('leaderboard-all-kw')));
+    await tester.pumpAndSettle();
+    expect(find.byType(LeaderboardsPage), findsOneWidget);
+    expect(find.byType(ShellHeader), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byType(LeaderboardsPage),
+        matching: find.text('排行榜'),
+      ),
+      findsOneWidget,
+    );
+
+    expect(await tester.binding.handlePopRoute(), isTrue);
+    await tester.pumpAndSettle();
+    expect(find.byType(LeaderboardsPage), findsNothing);
+    expect(
+      tester
+          .getTopLeft(
+            find.byKey(const PageStorageKey('discovery-source-pager')),
+          )
+          .dy,
+      pagerTop,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -352,13 +498,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('discovery-card-kw:31')), findsNothing);
 
-    final scrollable = tester.state<ScrollableState>(
-      find.descendant(
-        of: find.byKey(const PageStorageKey('discovery-kw-scroll')),
-        matching: find.byType(Scrollable),
-      ),
+    final scrollable = tester.widget<ListView>(
+      find.byKey(const PageStorageKey('discovery-kw-scroll')),
     );
-    scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
+    final position = scrollable.controller!.position;
+    position.jumpTo(position.maxScrollExtent);
     await tester.pump();
     await tester.pumpAndSettle();
 
@@ -394,11 +538,25 @@ void main() {
         findsOneWidget,
       );
       expect(fake.featuredCategories.last, 'new');
+      final spotlightBefore = tester.element(
+        find.byKey(const ValueKey('leaderboard-preview-kw:1')),
+      );
 
       await tester.tap(find.byKey(const ValueKey('discovery-category-fab')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('discovery-category-hot')));
+      // 分类切换只让「精选歌单」区块变化，官方排行榜卡片原地不动。
+      await tester.pump();
+      expect(
+        tester.element(find.byKey(const ValueKey('leaderboard-preview-kw:1'))),
+        same(spotlightBefore),
+      );
       await tester.pumpAndSettle();
+      expect(
+        tester.element(find.byKey(const ValueKey('leaderboard-preview-kw:1'))),
+        same(spotlightBefore),
+      );
+      expect(find.byKey(const ValueKey('discovery-card-kw:1')), findsOneWidget);
 
       expect(
         container.read(selectedDiscoveryCategoryProvider(MusicSource.kw)),
@@ -1221,6 +1379,29 @@ Future<void> _useViewport(WidgetTester tester, Size size) async {
     tester.view.resetDevicePixelRatio();
     tester.view.resetPhysicalSize();
   });
+}
+
+Widget _routerApp(ProviderContainer container, GoRouter router) {
+  return UncontrolledProviderScope(
+    container: container,
+    child: MaterialApp.router(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+      ),
+      builder: (context, child) =>
+          AppToastOverlay(child: child ?? const SizedBox.shrink()),
+      routerConfig: router,
+    ),
+  );
+}
+
+void _expectRectCloseTo(Rect actual, Rect expected, {double tolerance = 0.5}) {
+  expect(actual.left, closeTo(expected.left, tolerance));
+  expect(actual.top, closeTo(expected.top, tolerance));
+  expect(actual.right, closeTo(expected.right, tolerance));
+  expect(actual.bottom, closeTo(expected.bottom, tolerance));
 }
 
 Widget _appWithContainer(ProviderContainer container, Widget home) {

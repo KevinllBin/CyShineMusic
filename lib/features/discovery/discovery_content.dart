@@ -72,33 +72,28 @@ class _DiscoveryContentState extends ConsumerState<DiscoveryContent> {
     return Consumer(
       builder: (context, ref, _) {
         final categoryId = ref.watch(selectedDiscoveryCategoryProvider(source));
-        final result = ref.watch(featuredPlaylistsProvider(source));
-        return result.when(
-          loading: () => const DiscoveryLoading(),
-          error: (error, _) => DiscoveryError(
-            message: discoveryFriendlyError(error),
-            onRetry: () => ref.invalidate(featuredPlaylistsProvider(source)),
-          ),
-          data: (items) => _DiscoveryList(
-            source: source,
-            initialItems: items,
-            onRefresh: () async {
-              ref.invalidate(featuredPlaylistsProvider(source));
-              ref.invalidate(leaderboardBoardsProvider(source));
-              await Future.wait([
-                ref.read(featuredPlaylistsProvider(source).future),
-                ref.read(leaderboardBoardsProvider(source).future),
-              ]);
-            },
-            onLoadMore: (page) => ref
-                .read(musicApiProvider)
-                .featuredPlaylists(
-                  source: source,
-                  page: page,
-                  limit: discoveryPlaylistPageSize,
-                  categoryId: categoryId,
-                ),
-          ),
+        // 页面骨架常驻：切换歌单分类只让「精选歌单」区块进入加载态，
+        // 上方的官方排行榜不随之卸载重建。
+        return _DiscoveryList(
+          source: source,
+          featured: ref.watch(featuredPlaylistsProvider(source)),
+          onRefresh: () async {
+            ref.invalidate(featuredPlaylistsProvider(source));
+            ref.invalidate(leaderboardBoardsProvider(source));
+            await Future.wait([
+              ref.read(featuredPlaylistsProvider(source).future),
+              ref.read(leaderboardBoardsProvider(source).future),
+            ]);
+          },
+          onRetry: () => ref.invalidate(featuredPlaylistsProvider(source)),
+          onLoadMore: (page) => ref
+              .read(musicApiProvider)
+              .featuredPlaylists(
+                source: source,
+                page: page,
+                limit: discoveryPlaylistPageSize,
+                categoryId: categoryId,
+              ),
         );
       },
     );
@@ -106,7 +101,7 @@ class _DiscoveryContentState extends ConsumerState<DiscoveryContent> {
 
   @override
   Widget build(BuildContext context) {
-    // tab 点击 / shell 手势等外部写入 provider 时，让 pager 跟着动画过去。
+    // 点击音源标签等外部写入 provider 时，让 pager 跟着动画过去。
     ref.listen<MusicSource>(selectedDiscoverySourceProvider, (previous, next) {
       if (_syncingFromPager || previous == next) return;
       _animateToSource(next);
@@ -133,14 +128,18 @@ class _DiscoveryContentState extends ConsumerState<DiscoveryContent> {
 class _DiscoveryList extends StatefulWidget {
   const _DiscoveryList({
     required this.source,
-    required this.initialItems,
+    required this.featured,
     required this.onRefresh,
+    required this.onRetry,
     required this.onLoadMore,
   });
 
   final MusicSource source;
-  final List<PlaylistSummary> initialItems;
+
+  /// 当前分类的首页数据；loading / error 只影响歌单区块。
+  final AsyncValue<List<PlaylistSummary>> featured;
   final Future<void> Function() onRefresh;
+  final VoidCallback onRetry;
   final Future<List<PlaylistSummary>> Function(int page) onLoadMore;
 
   @override
@@ -155,10 +154,14 @@ class _DiscoveryListState extends State<_DiscoveryList> {
   var _hasMore = true;
   Object? _loadMoreError;
 
+  /// 只认已到达的数据；分类切换期间 provider 处于 loading，此时不分页。
+  List<PlaylistSummary>? get _loadedItems =>
+      widget.featured.isLoading ? null : widget.featured.asData?.value;
+
   @override
   void initState() {
     super.initState();
-    _reset(widget.initialItems);
+    _reset(_loadedItems);
     _scrollController.addListener(_maybeLoadMore);
     _scheduleFillViewport();
   }
@@ -166,9 +169,12 @@ class _DiscoveryListState extends State<_DiscoveryList> {
   @override
   void didUpdateWidget(covariant _DiscoveryList oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final oldItems = oldWidget.featured.isLoading
+        ? null
+        : oldWidget.featured.asData?.value;
     if (oldWidget.source != widget.source ||
-        !identical(oldWidget.initialItems, widget.initialItems)) {
-      _reset(widget.initialItems);
+        !identical(oldItems, _loadedItems)) {
+      _reset(_loadedItems);
       _scheduleFillViewport();
     }
   }
@@ -181,11 +187,11 @@ class _DiscoveryListState extends State<_DiscoveryList> {
     super.dispose();
   }
 
-  void _reset(List<PlaylistSummary> items) {
-    _items = List<PlaylistSummary>.from(items);
+  void _reset(List<PlaylistSummary>? items) {
+    _items = List<PlaylistSummary>.from(items ?? const <PlaylistSummary>[]);
     _nextPage = 2;
     _loadingMore = false;
-    _hasMore = items.isNotEmpty;
+    _hasMore = items != null && items.isNotEmpty;
     _loadMoreError = null;
   }
 
@@ -230,11 +236,48 @@ class _DiscoveryListState extends State<_DiscoveryList> {
     }
   }
 
+  /// 「精选歌单」区块：加载 / 错误 / 空 / 网格。只有这一块随分类切换变化。
+  List<Widget> _buildFeaturedSection() {
+    final loaded = _loadedItems;
+    if (loaded == null) {
+      return [
+        widget.featured.hasError && !widget.featured.isLoading
+            ? DiscoverySectionError(
+                message: discoveryFriendlyError(widget.featured.error!),
+                onRetry: widget.onRetry,
+              )
+            : const DiscoverySectionLoading(),
+      ];
+    }
+    if (_items.isEmpty) return const [DiscoverySectionEmpty()];
+    return [
+      Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 960),
+          child: MasonryPlaylistGrid(items: _items),
+        ),
+      ),
+      if (_loadingMore)
+        const Padding(
+          padding: EdgeInsets.only(top: 18),
+          child: Center(child: CircularProgressIndicator()),
+        )
+      else if (_loadMoreError != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 14),
+          child: Center(
+            child: IconButton.filledTonal(
+              tooltip: '重新加载',
+              onPressed: _loadMore,
+              icon: const Icon(Icons.refresh_rounded),
+            ),
+          ),
+        ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_items.isEmpty) {
-      return DiscoveryEmpty(onRefresh: widget.onRefresh);
-    }
     return AppRefreshIndicator(
       onRefresh: widget.onRefresh,
       child: ListView(
@@ -269,28 +312,7 @@ class _DiscoveryListState extends State<_DiscoveryList> {
               ),
             ),
           ),
-          Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 960),
-              child: MasonryPlaylistGrid(items: _items),
-            ),
-          ),
-          if (_loadingMore)
-            const Padding(
-              padding: EdgeInsets.only(top: 18),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (_loadMoreError != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 14),
-              child: Center(
-                child: IconButton.filledTonal(
-                  tooltip: '重新加载',
-                  onPressed: _loadMore,
-                  icon: const Icon(Icons.refresh_rounded),
-                ),
-              ),
-            ),
+          ..._buildFeaturedSection(),
         ],
       ),
     );

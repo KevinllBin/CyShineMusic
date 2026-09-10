@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/ui/container_transform.dart';
 import '../../../core/ui/cover_image_source.dart';
 import '../../../core/ui/cover_placeholder.dart';
 import '../../../theme/app_motion.dart';
@@ -190,6 +191,38 @@ class ImmersivePlaylistHeader extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final screen = MediaQuery.sizeOf(context);
     final height = (screen.height * 0.4).clamp(320.0, 460.0);
+    final artwork = PlaylistArtworkImage(
+      provider: artworkProvider,
+      loading: artworkLoading,
+    );
+    // scrim 与顶栏既叠在头图上，也随封面 Hero 的 shuttle 一起飞行（落地前
+    // 淡入），飞行结束时不会突然出现。同一组 widget 会同时出现在两棵子树
+    // 里，所以 [topBar] 不能带 GlobalKey。
+    final overlays = <Widget>[
+      const DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.center,
+            colors: [Color(0x8A000000), Color(0x00000000)],
+          ),
+        ),
+      ),
+      DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            stops: const [0.68, 1],
+            colors: [
+              Colors.transparent,
+              scheme.surface.withValues(alpha: 0.18),
+            ],
+          ),
+        ),
+      ),
+      Positioned(left: 0, right: 0, top: 0, child: topBar),
+    ];
 
     return SizedBox(
       key: const ValueKey('immersive-playlist-header'),
@@ -201,41 +234,28 @@ class ImmersivePlaylistHeader extends StatelessWidget {
             Hero(
               tag: tag,
               transitionOnUserGestures: true,
-              createRectTween: (begin, end) =>
-                  RectTween(begin: begin, end: end),
-              child: PlaylistArtworkImage(
-                provider: artworkProvider,
-                loading: artworkLoading,
-              ),
+              createRectTween: containerTransformHeroRectTween,
+              // 飞行期间头图原位照常绘制，shuttle 只是叠在其上：落地零跳变，
+              // 卡片封面比头图窄时（榜单横向卡片）露出的部分也是同一张图。
+              placeholderBuilder: (_, _, child) => child,
+              flightShuttleBuilder:
+                  (flightContext, animation, direction, fromHero, toHero) =>
+                      buildArtworkHeroFlightShuttle(
+                        flightContext,
+                        animation,
+                        direction,
+                        fromHero,
+                        toHero,
+                        overlay: Stack(
+                          fit: StackFit.expand,
+                          children: overlays,
+                        ),
+                      ),
+              child: artwork,
             )
           else
-            PlaylistArtworkImage(
-              provider: artworkProvider,
-              loading: artworkLoading,
-            ),
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.center,
-                colors: [Color(0x8A000000), Color(0x00000000)],
-              ),
-            ),
-          ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                stops: const [0.68, 1],
-                colors: [
-                  Colors.transparent,
-                  scheme.surface.withValues(alpha: 0.18),
-                ],
-              ),
-            ),
-          ),
-          Positioned(left: 0, right: 0, top: 0, child: topBar),
+            artwork,
+          ...overlays,
         ],
       ),
     );
@@ -271,7 +291,7 @@ class PlaylistDetailInfo extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 900),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
                   title,

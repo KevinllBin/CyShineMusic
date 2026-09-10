@@ -80,6 +80,12 @@ class PlayerController extends StateNotifier<PlayerState>
       _audioHandler.playerStateStream.listen((playerState) {
         if (!mounted || _transportSuppressionToken != null) return;
         final wasPlaying = state.playing;
+        if (!wasPlaying &&
+            playerState.playing &&
+            playerState.processingState != BassProcessingState.completed) {
+          _completionHandledForTrackId = null;
+          _pausedBySleepTimer = false;
+        }
         state = state.copyWith(
           playing: playerState.playing,
           processingState: _mapProcessingState(playerState.processingState),
@@ -154,6 +160,8 @@ class PlayerController extends StateNotifier<PlayerState>
   String? _completionHandledForTrackId;
   Set<String> _attemptedRemoteSourceIds = <String>{};
   bool _lateSourceFallbackActive = false;
+  int _sleepTimerPauseGeneration = 0;
+  bool _pausedBySleepTimer = false;
   int _softStallRecoveryAttempts = 0;
   Duration _stallProgressAnchor = Duration.zero;
   BassProcessingState? _lastLoggedProcessingState;
@@ -181,6 +189,8 @@ class PlayerController extends StateNotifier<PlayerState>
     Set<String> excludedSourceIds = const <String>{},
   }) async {
     _completionHandledForTrackId = null;
+    _pausedBySleepTimer = false;
+    final pauseGeneration = _sleepTimerPauseGeneration;
     final token = Object();
     _requestToken = token;
     _transportSuppressionToken = token;
@@ -336,7 +346,7 @@ class PlayerController extends StateNotifier<PlayerState>
       _syncQueueAvailability();
       _persistFullSession();
       if (!identical(_requestToken, token)) return false;
-      if (autoPlay) {
+      if (autoPlay && pauseGeneration == _sleepTimerPauseGeneration) {
         await _audioHandler.play();
         if (!identical(_requestToken, token)) return false;
       }
@@ -386,7 +396,7 @@ class PlayerController extends StateNotifier<PlayerState>
   }
 
   void _handlePlaybackError(Object error) {
-    if (!mounted) return;
+    if (!mounted || _pausedBySleepTimer) return;
     if (_transportSuppressionToken != null ||
         _lateSourceFallbackActive ||
         state.loading) {
@@ -408,6 +418,7 @@ class PlayerController extends StateNotifier<PlayerState>
     final quality = _currentQuality;
     final position = state.position;
     final excluded = Set<String>.of(_attemptedRemoteSourceIds);
+    final pauseGeneration = _sleepTimerPauseGeneration;
     _lateSourceFallbackActive = true;
     unawaited(() async {
       await AppLogger.write(
@@ -415,6 +426,7 @@ class PlayerController extends StateNotifier<PlayerState>
         'active source playback failed, trying fallback: $error',
       );
       try {
+        if (!mounted || pauseGeneration != _sleepTimerPauseGeneration) return;
         await _playRemoteMusic(
           music,
           quality: quality,
@@ -518,6 +530,7 @@ class PlayerController extends StateNotifier<PlayerState>
     String trackId,
     Object? requestToken,
   ) async {
+    final pauseGeneration = _sleepTimerPauseGeneration;
     if (_softStallRecoveryAttempts == 0) {
       _softStallRecoveryAttempts++;
       await AppLogger.write(
@@ -526,8 +539,10 @@ class PlayerController extends StateNotifier<PlayerState>
             'restarting transport at ${state.position.inMilliseconds}ms',
       );
       try {
+        if (!mounted || pauseGeneration != _sleepTimerPauseGeneration) return;
         await _audioHandler.pause();
         if (!mounted ||
+            pauseGeneration != _sleepTimerPauseGeneration ||
             state.loading ||
             state.track?.id != trackId ||
             !identical(_requestToken, requestToken)) {
@@ -738,6 +753,8 @@ class PlayerController extends StateNotifier<PlayerState>
     final token = Object();
     _requestToken = token;
     _transportSuppressionToken = token;
+    _pausedBySleepTimer = false;
+    final pauseGeneration = _sleepTimerPauseGeneration;
     _currentMusic = fallbackMusic;
     _currentQuality = Quality.tryFromCode(track.qualityLabel);
     _logPlayback(
@@ -798,7 +815,7 @@ class PlayerController extends StateNotifier<PlayerState>
       _syncQueueAvailability();
       _persistFullSession();
       if (!identical(_requestToken, token)) return false;
-      if (autoPlay) {
+      if (autoPlay && pauseGeneration == _sleepTimerPauseGeneration) {
         await _audioHandler.play();
         if (!identical(_requestToken, token)) return false;
       }
@@ -865,6 +882,18 @@ class PlayerController extends StateNotifier<PlayerState>
       );
       return false;
     }
+  }
+
+  Future<void> pauseForSleepTimer() async {
+    // Leave an in-flight load intact, but revoke its permission to autoplay.
+    _sleepTimerPauseGeneration++;
+    _pausedBySleepTimer = true;
+    _completionHandledForTrackId = state.track?.id;
+    _resetStallRecovery(position: state.position);
+    await _audioHandler.pause();
+    if (!mounted) return;
+    state = state.copyWith(playing: false);
+    _persistPositionCheckpoint();
   }
 
   Future<void> toggle() async {
@@ -980,13 +1009,16 @@ class PlayerController extends StateNotifier<PlayerState>
   }
 
   Future<void> _restartCurrentTrack() async {
+    final pauseGeneration = _sleepTimerPauseGeneration;
     _completionHandledForTrackId = null;
     await _audioHandler.seek(Duration.zero);
+    if (!mounted || pauseGeneration != _sleepTimerPauseGeneration) return;
     await _audioHandler.play();
     _persistPositionCheckpoint();
   }
 
   void _autoAdvanceAfterCompletion() {
+    if (_pausedBySleepTimer) return;
     final trackId = state.track?.id;
     if (trackId == null || _completionHandledForTrackId == trackId) return;
     _completionHandledForTrackId = trackId;
@@ -1664,9 +1696,7 @@ class PlayerController extends StateNotifier<PlayerState>
         _transportSuppressionToken != null) {
       return;
     }
-    await _audioHandler.seek(Duration.zero);
-    await _audioHandler.play();
-    _persistPositionCheckpoint();
+    await _restartCurrentTrack();
   }
 
   @override

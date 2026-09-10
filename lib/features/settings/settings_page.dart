@@ -18,6 +18,8 @@ import '../../core/sync/webdav_sync_controller.dart';
 import '../../core/ui/app_toast.dart';
 import '../../theme/dynamic_color_status.dart';
 import '../equalizer/equalizer_store.dart';
+import '../player/sleep_timer_controller.dart';
+import '../player/widgets/player_sleep_timer_sheet.dart';
 import '../shell/shell_toolbar_visibility.dart';
 import '../songs/local_song_scan_cache.dart';
 import '../update/app_update_prompt.dart';
@@ -177,6 +179,22 @@ class SettingsPage extends ConsumerWidget {
                               subtitle: equalizer.summary,
                               trailing: Symbols.chevron_right,
                               onTap: () => context.go('/settings/equalizer'),
+                            ),
+                            Consumer(
+                              builder: (context, ref, _) {
+                                final remaining = ref.watch(sleepTimerProvider);
+                                return SettingsAction(
+                                  key: const ValueKey('sleep-timer-setting'),
+                                  icon: Icons.timer_outlined,
+                                  title: '定时关闭音乐',
+                                  subtitle: remaining == null
+                                      ? '未开启 · 到时自动暂停播放'
+                                      : '剩余 ${formatSleepTimerRemaining(remaining)} 后暂停播放',
+                                  trailing: Symbols.chevron_right,
+                                  onTap: () =>
+                                      showPlayerSleepTimerSheet(context, ref),
+                                );
+                              },
                             ),
                             SettingsSwitchAction(
                               key: const ValueKey(

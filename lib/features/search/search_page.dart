@@ -21,6 +21,7 @@ import '../music_sources/music_source_action_guard.dart';
 import '../player/player_controller.dart';
 import '../playlists/playlist_browser_sheet.dart';
 import '../playlists/playlist_store.dart';
+import '../shell/widgets/shell_header.dart';
 import 'search_controller.dart';
 import 'search_toolbar_state.dart';
 import 'widgets/quality_picker_sheet.dart';
@@ -179,6 +180,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       body: RepaintBoundary(
         child: Column(
           children: [
+            // 首页自绘「发现」标题（AppShell 对发现区路由不占顶栏空间），
+            // 打开歌单/榜单详情时导航器高度不变，容器变换才不会跳动。
+            const ShellSectionHeader(title: '发现', compact: true, fontSize: 22),
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 2, 12, 4),
               child: _NativeSearchField(

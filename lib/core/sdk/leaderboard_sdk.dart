@@ -5,6 +5,7 @@ import '../models/enums.dart';
 import '../models/leaderboard_info.dart';
 import '../models/music_info.dart';
 import '../models/playlist_info.dart';
+import '../ui/cover_image_source.dart';
 import 'internal/builders.dart';
 import 'internal/crypto_util.dart';
 import 'internal/format.dart';
@@ -396,7 +397,7 @@ class LeaderboardSdk {
       name: _text(data['name']) ?? board.name,
       source: MusicSource.kw,
       tracks: dedupeMusic(tracks),
-      coverUrl: _httpsImage(data['pic']),
+      coverUrl: CoverImageSource.normalizeUrl(_text(data['pic'])),
       creator: '酷我音乐',
       description: _text(data['info']),
       trackCount: total > 0 ? total : tracks.length,

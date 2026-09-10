@@ -18,6 +18,7 @@ void main() {
       '/playlists': '歌单管理',
       '/downloads': '下载',
       '/songs/search': '搜索本地歌曲',
+      '/discover/leaderboards/kw': '排行榜',
     }.entries) {
       await _pumpHeader(tester, entry.key);
       expect(find.text(entry.value), findsOneWidget);

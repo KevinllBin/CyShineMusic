@@ -8,6 +8,7 @@ import '../../../core/models/enums.dart';
 import '../../../core/models/leaderboard_info.dart';
 import '../../../core/models/music_info.dart';
 import '../../../core/models/online_collection_kind.dart';
+import '../../../core/ui/container_transform.dart';
 import '../discovery_controller.dart';
 import 'leaderboard_artwork.dart';
 
@@ -101,9 +102,18 @@ class _LeaderboardPreviewCard extends ConsumerWidget {
       )),
     );
     final resolved = preview.asData?.value;
+    final coverUrl =
+        ref.watch(
+          leaderboardArtworkProvider((
+            source: board.source,
+            boardId: board.boardId,
+          )),
+        ) ??
+        board.coverUrl;
     final tracks = resolved?.previewTracks ?? const <MusicInfo>[];
     final failed = preview.hasError;
     final path = '/discover/leaderboards/${board.source.code}/${board.boardId}';
+    const radius = BorderRadius.all(Radius.circular(14));
     return Card(
       key: ValueKey('leaderboard-preview-${board.key}'),
       margin: EdgeInsets.zero,
@@ -111,11 +121,22 @@ class _LeaderboardPreviewCard extends ConsumerWidget {
       color: scheme.surfaceContainer,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: radius,
         side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.24)),
       ),
       child: InkWell(
-        onTap: () => context.push(path, extra: resolved ?? board),
+        onTap: () => context.push(
+          path,
+          extra: ContainerTransformExtra(
+            (resolved ?? board).copyWith(coverUrl: coverUrl),
+            // 详情页从整张卡片展开，封面 Hero 沿同一条曲线飞到头图。
+            origin: ContainerTransformOrigin.capture(
+              context,
+              borderRadius: radius,
+              color: scheme.surfaceContainer,
+            ),
+          ),
+        ),
         child: Row(
           children: [
             SizedBox(
@@ -128,10 +149,17 @@ class _LeaderboardPreviewCard extends ConsumerWidget {
                   kind: OnlineCollectionKind.leaderboard,
                 ),
                 transitionOnUserGestures: true,
-                child: LeaderboardArtwork(
-                  name: board.name,
-                  index: index,
-                  coverUrl: resolved?.coverUrl ?? board.coverUrl,
+                createRectTween: containerTransformHeroRectTween,
+                child: HeroArtworkShape(
+                  // 封面占据卡片左列，只有左侧两角跟随卡片圆角。
+                  borderRadius: const BorderRadius.horizontal(
+                    left: Radius.circular(14),
+                  ),
+                  child: LeaderboardArtwork(
+                    name: board.name,
+                    index: index,
+                    coverUrl: coverUrl,
+                  ),
                 ),
               ),
             ),

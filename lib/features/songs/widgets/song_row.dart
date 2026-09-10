@@ -10,7 +10,6 @@ import '../../../core/services/embedded_artwork_cache.dart';
 import '../../../core/ui/cover_image_source.dart';
 import '../../../theme/app_motion.dart';
 import '../../downloads/download_history_store.dart';
-import '../../shell/widgets/horizontal_page_swipe.dart';
 
 const double _songRowCoverSize = 52;
 const double _songRowMinHeight = 68;
@@ -193,46 +192,44 @@ class SongRow extends StatelessWidget {
       ),
     );
 
-    return HorizontalPageSwipeExclusion(
-      child: Slidable(
-        key: ValueKey('song-slide-${entry.id}'),
-        groupTag: 'songs',
-        enabled: !batchMode,
-        endActionPane: ActionPane(
-          motion: const BehindMotion(),
-          extentRatio: playlistMode ? 0.22 : 0.4,
-          children: [
-            if (!playlistMode)
-              SlidableAction(
-                key: const ValueKey('song-add-playlist-action'),
-                autoClose: false,
-                onPressed: (actionContext) async {
-                  await Slidable.of(actionContext)?.close();
-                  onAddToPlaylist();
-                },
-                backgroundColor: scheme.secondaryContainer,
-                foregroundColor: scheme.onSecondaryContainer,
-                icon: Icons.playlist_add_rounded,
-                label: '歌单',
-              ),
+    return Slidable(
+      key: ValueKey('song-slide-${entry.id}'),
+      groupTag: 'songs',
+      enabled: !batchMode,
+      endActionPane: ActionPane(
+        motion: const BehindMotion(),
+        extentRatio: playlistMode ? 0.22 : 0.4,
+        children: [
+          if (!playlistMode)
             SlidableAction(
-              key: ValueKey(
-                playlistMode
-                    ? 'song-remove-playlist-action'
-                    : 'song-delete-action',
-              ),
-              onPressed: (_) => onDelete(),
-              backgroundColor: scheme.error,
-              foregroundColor: scheme.onError,
-              icon: playlistMode
-                  ? Icons.playlist_remove_rounded
-                  : Icons.delete_outline_rounded,
-              label: playlistMode ? '移出歌单' : '删除',
+              key: const ValueKey('song-add-playlist-action'),
+              autoClose: false,
+              onPressed: (actionContext) async {
+                await Slidable.of(actionContext)?.close();
+                onAddToPlaylist();
+              },
+              backgroundColor: scheme.secondaryContainer,
+              foregroundColor: scheme.onSecondaryContainer,
+              icon: Icons.playlist_add_rounded,
+              label: '歌单',
             ),
-          ],
-        ),
-        child: row,
+          SlidableAction(
+            key: ValueKey(
+              playlistMode
+                  ? 'song-remove-playlist-action'
+                  : 'song-delete-action',
+            ),
+            onPressed: (_) => onDelete(),
+            backgroundColor: scheme.error,
+            foregroundColor: scheme.onError,
+            icon: playlistMode
+                ? Icons.playlist_remove_rounded
+                : Icons.delete_outline_rounded,
+            label: playlistMode ? '移出歌单' : '删除',
+          ),
+        ],
       ),
+      child: row,
     );
   }
 

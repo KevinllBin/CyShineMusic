@@ -5,7 +5,9 @@ import 'package:material_symbols_icons/symbols.dart';
 import '../../downloads/download_progress.dart';
 import '../../shell/player_pull_scope.dart';
 import '../player_controller.dart';
+import '../sleep_timer_controller.dart';
 import 'player_palette.dart';
+import 'player_sleep_timer_sheet.dart';
 import 'track_change_switcher.dart';
 
 class TopChromeRow extends ConsumerWidget {
@@ -76,6 +78,8 @@ class TopChromeRow extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 12),
+            const _SleepTimerButton(),
+            const SizedBox(width: 8),
             _ChromeIconButton(
               icon: Symbols.library_music_rounded,
               tooltip: '本地歌曲',
@@ -89,8 +93,65 @@ class TopChromeRow extends ConsumerWidget {
   }
 }
 
+class _SleepTimerButton extends ConsumerWidget {
+  const _SleepTimerButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final remaining = ref.watch(sleepTimerProvider);
+    if (remaining == null) {
+      return _ChromeIconButton(
+        key: const ValueKey('player-sleep-timer-button'),
+        icon: Icons.timer_outlined,
+        tooltip: '定时关闭音乐',
+        onPressed: () => showPlayerSleepTimerSheet(context, ref),
+      );
+    }
+    final scheme = Theme.of(context).colorScheme;
+    final label = formatSleepTimerRemaining(remaining);
+    return Tooltip(
+      message: '定时关闭音乐 · 剩余 $label',
+      child: Material(
+        color: scheme.primaryContainer,
+        shape: const StadiumBorder(),
+        child: InkWell(
+          key: const ValueKey('player-sleep-timer-button'),
+          customBorder: const StadiumBorder(),
+          onTap: () => showPlayerSleepTimerSheet(context, ref),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: SizedBox(
+              height: 36,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.timer_rounded,
+                    color: scheme.onPrimaryContainer,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: scheme.onPrimaryContainer,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ChromeIconButton extends StatelessWidget {
   const _ChromeIconButton({
+    super.key,
     required this.icon,
     required this.tooltip,
     required this.onPressed,

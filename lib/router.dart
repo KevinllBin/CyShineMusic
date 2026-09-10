@@ -10,6 +10,7 @@ import 'core/models/enums.dart';
 import 'core/models/leaderboard_info.dart';
 import 'core/models/online_collection_kind.dart';
 import 'core/models/playlist_summary.dart';
+import 'core/ui/container_transform.dart';
 import 'features/playlists/online_playlist_import_page.dart';
 import 'features/playlists/playlist_detail_page.dart';
 import 'features/playlists/playlist_management_page.dart';
@@ -60,29 +61,19 @@ GoRouter createAppRouter({
                 state.pathParameters['source'] ?? '',
               );
               final id = state.pathParameters['id'] ?? '';
-              final reduceMotion = MediaQuery.disableAnimationsOf(context);
-              return CustomTransitionPage<void>(
+              return _containerTransformPage(
+                context,
                 key: state.pageKey,
-                transitionDuration: reduceMotion
-                    ? Duration.zero
-                    : AppMotion.long,
-                reverseTransitionDuration: reduceMotion
-                    ? Duration.zero
-                    : AppMotion.medium,
+                extra: state.extra,
                 child: ShellPageStorage(
                   child: OnlinePlaylistDetailPage(
                     source: source == null || source == MusicSource.all
                         ? MusicSource.kw
                         : source,
                     playlistId: id,
-                    summary: state.extra is PlaylistSummary
-                        ? state.extra! as PlaylistSummary
-                        : null,
+                    summary: _routePayload<PlaylistSummary>(state.extra),
                   ),
                 ),
-                // Keep the page opaque while the non-zero route duration
-                // drives the shared artwork Hero transition.
-                transitionsBuilder: (_, _, _, child) => child,
               );
             },
           ),
@@ -92,7 +83,9 @@ GoRouter createAppRouter({
               final source = MusicSource.tryFromCode(
                 state.pathParameters['source'] ?? '',
               );
-              return NoTransitionPage(
+              return _fadeThroughPage(
+                context,
+                key: state.pageKey,
                 child: ShellPageStorage(
                   child: LeaderboardsPage(
                     source: source == null || source == MusicSource.all
@@ -113,17 +106,11 @@ GoRouter createAppRouter({
                   ? MusicSource.kw
                   : source;
               final id = state.pathParameters['id'] ?? '';
-              final extra = state.extra;
-              final board = extra is LeaderboardSummary ? extra : null;
-              final reduceMotion = MediaQuery.disableAnimationsOf(context);
-              return CustomTransitionPage<void>(
+              final board = _routePayload<LeaderboardSummary>(state.extra);
+              return _containerTransformPage(
+                context,
                 key: state.pageKey,
-                transitionDuration: reduceMotion
-                    ? Duration.zero
-                    : AppMotion.long,
-                reverseTransitionDuration: reduceMotion
-                    ? Duration.zero
-                    : AppMotion.medium,
+                extra: state.extra,
                 child: ShellPageStorage(
                   child: OnlinePlaylistDetailPage(
                     source: resolvedSource,
@@ -139,7 +126,6 @@ GoRouter createAppRouter({
                           ),
                   ),
                 ),
-                transitionsBuilder: (_, _, _, child) => child,
               );
             },
           ),
@@ -228,6 +214,71 @@ GoRouter createAppRouter({
       ),
     ],
   );
+}
+
+/// 发现页卡片 → 歌单/榜单详情：页面从被点击的卡片矩形展开（M3 container
+/// transform），封面 Hero 沿同一条曲线飞到头图；返回时原路收回。起点随
+/// extra 传入，没有起点（深链、预览弹窗）时退化为整页淡入。
+///
+/// 路由时长同时驱动页面容器与封面 Hero，两者共用 [AppMotion.long] /
+/// [AppMotion.medium]。
+CustomTransitionPage<void> _containerTransformPage(
+  BuildContext context, {
+  required LocalKey key,
+  required Object? extra,
+  required Widget child,
+}) {
+  final reduceMotion = MediaQuery.disableAnimationsOf(context);
+  final origin = extra is ContainerTransformExtra ? extra.origin : null;
+  return CustomTransitionPage<void>(
+    key: key,
+    transitionDuration: reduceMotion ? Duration.zero : AppMotion.long,
+    reverseTransitionDuration: reduceMotion ? Duration.zero : AppMotion.medium,
+    transitionsBuilder: (_, animation, _, child) =>
+        ContainerTransformTransition(
+          animation: animation,
+          origin: origin,
+          child: child,
+        ),
+    child: child,
+  );
+}
+
+/// 发现页「查看全部」→ 排行榜列表：整页淡入并轻微上浮，返回时淡出。
+/// AppShell 对发现区各路由之间不做切换动画，这里的过渡是唯一的。
+CustomTransitionPage<void> _fadeThroughPage(
+  BuildContext context, {
+  required LocalKey key,
+  required Widget child,
+}) {
+  final reduceMotion = MediaQuery.disableAnimationsOf(context);
+  return CustomTransitionPage<void>(
+    key: key,
+    transitionDuration: reduceMotion ? Duration.zero : AppMotion.medium,
+    reverseTransitionDuration: reduceMotion ? Duration.zero : AppMotion.short,
+    transitionsBuilder: (_, animation, _, child) {
+      final eased = animation.drive(CurveTween(curve: AppMotion.emphasized));
+      return FadeTransition(
+        opacity: eased,
+        child: SlideTransition(
+          position: eased.drive(
+            Tween<Offset>(begin: const Offset(0, 0.03), end: Offset.zero),
+          ),
+          child: child,
+        ),
+      );
+    },
+    child: child,
+  );
+}
+
+/// 路由 extra 既可能是裸的业务对象，也可能包在 [ContainerTransformExtra] 里。
+T? _routePayload<T extends Object>(Object? extra) {
+  return switch (extra) {
+    T payload => payload,
+    ContainerTransformExtra(payload: T payload) => payload,
+    _ => null,
+  };
 }
 
 String _playerReturnLocationFromExtra(Object? extra) {

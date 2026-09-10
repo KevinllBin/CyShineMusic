@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/ui/container_transform.dart';
 import 'immersive_playlist_chrome.dart';
 
 /// 歌单详情页切换到左右分栏的最小宽度。与播放页的宽屏断点（720）取值
@@ -75,14 +76,12 @@ class PlaylistWideInfoPane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final artwork = ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: AspectRatio(
-        aspectRatio: 1,
-        child: PlaylistArtworkImage(
-          provider: artworkProvider,
-          loading: artworkLoading,
-        ),
+    const radius = BorderRadius.all(Radius.circular(20));
+    final artwork = AspectRatio(
+      aspectRatio: 1,
+      child: PlaylistArtworkImage(
+        provider: artworkProvider,
+        loading: artworkLoading,
       ),
     );
     return SingleChildScrollView(
@@ -98,12 +97,14 @@ class PlaylistWideInfoPane extends StatelessWidget {
             Hero(
               tag: tag,
               transitionOnUserGestures: true,
-              createRectTween: (begin, end) =>
-                  RectTween(begin: begin, end: end),
-              child: artwork,
+              createRectTween: containerTransformHeroRectTween,
+              placeholderBuilder: (_, _, child) => child,
+              flightShuttleBuilder: buildArtworkHeroFlightShuttle,
+              // 卡片端圆角 → 这里的 20dp 圆角，由 shuttle 在飞行中插值。
+              child: HeroArtworkShape(borderRadius: radius, child: artwork),
             )
           else
-            artwork,
+            ClipRRect(borderRadius: radius, child: artwork),
           PlaylistDetailInfo(
             title: title,
             metadata: metadata,

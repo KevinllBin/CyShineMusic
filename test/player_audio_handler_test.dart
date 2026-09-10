@@ -167,12 +167,86 @@ void main() {
     expect(nextCount, 1);
     expect(previousCount, 1);
   });
+
+  test('pause cancels a play waiting for audio session setup', () async {
+    final player = _FakeBassPlayer();
+    final handler = _DelayedSessionAudioHandler(player);
+    addTearDown(handler.disposeHandler);
+
+    final pendingPlay = handler.play();
+    await handler.sessionSetupStarted.future;
+    await handler.pause();
+    handler.sessionSetupCompleted.complete();
+    await pendingPlay;
+
+    expect(player.playCount, 0);
+    expect(player.isPlaying, isFalse);
+    await handler.play();
+    expect(player.playCount, 1);
+  });
+
+  test('pause during an interruption cancels automatic resume', () async {
+    final player = _FakeBassPlayer()..isPlaying = true;
+    final handler = PlayerAudioHandler(player: player);
+    addTearDown(handler.disposeHandler);
+    final begin = AudioInterruptionEvent(true, AudioInterruptionType.pause);
+    final end = AudioInterruptionEvent(false, AudioInterruptionType.pause);
+
+    await handler.handleAudioInterruption(begin);
+    expect(player.isPlaying, isFalse);
+    await handler.handleAudioInterruption(end);
+    expect(player.playCount, 1);
+
+    await handler.handleAudioInterruption(begin);
+    await handler.pause();
+    await handler.handleAudioInterruption(end);
+    expect(player.playCount, 1);
+    expect(player.isPlaying, isFalse);
+  });
+
+  test('pause cancels interruption resume while volume is restoring', () async {
+    final player = _FakeBassPlayer()..isPlaying = true;
+    final handler = PlayerAudioHandler(player: player);
+    addTearDown(handler.disposeHandler);
+    await handler.handleAudioInterruption(
+      AudioInterruptionEvent(true, AudioInterruptionType.duck),
+    );
+    await handler.handleAudioInterruption(
+      AudioInterruptionEvent(true, AudioInterruptionType.pause),
+    );
+
+    final restoredVolume = Completer<void>();
+    player.volumeRestore = restoredVolume;
+    final pendingResume = handler.handleAudioInterruption(
+      AudioInterruptionEvent(false, AudioInterruptionType.pause),
+    );
+    await handler.pause();
+    restoredVolume.complete();
+    await pendingResume;
+
+    expect(player.playCount, 0);
+    expect(player.isPlaying, isFalse);
+  });
+}
+
+class _DelayedSessionAudioHandler extends PlayerAudioHandler {
+  _DelayedSessionAudioHandler(BassPlayer player) : super(player: player);
+
+  final sessionSetupStarted = Completer<void>();
+  final sessionSetupCompleted = Completer<void>();
+
+  @override
+  Future<void> setAllowMixWithOthers(bool value) async {
+    if (!sessionSetupStarted.isCompleted) sessionSetupStarted.complete();
+    await sessionSetupCompleted.future;
+  }
 }
 
 class _FakeBassPlayer extends BassPlayer {
   bool isPlaying = false;
   int playCount = 0;
   int pauseCount = 0;
+  Completer<void>? volumeRestore;
 
   @override
   bool get playing => isPlaying;
@@ -187,6 +261,11 @@ class _FakeBassPlayer extends BassPlayer {
   Future<void> pause() async {
     pauseCount++;
     isPlaying = false;
+  }
+
+  @override
+  Future<void> setVolume(double volume) async {
+    if (volume == 1) await volumeRestore?.future;
   }
 
   @override

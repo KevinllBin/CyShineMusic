@@ -309,6 +309,10 @@ void main() {
       );
 
       expect(detail.name, '酷我飙升榜');
+      expect(
+        detail.coverUrl,
+        'http://img1.kwcdn.kuwo.cn/star/upload/4/4/1602561265876_.png',
+      );
       expect(detail.description, '实时流行趋势');
       expect(detail.trackCount, 200);
       expect(detail.tracks.single.name, '酷我榜单歌曲');
@@ -727,7 +731,7 @@ const _kuwoLeaderboardFixture = {
   'data': {
     'name': '酷我飙升榜',
     'info': '实时流行趋势',
-    'pic': 'http://img.test/kw-board.jpg',
+    'pic': 'http://img1.kwcdn.kuwo.cn/star/upload/4/4/1602561265876_.png',
     'total': 200,
     'musiclist': [
       {

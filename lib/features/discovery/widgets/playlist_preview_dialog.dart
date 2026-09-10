@@ -5,14 +5,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/models/playlist_summary.dart';
+import '../../../core/ui/container_transform.dart';
 import '../discovery_controller.dart';
 import 'discovery_helpers.dart';
 import 'discovery_playlist_cover.dart';
 
 class PlaylistPreviewDialog extends ConsumerWidget {
-  const PlaylistPreviewDialog({super.key, required this.summary});
+  const PlaylistPreviewDialog({super.key, required this.summary, this.origin});
 
   final PlaylistSummary summary;
+
+  /// 长按弹出本弹窗的那张卡片的容器变换起点：「查看完整歌单」时详情页
+  /// 仍从卡片展开，与直接点卡片的动效一致。
+  final ContainerTransformOrigin? origin;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -186,7 +191,7 @@ class PlaylistPreviewDialog extends ConsumerWidget {
                     Navigator.of(context).pop();
                     context.push(
                       discoveryPlaylistDetailPath(summary),
-                      extra: summary,
+                      extra: ContainerTransformExtra(summary, origin: origin),
                     );
                   },
                   icon: const Icon(Icons.open_in_new_rounded),

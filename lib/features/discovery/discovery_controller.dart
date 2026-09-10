@@ -8,6 +8,7 @@ import '../../core/models/online_collection_kind.dart';
 import '../../core/models/playlist_category.dart';
 import '../../core/models/playlist_info.dart';
 import '../../core/models/playlist_summary.dart';
+import '../../core/ui/cover_image_source.dart';
 
 const int discoveryPlaylistArtworkSize = 640;
 const int discoveryPlaylistPageSize = 30;
@@ -144,4 +145,21 @@ final onlineTrackCoverProvider =
       return ref
           .watch(musicApiProvider)
           .getPicUrl(musicInfo: key.music, preferCached: false);
+    });
+
+final leaderboardArtworkProvider =
+    Provider.family<String?, LeaderboardIdentity>((ref, key) {
+      final board = ref.watch(leaderboardPreviewProvider(key)).asData?.value;
+      if (board == null) return null;
+      if (CoverImageSource.isUsableUrl(board.coverUrl)) return board.coverUrl;
+      final firstTrack = board.previewTracks.firstOrNull;
+      if (firstTrack == null) return null;
+      if (CoverImageSource.isUsableUrl(firstTrack.meta.picUrl)) {
+        return firstTrack.meta.picUrl;
+      }
+      final cover = ref
+          .watch(onlineTrackCoverProvider(OnlineTrackCoverKey(firstTrack)))
+          .asData
+          ?.value;
+      return CoverImageSource.isUsableUrl(cover) ? cover : null;
     });

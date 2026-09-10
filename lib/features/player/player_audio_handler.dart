@@ -107,6 +107,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   StreamSubscription<void>? _becomingNoisySubscription;
   bool _resumeAfterInterruption = false;
   bool _ducked = false;
+  int _pauseGeneration = 0;
 
   Object? _callbackOwner;
   PlayerTransportCallback? _onPrevious;
@@ -169,14 +170,15 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   void _bindAudioSessionEvents(AudioSession session) {
     _interruptionSubscription ??= session.interruptionEventStream.listen(
-      (event) => unawaited(_handleAudioInterruption(event)),
+      (event) => unawaited(handleAudioInterruption(event)),
     );
     _becomingNoisySubscription ??= session.becomingNoisyEventStream.listen(
       (_) => unawaited(pause()),
     );
   }
 
-  Future<void> _handleAudioInterruption(AudioInterruptionEvent event) async {
+  @visibleForTesting
+  Future<void> handleAudioInterruption(AudioInterruptionEvent event) async {
     if (event.type == AudioInterruptionType.duck) {
       _ducked = event.begin;
       await _player.setVolume(event.begin ? 0.2 : 1);
@@ -184,15 +186,19 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     }
     if (event.begin) {
       _resumeAfterInterruption = _player.playing;
-      if (_resumeAfterInterruption) await pause();
+      if (_resumeAfterInterruption) {
+        await _pausePlayer(preserveInterruptionResume: true);
+      }
       return;
     }
     if (!_resumeAfterInterruption) return;
+    final pauseGeneration = _pauseGeneration;
     _resumeAfterInterruption = false;
     if (_ducked) {
       _ducked = false;
       await _player.setVolume(1);
     }
+    if (pauseGeneration != _pauseGeneration) return;
     await play();
   }
 
@@ -385,6 +391,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> play() async {
     if (_trackTransitionActive) return;
+    final pauseGeneration = _pauseGeneration;
     _logTransport('play');
     if (_player.processingState == BassProcessingState.completed) {
       await _player.seek(Duration.zero);
@@ -399,11 +406,16 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       final session = await AudioSession.instance;
       if (!await session.setActive(true)) return;
     }
+    if (pauseGeneration != _pauseGeneration) return;
     await _player.play();
   }
 
   @override
-  Future<void> pause() {
+  Future<void> pause() => _pausePlayer();
+
+  Future<void> _pausePlayer({bool preserveInterruptionResume = false}) {
+    _pauseGeneration++;
+    if (!preserveInterruptionResume) _resumeAfterInterruption = false;
     _logTransport('pause');
     return _player.pause();
   }

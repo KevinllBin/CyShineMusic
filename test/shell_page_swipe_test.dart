@@ -25,83 +25,52 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  testWidgets(
-    'page swipes switch discovery tabs and cross only configured boundaries',
-    (tester) async {
-      final harness = await _pumpSwipeApp(tester);
-
-      expect(
-        harness.container.read(selectedDiscoverySourceProvider),
-        MusicSource.kw,
-      );
-      await _dragPage(tester, '/', const Offset(-100, -240));
-      expect(
-        harness.container.read(selectedDiscoverySourceProvider),
-        MusicSource.kw,
-      );
-
-      // 非边界音源的左滑交给发现页 PageView 跟手翻页，shell 不再自己
-      // 步进音源，也不切路由。
-      await _dragPage(tester, '/', const Offset(-150, 0));
-      expect(
-        harness.container.read(selectedDiscoverySourceProvider),
-        MusicSource.kw,
-      );
-      expect(harness.location, '/');
-
-      harness.container.read(selectedDiscoverySourceProvider.notifier).state =
-          MusicSource.mg;
-      await tester.pump();
-      await _dragPage(tester, '/', const Offset(-150, 0));
-      expect(harness.location, '/songs');
-
-      await _dragPage(tester, '/songs', const Offset(-150, 0));
-      expect(harness.location, '/songs');
-      await _dragPage(tester, '/songs', const Offset(150, 0));
-      expect(harness.location, '/');
-
-      harness.container.read(selectedDiscoverySourceProvider.notifier).state =
-          MusicSource.kw;
-      await tester.pump();
-      await _dragPage(tester, '/', const Offset(150, 0));
-      expect(harness.location, '/settings');
-      await _dragPage(tester, '/settings', const Offset(-150, 0));
-      expect(harness.location, '/');
-      expect(tester.takeException(), isNull);
-    },
-  );
-
-  testWidgets('active search swipes its enabled source tabs before routing', (
+  testWidgets('page swipes keep the current route at discovery boundaries', (
     tester,
   ) async {
     final harness = await _pumpSwipeApp(tester);
-    // 不能 await search()：AppLogger 的初始化在测试环境里拿不到
-    // path_provider 通道，future 永不完成；searchActive/source 都是在首个
-    // await 之前同步写入 state 的。
+    for (final source in [MusicSource.kw, MusicSource.mg]) {
+      harness.container.read(selectedDiscoverySourceProvider.notifier).state =
+          source;
+      await tester.pump();
+      for (final offset in [const Offset(-150, 0), const Offset(150, 0)]) {
+        await _dragPage(tester, '/', offset);
+        expect(harness.location, '/');
+        expect(harness.container.read(selectedDiscoverySourceProvider), source);
+      }
+    }
+    for (final location in ['/songs', '/songs/search', '/settings']) {
+      harness.router.go(location);
+      await _pumpUi(tester);
+      for (final offset in [const Offset(-150, 0), const Offset(150, 0)]) {
+        await _dragPage(tester, location, offset);
+        expect(harness.location, location);
+      }
+    }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('active search swipes keep the selected source and route', (
+    tester,
+  ) async {
+    final harness = await _pumpSwipeApp(tester);
     unawaited(
       harness.container
           .read(searchControllerProvider.notifier)
           .search(keyword: '滑动测试'),
     );
     await _pumpUi(tester);
-
-    expect(
-      harness.container.read(searchControllerProvider).source,
-      MusicSource.kw,
-    );
-    await _dragPage(tester, '/', const Offset(-150, 0));
-    expect(
-      harness.container.read(searchControllerProvider).source,
-      MusicSource.kg,
-    );
-    expect(harness.location, '/');
-
-    harness.container
-        .read(searchControllerProvider.notifier)
-        .setSource(MusicSource.wy);
-    await _pumpUi(tester);
-    await _dragPage(tester, '/', const Offset(-150, 0));
-    expect(harness.location, '/songs');
+    for (final source in [MusicSource.kw, MusicSource.wy]) {
+      harness.container
+          .read(searchControllerProvider.notifier)
+          .setSource(source);
+      await _pumpUi(tester);
+      for (final offset in [const Offset(-150, 0), const Offset(150, 0)]) {
+        await _dragPage(tester, '/', offset);
+        expect(harness.container.read(searchControllerProvider).source, source);
+        expect(harness.location, '/');
+      }
+    }
     expect(tester.takeException(), isNull);
   });
 }
@@ -235,7 +204,7 @@ Future<void> _dragPage(
   String location,
   Offset offset,
 ) async {
-  await tester.drag(find.byKey(ValueKey('shell-page-swipe-$location')), offset);
+  await tester.drag(find.byKey(ValueKey('swipe-route-$location')), offset);
   await _pumpUi(tester);
 }
 
