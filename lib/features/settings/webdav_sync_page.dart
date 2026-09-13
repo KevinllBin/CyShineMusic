@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/sync/webdav_config_store.dart';
 import '../../core/sync/webdav_sync_controller.dart';
 import '../../core/ui/app_toast.dart';
+import '../shell/shell_bottom_area.dart';
 import 'widgets/settings_action.dart';
 
 class WebDavSyncPage extends ConsumerStatefulWidget {
@@ -65,7 +66,12 @@ class _WebDavSyncPageState extends ConsumerState<WebDavSyncPage> {
         ),
         slivers: [
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(28, 2, 28, 126),
+            padding: EdgeInsets.fromLTRB(
+              28,
+              2,
+              28,
+              ShellBottomArea.contentPadding(context, 126),
+            ),
             sliver: SliverToBoxAdapter(
               child: Center(
                 child: ConstrainedBox(

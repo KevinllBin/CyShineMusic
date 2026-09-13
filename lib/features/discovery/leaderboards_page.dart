@@ -8,6 +8,7 @@ import '../../core/models/online_collection_kind.dart';
 import '../../core/ui/app_refresh_indicator.dart';
 import '../../core/ui/container_transform.dart';
 import '../shell/widgets/shell_header.dart';
+import '../shell/shell_bottom_area.dart';
 import 'discovery_controller.dart';
 import 'widgets/discovery_placeholders.dart';
 import 'widgets/leaderboard_artwork.dart';
@@ -117,7 +118,12 @@ class LeaderboardsPage extends ConsumerWidget {
                   _ => 2,
                 };
                 return SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 156),
+                  padding: EdgeInsets.fromLTRB(
+                    12,
+                    0,
+                    12,
+                    ShellBottomArea.contentPadding(context, 156),
+                  ),
                   sliver: SliverGrid.builder(
                     itemCount: items.length,
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(

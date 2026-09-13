@@ -7,6 +7,7 @@ import '../../core/models/enums.dart';
 import '../../core/models/music_info.dart';
 import '../../core/models/playlist_info.dart';
 import '../../core/ui/app_toast.dart';
+import '../shell/shell_bottom_area.dart';
 import '../downloads/download_progress.dart';
 import '../music_sources/music_source_action_guard.dart';
 import '../player/player_controller.dart';
@@ -14,6 +15,7 @@ import '../search/widgets/quality_picker_sheet.dart';
 import '../search/widgets/search_result_tile.dart';
 import 'playlist_cover_image.dart';
 import 'playlist_store.dart';
+import '../shell/shell_navigation.dart';
 
 class _OnlinePlaylistDraft {
   const _OnlinePlaylistDraft({
@@ -131,7 +133,12 @@ class _OnlinePlaylistImportPageState
               ),
             ),
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
+              padding: EdgeInsets.fromLTRB(
+                16,
+                12,
+                16,
+                ShellBottomArea.contentPadding(context, 120),
+              ),
               sliver: SliverList.separated(
                 itemCount: _playlist!.tracks.length,
                 separatorBuilder: (_, _) => const SizedBox(height: 8),
@@ -222,7 +229,7 @@ class _OnlinePlaylistImportPageState
       music.source,
     ]);
     if (!available || !mounted) return;
-    context.go('/player', extra: '/playlists/import');
+    openPlayer(context, returnLocation: '/playlists/import');
     await ref.read(playerControllerProvider.notifier).playFromMusic(music);
   }
 
@@ -539,7 +546,9 @@ class _ImportLoading extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 108),
+      padding: EdgeInsets.only(
+        bottom: ShellBottomArea.contentPadding(context, 108),
+      ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -566,7 +575,9 @@ class _ImportIdle extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 108),
+      padding: EdgeInsets.only(
+        bottom: ShellBottomArea.contentPadding(context, 108),
+      ),
       child: Center(
         child: Icon(
           Icons.cloud_download_outlined,
@@ -588,7 +599,12 @@ class _ImportError extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 20, 28, 108),
+      padding: EdgeInsets.fromLTRB(
+        28,
+        20,
+        28,
+        ShellBottomArea.contentPadding(context, 108),
+      ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [

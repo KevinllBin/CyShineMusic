@@ -5,6 +5,7 @@ import '../../../core/models/playlist_category.dart';
 import '../../../theme/app_motion.dart';
 import '../../discovery/discovery_controller.dart';
 import '../../search/search_toolbar_state.dart';
+import '../shell_bottom_area.dart';
 import 'shell_fab_menu_action.dart';
 import 'toolbar_metrics.dart';
 
@@ -27,6 +28,10 @@ class _DiscoveryCategoryFabLayerState
 
   @override
   Widget build(BuildContext context) {
+    final bottomArea = ShellBottomArea.maybeOf(context);
+    if (bottomArea?.nativeNavigation == true && bottomArea!.extent == 0) {
+      return const SizedBox.shrink();
+    }
     final source = ref.watch(selectedDiscoverySourceProvider);
     final categories = playlistCatalogCategoriesFor(source);
     final searchVisible = ref.watch(
@@ -49,7 +54,9 @@ class _DiscoveryCategoryFabLayerState
     final wideLayout = toolbarUsesWideMetrics(MediaQuery.sizeOf(context));
     final fabPadding = EdgeInsets.only(
       right: wideLayout ? 104 : 18,
-      bottom: 82,
+      bottom: bottomArea?.nativeNavigation == true
+          ? bottomArea!.extent - MediaQuery.paddingOf(context).bottom + 24
+          : 82,
     );
 
     return Stack(

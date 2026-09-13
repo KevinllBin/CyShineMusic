@@ -5,9 +5,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart' hide SearchController;
 import 'package:flutter/material.dart' as material show SearchController;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../core/api/music_api.dart';
+import '../shell/shell_bottom_area.dart';
 import '../../core/debug/debug_paint_guard.dart';
 import '../../core/models/enums.dart';
 import '../../core/models/music_info.dart';
@@ -27,6 +27,7 @@ import 'search_toolbar_state.dart';
 import 'widgets/quality_picker_sheet.dart';
 import 'widgets/search_result_tile.dart';
 import 'widgets/source_filter_chips.dart';
+import '../shell/shell_navigation.dart';
 
 class SearchPage extends ConsumerStatefulWidget {
   const SearchPage({super.key});
@@ -222,7 +223,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       music.source,
     ]);
     if (!available || !mounted) return;
-    context.go('/player', extra: '/');
+    openPlayer(context, returnLocation: '/');
     await ref.read(playerControllerProvider.notifier).playFromMusic(music);
   }
 
@@ -810,7 +811,12 @@ class _ResultsArea extends StatelessWidget {
     return ListView.separated(
       key: const PageStorageKey('search-results-scroll'),
       controller: scrollController,
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 156),
+      padding: EdgeInsets.fromLTRB(
+        12,
+        0,
+        12,
+        ShellBottomArea.contentPadding(context, 156),
+      ),
       itemCount: response.list.length + 1,
       separatorBuilder: (_, index) =>
           index == 0 ? const SizedBox(height: 2) : const _SearchResultDivider(),

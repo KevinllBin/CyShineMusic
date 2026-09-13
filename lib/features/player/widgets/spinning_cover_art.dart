@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/ui/cover_image_source.dart';
 import '../../../theme/app_motion.dart';
+import '../../shell/player_transition.dart';
 import '../player_controller.dart';
 
 /// Circular album artwork that spins while playback is active.
@@ -35,6 +36,7 @@ class SpinningCoverArt extends ConsumerStatefulWidget {
 class _SpinningCoverArtState extends ConsumerState<SpinningCoverArt>
     with SingleTickerProviderStateMixin {
   late final AnimationController _rotationController;
+  bool _sharedRotation = false;
 
   @override
   void initState() {
@@ -50,6 +52,7 @@ class _SpinningCoverArtState extends ConsumerState<SpinningCoverArt>
       previous,
       playing,
     ) {
+      if (_sharedRotation) return;
       if (playing) {
         if (!_rotationController.isAnimating) {
           _rotationController.repeat();
@@ -58,6 +61,18 @@ class _SpinningCoverArtState extends ConsumerState<SpinningCoverArt>
         _rotationController.stop(canceled: false);
       }
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _sharedRotation = PlayerTransitionScope.maybeOf(context) != null;
+    if (_sharedRotation) {
+      _rotationController.stop(canceled: false);
+    } else if (ref.read(playerControllerProvider).playing &&
+        !_rotationController.isAnimating) {
+      _rotationController.repeat();
+    }
   }
 
   @override
@@ -74,7 +89,9 @@ class _SpinningCoverArtState extends ConsumerState<SpinningCoverArt>
     );
     return RepaintBoundary(
       child: RotationTransition(
-        turns: _rotationController,
+        turns:
+            PlayerTransitionScope.maybeOf(context)?.rotation ??
+            _rotationController,
         child: Container(
           width: widget.size,
           height: widget.size,
@@ -84,7 +101,7 @@ class _SpinningCoverArtState extends ConsumerState<SpinningCoverArt>
           ),
           clipBehavior: Clip.antiAlias,
           child: ClipOval(
-            child: _ArtworkImage(
+            child: PlayerArtworkImage(
               url: normalized,
               bytes: widget.track.coverBytes,
               placeholder: widget.placeholder,
@@ -96,16 +113,19 @@ class _SpinningCoverArtState extends ConsumerState<SpinningCoverArt>
   }
 }
 
-class _ArtworkImage extends StatelessWidget {
-  const _ArtworkImage({
+class PlayerArtworkImage extends StatelessWidget {
+  const PlayerArtworkImage({
+    super.key,
     required this.url,
     required this.bytes,
     required this.placeholder,
+    this.animate = true,
   });
 
   final String? url;
   final Uint8List? bytes;
   final Widget placeholder;
+  final bool animate;
 
   @override
   Widget build(BuildContext context) {
@@ -125,8 +145,8 @@ class _ArtworkImage extends StatelessWidget {
       imageUrl: url!,
       httpHeaders: CoverImageSource.headersFor(url),
       fit: BoxFit.cover,
-      fadeInDuration: AppMotion.long,
-      fadeOutDuration: AppMotion.medium,
+      fadeInDuration: animate ? AppMotion.long : Duration.zero,
+      fadeOutDuration: animate ? AppMotion.medium : Duration.zero,
       memCacheWidth: 480,
       memCacheHeight: 480,
       placeholder: (_, _) => placeholder,

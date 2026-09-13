@@ -21,6 +21,7 @@ import '../equalizer/equalizer_store.dart';
 import '../player/sleep_timer_controller.dart';
 import '../player/widgets/player_sleep_timer_sheet.dart';
 import '../shell/shell_toolbar_visibility.dart';
+import '../shell/shell_bottom_area.dart';
 import '../songs/local_song_scan_cache.dart';
 import '../update/app_update_prompt.dart';
 import 'widgets/color_picker_sheet.dart';
@@ -56,7 +57,12 @@ class SettingsPage extends ConsumerWidget {
           ),
           slivers: [
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(28, 2, 28, 118),
+              padding: EdgeInsets.fromLTRB(
+                28,
+                2,
+                28,
+                ShellBottomArea.contentPadding(context, 118),
+              ),
               sliver: SliverToBoxAdapter(
                 child: Center(
                   child: ConstrainedBox(
@@ -416,6 +422,21 @@ class SettingsPage extends ConsumerWidget {
                               onChanged: (value) => ref
                                   .read(settingsProvider.notifier)
                                   .setUseDynamicColor(value),
+                            ),
+                            const SizedBox(height: 4),
+                            SettingsSwitchAction(
+                              key: const ValueKey(
+                                'use-native-navigation-setting',
+                              ),
+                              icon: Icons.view_day_outlined,
+                              title: '使用原生导航菜单',
+                              subtitle: settings.useNativeNavigation
+                                  ? '底部导航与播放条分开显示'
+                                  : '使用原有悬浮菜单与播放控件',
+                              value: settings.useNativeNavigation,
+                              onChanged: (value) => ref
+                                  .read(settingsProvider.notifier)
+                                  .setUseNativeNavigation(value),
                             ),
                             const SizedBox(height: 4),
                             SettingsSwitchAction(

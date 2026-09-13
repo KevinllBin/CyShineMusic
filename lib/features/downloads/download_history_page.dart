@@ -4,7 +4,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../core/ui/app_toast.dart';
 import '../../core/ui/configurable_m3e_progress.dart';
@@ -14,6 +13,7 @@ import '../player/player_controller.dart';
 import '../playlists/playlist_store.dart';
 import 'download_history_store.dart';
 import 'download_progress.dart';
+import '../shell/shell_navigation.dart';
 
 class DownloadHistoryPage extends ConsumerStatefulWidget {
   const DownloadHistoryPage({super.key});
@@ -131,7 +131,7 @@ class _DownloadHistoryPageState extends ConsumerState<DownloadHistoryPage> {
       showAppToast(context, '文件不存在', type: AppToastType.warning);
       return;
     }
-    context.go('/player', extra: '/downloads');
+    openPlayer(context, returnLocation: '/downloads');
     await ref.read(playerControllerProvider.notifier).playFromHistory(entry);
   }
 
@@ -634,11 +634,13 @@ class _EmptyDownloads extends StatelessWidget {
         children: [
           Icon(Icons.download_done_rounded, color: scheme.onSurfaceVariant),
           const SizedBox(width: 10),
-          Text(
-            '暂无进行中的下载',
-            style: TextStyle(
-              color: scheme.onSurfaceVariant,
-              fontWeight: FontWeight.w500,
+          Expanded(
+            child: Text(
+              '暂无进行中的下载',
+              style: TextStyle(
+                color: scheme.onSurfaceVariant,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ],

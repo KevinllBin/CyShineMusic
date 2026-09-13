@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../shell_route_utils.dart';
@@ -34,13 +36,6 @@ const double toolbarFadeRevealExtent = 0.34;
 // shift while cross-fading.
 const double toolbarPageDragExtent = 160;
 const double toolbarPageSlideExtent = 20;
-// Vertical pull that reveals the player page. The drag itself is 1:1 with the
-// finger, so only the release behaviour needs tuning: `Fling` is the velocity
-// that commits regardless of distance, `Fade` is the fraction of the pull over
-// which the capsule gets out of the way.
-const double playerPullFlingVelocity = 400;
-const double playerPullToolbarFade = 0.15;
-
 bool toolbarUsesWideMetrics(Size viewport) =>
     viewport.shortestSide >= toolbarWideLayoutBreakpoint;
 
@@ -70,6 +65,18 @@ double toolbarIconSizeFor(Size viewport) =>
 double toolbarIconExtentFor(Size viewport) => toolbarUsesWideMetrics(viewport)
     ? toolbarWideIconExtent
     : toolbarIconExtent;
+
+double toolbarHeightFor(BuildContext context) {
+  final viewport = MediaQuery.sizeOf(context);
+  final labelHeight = MediaQuery.textScalerOf(
+    context,
+  ).scale(toolbarLabelFontSizeFor(viewport));
+  return math.max(
+        toolbarMinActionHeightFor(viewport),
+        toolbarActionVerticalChromeFor(viewport) + labelHeight,
+      ) +
+      8;
+}
 
 double toolbarOpacityFor(double reveal) {
   final fadeProgress = (reveal / toolbarFadeRevealExtent)

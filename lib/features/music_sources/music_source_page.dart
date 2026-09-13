@@ -10,6 +10,7 @@ import '../../core/api/api_client.dart';
 import '../../core/music_sources/music_source_controller.dart';
 import '../../core/music_sources/music_source_models.dart';
 import '../../core/ui/app_toast.dart';
+import '../shell/shell_bottom_area.dart';
 import 'music_source_import_dialog.dart';
 import 'widgets/music_source_card.dart';
 
@@ -33,7 +34,12 @@ class _MusicSourcePageState extends ConsumerState<MusicSourcePage> {
       ),
       slivers: [
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(28, 2, 28, 126),
+          padding: EdgeInsets.fromLTRB(
+            28,
+            2,
+            28,
+            ShellBottomArea.contentPadding(context, 126),
+          ),
           sliver: SliverToBoxAdapter(
             child: Center(
               child: ConstrainedBox(

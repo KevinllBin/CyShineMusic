@@ -3,18 +3,18 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../theme/app_motion.dart';
 import '../../player/player_controller.dart';
 import '../../playlists/playlist_detail_toolbar_state.dart';
 import '../../songs/songs_toolbar_state.dart';
 import '../player_pull_scope.dart';
+import '../shell_navigation.dart';
 import '../shell_route_utils.dart';
 import '../shell_toolbar_visibility.dart';
-import '../tab_location_memory.dart';
 import 'mini_player_bar.dart';
 import 'playback_glyph.dart';
+import 'toolbar_capsule.dart';
 import 'toolbar_metrics.dart';
 
 class BottomToolbar extends ConsumerWidget {
@@ -67,67 +67,21 @@ class BottomToolbar extends ConsumerWidget {
                   toolbarActionCount,
             ),
           );
-          final scaledLabelHeight = MediaQuery.textScalerOf(
-            context,
-          ).scale(toolbarLabelFontSizeFor(viewport));
-          final actionHeight = math.max(
-            toolbarMinActionHeightFor(viewport),
-            toolbarActionVerticalChromeFor(viewport) + scaledLabelHeight,
-          );
-          final toolbarHeight = actionHeight + 8;
+          final toolbarHeight = toolbarHeightFor(context);
+          final actionHeight = toolbarHeight - 8;
           return Center(
             child: AnimatedSize(
               duration: AppMotion.medium,
               curve: AppMotion.emphasized,
-              // The outer boundary keeps the animated progress border and
-              // playback glyph from repainting the page behind the toolbar;
-              // the inner one keeps the shadowed container itself cached
-              // while only the border sweep redraws.
-              child: RepaintBoundary(
-                child: _ToolbarProgressBorder(
-                  color: scheme.primary.withValues(
-                    alpha: scheme.brightness == Brightness.light ? 0.72 : 0.86,
-                  ),
-                  child: RepaintBoundary(
-                    child: AnimatedContainer(
-                      duration: AppMotion.long,
-                      curve: AppMotion.emphasized,
-                      height: toolbarHeight,
-                      padding: const EdgeInsets.symmetric(horizontal: 5),
-                      decoration: BoxDecoration(
-                        color: Color.alphaBlend(
-                          scheme.primary.withValues(
-                            alpha: scheme.brightness == Brightness.light
-                                ? 0.025
-                                : 0.04,
-                          ),
-                          scheme.surfaceContainerHigh.withValues(alpha: 0.90),
-                        ),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: scheme.outlineVariant.withValues(alpha: 0.52),
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: scheme.shadow.withValues(
-                              alpha: scheme.brightness == Brightness.light
-                                  ? 0.08
-                                  : 0.18,
-                            ),
-                            blurRadius: 28,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      child: _ToolbarPager(
-                        location: location,
-                        routeLocation: routeLocation,
-                        actionWidth: actionWidth,
-                        actionHeight: actionHeight,
-                        toolbarHeight: toolbarHeight,
-                      ),
-                    ),
-                  ),
+              child: ToolbarCapsule(
+                scheme: scheme,
+                height: toolbarHeight,
+                child: _ToolbarPager(
+                  location: location,
+                  routeLocation: routeLocation,
+                  actionWidth: actionWidth,
+                  actionHeight: actionHeight,
+                  toolbarHeight: toolbarHeight,
                 ),
               ),
             ),
@@ -169,98 +123,6 @@ class BottomToolbar extends ConsumerWidget {
         ),
       ),
     );
-  }
-}
-
-/// Watches playback progress in a leaf so per-tick position updates rebuild
-/// only this border wrapper — `child` stays the same instance and its whole
-/// subtree is skipped.
-class _ToolbarProgressBorder extends ConsumerWidget {
-  const _ToolbarProgressBorder({required this.color, required this.child});
-
-  final Color color;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final playbackProgress = ref.watch(
-      playerControllerProvider.select((state) {
-        final durationMs = state.duration.inMilliseconds;
-        if (!state.hasTrack || durationMs <= 0) return 0.0;
-        return (state.position.inMilliseconds / durationMs)
-            .clamp(0.0, 1.0)
-            .toDouble();
-      }),
-    );
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: 0, end: playbackProgress),
-      duration: AppMotion.short,
-      curve: AppMotion.emphasized,
-      child: child,
-      builder: (context, progress, child) {
-        return CustomPaint(
-          foregroundPainter: _ToolbarProgressBorderPainter(
-            progress: progress,
-            color: color,
-          ),
-          child: child,
-        );
-      },
-    );
-  }
-}
-
-class _ToolbarProgressBorderPainter extends CustomPainter {
-  const _ToolbarProgressBorderPainter({
-    required this.progress,
-    required this.color,
-  });
-
-  final double progress;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final clamped = progress.clamp(0.0, 1.0).toDouble();
-    if (clamped <= 0 || size.isEmpty) return;
-
-    final inset = toolbarProgressStrokeWidth / 2;
-    final rect =
-        Offset(inset, inset) &
-        Size(
-          size.width - toolbarProgressStrokeWidth,
-          size.height - toolbarProgressStrokeWidth,
-        );
-    final radius = Radius.circular(rect.height / 2);
-    final path = Path()
-      ..moveTo(rect.left + rect.height / 2, rect.top)
-      ..lineTo(rect.right - rect.height / 2, rect.top)
-      ..arcToPoint(
-        Offset(rect.right - rect.height / 2, rect.bottom),
-        radius: radius,
-      )
-      ..lineTo(rect.left + rect.height / 2, rect.bottom)
-      ..arcToPoint(
-        Offset(rect.left + rect.height / 2, rect.top),
-        radius: radius,
-      )
-      ..close();
-
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = toolbarProgressStrokeWidth
-      ..strokeCap = StrokeCap.round
-      ..color = color;
-
-    for (final metric in path.computeMetrics()) {
-      canvas.drawPath(metric.extractPath(0, metric.length * clamped), paint);
-      break;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _ToolbarProgressBorderPainter oldDelegate) {
-    return progress != oldDelegate.progress || color != oldDelegate.color;
   }
 }
 
@@ -382,7 +244,8 @@ class _ToolbarPagerState extends State<_ToolbarPager>
       child: MiniPlayerBar(
         width: pageSize.width,
         height: pageSize.height,
-        onOpenPlayer: () => _go(context, widget.routeLocation, '/player'),
+        onOpenPlayer: () =>
+            navigateShellTo(context, widget.routeLocation, '/player'),
       ),
     );
     final pull = PlayerPullScope.maybeOf(context);
@@ -514,8 +377,13 @@ class _MainToolbar extends ConsumerWidget {
                 selected: isDiscoveryLocation(location),
                 width: actionWidth,
                 height: actionHeight,
-                onPressed: () =>
-                    _goTab(context, ref, location, routeLocation, '/'),
+                onPressed: () => navigateToShellTab(
+                  context,
+                  ref,
+                  location,
+                  routeLocation,
+                  '/',
+                ),
               ),
               _ToolbarAction(
                 tooltip: '歌曲',
@@ -527,8 +395,13 @@ class _MainToolbar extends ConsumerWidget {
                     isPlaylistLocation(location),
                 width: actionWidth,
                 height: actionHeight,
-                onPressed: () =>
-                    _goTab(context, ref, location, routeLocation, '/songs'),
+                onPressed: () => navigateToShellTab(
+                  context,
+                  ref,
+                  location,
+                  routeLocation,
+                  '/songs',
+                ),
               ),
               _ToolbarAction(
                 tooltip: '播放页',
@@ -538,7 +411,8 @@ class _MainToolbar extends ConsumerWidget {
                 animatedPlayback: playerPlaying,
                 width: actionWidth,
                 height: actionHeight,
-                onPressed: () => _go(context, routeLocation, '/player'),
+                onPressed: () =>
+                    navigateShellTo(context, routeLocation, '/player'),
               ),
               _ToolbarAction(
                 tooltip: '设置',
@@ -548,8 +422,13 @@ class _MainToolbar extends ConsumerWidget {
                     location.startsWith('/settings') || location == '/debug',
                 width: actionWidth,
                 height: actionHeight,
-                onPressed: () =>
-                    _goTab(context, ref, location, routeLocation, '/settings'),
+                onPressed: () => navigateToShellTab(
+                  context,
+                  ref,
+                  location,
+                  routeLocation,
+                  '/settings',
+                ),
               ),
             ],
           ),
@@ -699,41 +578,4 @@ class _ToolbarActionState extends State<_ToolbarAction>
 
     return Tooltip(message: widget.tooltip, child: child);
   }
-}
-
-void _go(BuildContext context, String currentLocation, String path) {
-  _dismissTransientRoutes(context);
-  if (currentLocation == path) return;
-  if (path == '/player') {
-    context.go(
-      path,
-      extra: normalizedPlayerReturnLocation(currentLocation, '/songs'),
-    );
-  } else {
-    context.go(path);
-  }
-}
-
-/// Tab-tap navigation with per-tab last-location memory. Tapping the already
-/// selected tab returns to the tab root; switching tabs restores the last
-/// remembered location (full URI, including query) for the target tab.
-void _goTab(
-  BuildContext context,
-  WidgetRef ref,
-  String location,
-  String routeLocation,
-  String path,
-) {
-  _dismissTransientRoutes(context);
-  final targetIndex = toolbarIndexFor(path);
-  final target = toolbarIndexFor(location) == targetIndex
-      ? path
-      : (ref.read(tabLocationMemoryProvider)[targetIndex] ?? path);
-  if (target == routeLocation) return;
-  context.go(target);
-}
-
-void _dismissTransientRoutes(BuildContext context) {
-  FocusManager.instance.primaryFocus?.unfocus();
-  Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
 }

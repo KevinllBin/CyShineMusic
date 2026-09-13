@@ -24,6 +24,8 @@ import '../playlists/online_playlist_updater.dart';
 import '../playlists/resolved_playlist_track.dart';
 import '../playlists/playlist_store.dart';
 import '../shell/shell_toolbar_visibility.dart';
+import '../shell/shell_bottom_area.dart';
+import '../shell/shell_navigation.dart';
 import 'local_song_scan_cache.dart';
 import 'scanned_song_file.dart';
 import 'song_search.dart';
@@ -70,6 +72,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
   Timer? _tagFlushTimer;
   ProviderSubscription<String>? _localMusicDirSubscription;
   late final StateController<SongsToolbarState> _toolbarStateController;
+  late final StateController<bool> _shellToolbarController;
   late final LocalSongScanCache _scanCache;
   late final Future<void> _firstRouteTransitionSettled;
 
@@ -80,6 +83,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     _sortMode = SongSortMode.fromCode(prefs.getString(_songSortModeKey));
     _ascending = prefs.getBool(_songSortAscendingKey) ?? true;
     _toolbarStateController = ref.read(songsToolbarStateProvider.notifier);
+    _shellToolbarController = ref.read(shellToolbarVisibleProvider.notifier);
     _scanCache = ref.read(localSongScanCacheProvider);
     _seedFromScanCache();
     _scanCache.addListener(_handleScanCacheChanged);
@@ -145,7 +149,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
   @override
   void dispose() {
     _scanGeneration++;
-    _disableSearchFocusHandling();
+    _disableSearchFocusHandling(deferRestore: true);
     _scanCache.removeListener(_handleScanCacheChanged);
     _localMusicDirSubscription?.close();
     _tagFlushTimer?.cancel();
@@ -179,9 +183,9 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     });
   }
 
-  void _disableSearchFocusHandling() {
+  void _disableSearchFocusHandling({bool deferRestore = false}) {
     _searchFocusNode.removeListener(_handleSearchFocusChanged);
-    _restoreToolbarAfterSearchFocus();
+    _restoreToolbarAfterSearchFocus(deferRestore: deferRestore);
   }
 
   void _handleSearchFocusChanged() {
@@ -198,12 +202,21 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     if (toolbar.mounted) toolbar.state = false;
   }
 
-  void _restoreToolbarAfterSearchFocus() {
+  void _restoreToolbarAfterSearchFocus({bool deferRestore = false}) {
     final previous = _toolbarVisibilityBeforeSearchFocus;
     if (previous == null) return;
     _toolbarVisibilityBeforeSearchFocus = null;
-    final toolbar = ref.read(shellToolbarVisibleProvider.notifier);
-    if (toolbar.mounted) toolbar.state = previous;
+    final toolbar = _shellToolbarController;
+    void restore() {
+      if (toolbar.mounted) toolbar.state = previous;
+    }
+
+    if (deferRestore) {
+      // Disposal cannot read WidgetRef or update other widgets during unmount.
+      scheduleMicrotask(restore);
+    } else {
+      restore();
+    }
   }
 
   Future<void> _waitForFirstRouteTransition() async {
@@ -224,7 +237,10 @@ class _SongsPageState extends ConsumerState<SongsPage> {
   bool _isSongsRouteActive() {
     if (!mounted) return false;
     final path = GoRouter.of(context).routeInformationProvider.value.uri.path;
-    return path == (widget.searchMode ? '/songs/search' : '/songs');
+    // The player now covers this live route rather than disposing it. Keep
+    // metadata hydration alive so returning cannot strand a half-loaded list.
+    return path == '/player' ||
+        path == (widget.searchMode ? '/songs/search' : '/songs');
   }
 
   Future<void> _resumeCachedHydration(
@@ -479,9 +495,9 @@ class _SongsPageState extends ConsumerState<SongsPage> {
       _searchFocusNode.unfocus();
       _restoreToolbarAfterSearchFocus();
     }
-    context.go(
-      '/player',
-      extra: widget.searchMode ? '/songs/search' : '/songs',
+    openPlayer(
+      context,
+      returnLocation: widget.searchMode ? '/songs/search' : '/songs',
     );
     final player = ref.read(playerControllerProvider.notifier);
     if (playlistMode) {
@@ -1102,7 +1118,12 @@ class _SongsPageState extends ConsumerState<SongsPage> {
             )
           else
             SliverPadding(
-              padding: EdgeInsets.fromLTRB(12, 0, 12, _batchMode ? 12 : 104),
+              padding: EdgeInsets.fromLTRB(
+                12,
+                0,
+                12,
+                _batchMode ? 12 : ShellBottomArea.contentPadding(context, 104),
+              ),
               sliver: SlidableAutoCloseBehavior(
                 child: SliverList.separated(
                   itemCount: songs.length,

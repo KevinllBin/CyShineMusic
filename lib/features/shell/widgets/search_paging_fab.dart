@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../theme/app_motion.dart';
 import '../../search/search_toolbar_state.dart';
+import '../shell_bottom_area.dart';
 import 'shell_fab_menu_action.dart';
 import 'toolbar_metrics.dart';
 
@@ -29,6 +30,10 @@ class _SearchPagingFabLayerState extends ConsumerState<SearchPagingFabLayer> {
 
   @override
   Widget build(BuildContext context) {
+    final bottomArea = ShellBottomArea.maybeOf(context);
+    if (bottomArea?.nativeNavigation == true && bottomArea!.extent == 0) {
+      return const SizedBox.shrink();
+    }
     final state = ref.watch(searchToolbarStateProvider);
     if (!state.visible) {
       if (_expanded) {
@@ -42,7 +47,9 @@ class _SearchPagingFabLayerState extends ConsumerState<SearchPagingFabLayer> {
     final wideLayout = toolbarUsesWideMetrics(MediaQuery.sizeOf(context));
     final fabPadding = EdgeInsets.only(
       right: wideLayout ? 104 : 18,
-      bottom: wideLayout ? 82 : 82,
+      bottom: bottomArea?.nativeNavigation == true
+          ? bottomArea!.extent - MediaQuery.paddingOf(context).bottom + 24
+          : 82,
     );
 
     return Stack(

@@ -19,6 +19,7 @@ import '../music_sources/music_source_action_guard.dart';
 import '../player/player_controller.dart';
 import '../search/widgets/quality_picker_sheet.dart';
 import '../shell/shell_toolbar_visibility.dart';
+import '../shell/shell_bottom_area.dart';
 import '../songs/songs_toolbar_state.dart';
 import '../songs/widgets/songs_placeholders.dart';
 import '../songs/widgets/songs_sort_sheet.dart';
@@ -34,6 +35,7 @@ import 'widgets/playlist_detail_placeholders.dart';
 import 'widgets/immersive_playlist_chrome.dart';
 import 'widgets/playlist_track_tile.dart';
 import 'widgets/playlist_wide_layout.dart';
+import '../shell/shell_navigation.dart';
 
 class PlaylistDetailPage extends ConsumerStatefulWidget {
   const PlaylistDetailPage({
@@ -300,7 +302,9 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
           queue,
           padding: const EdgeInsets.only(top: 4),
         ),
-        bottomPadding: _batchMode ? 12 : 156,
+        bottomPadding: _batchMode
+            ? 12
+            : ShellBottomArea.contentPadding(context, 156),
       ),
       right: AppScrollbar(
         controller: _scrollController,
@@ -405,7 +409,12 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
       else
         SliverPadding(
           key: const ValueKey('playlist-tracks-sliver'),
-          padding: EdgeInsets.fromLTRB(12, 0, 12, _batchMode ? 12 : 156),
+          padding: EdgeInsets.fromLTRB(
+            12,
+            0,
+            12,
+            _batchMode ? 12 : ShellBottomArea.contentPadding(context, 156),
+          ),
           sliver: SlidableAutoCloseBehavior(
             child: SliverList.separated(
               itemCount: filtered.length,
@@ -922,7 +931,7 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
       first,
     );
     if (!available || !mounted) return;
-    context.go('/player', extra: _resolvedReturnLocation);
+    openPlayer(context, returnLocation: _resolvedReturnLocation);
     await ref
         .read(playerControllerProvider.notifier)
         .playFromPlaylistQueue(first, queue);
@@ -984,7 +993,7 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
       _batchMode = false;
     });
     _restoreToolbarAfterSearchFocus();
-    context.go('/player', extra: _resolvedReturnLocation);
+    openPlayer(context, returnLocation: _resolvedReturnLocation);
     await ref
         .read(playerControllerProvider.notifier)
         .playFromPlaylistQueue(selectedQueue.first, selectedQueue);
@@ -1047,7 +1056,7 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
     ref
         .read(playerControllerProvider.notifier)
         .setPlaybackMode(PlayerPlaybackMode.shuffle);
-    context.go('/player', extra: _resolvedReturnLocation);
+    openPlayer(context, returnLocation: _resolvedReturnLocation);
     unawaited(
       ref
           .read(playerControllerProvider.notifier)
@@ -1071,7 +1080,7 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
       entry,
     );
     if (!available || !context.mounted) return;
-    context.go('/player', extra: _resolvedReturnLocation);
+    openPlayer(context, returnLocation: _resolvedReturnLocation);
     await ref
         .read(playerControllerProvider.notifier)
         .playFromPlaylistQueue(entry, queue);

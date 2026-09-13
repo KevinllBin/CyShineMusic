@@ -6,6 +6,7 @@ import '../../core/models/enums.dart';
 import '../../core/ui/app_scrollbar.dart';
 import '../../core/ui/app_toast.dart';
 import '../../theme/app_motion.dart';
+import '../shell/shell_bottom_area.dart';
 import 'lx_playlist_import.dart';
 import 'online_playlist_updater.dart';
 import 'playlist_cover_resolver.dart';
@@ -73,7 +74,12 @@ class _PlaylistManagementPageState
               )
             else
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 116),
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  12,
+                  16,
+                  ShellBottomArea.contentPadding(context, 116),
+                ),
                 sliver: SliverList.separated(
                   itemCount: playlists.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 8),
@@ -595,7 +601,12 @@ class _EmptyManagement extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 26, 28, 108),
+      padding: EdgeInsets.fromLTRB(
+        28,
+        26,
+        28,
+        ShellBottomArea.contentPadding(context, 108),
+      ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [

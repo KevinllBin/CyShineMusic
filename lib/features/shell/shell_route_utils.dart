@@ -33,21 +33,25 @@ bool isSongsLibraryLocation(String location) {
 }
 
 String normalizedPlayerReturnLocation(String primary, String fallback) {
-  if (_isPlayerReturnLocation(primary)) return primary;
-  if (_isPlayerReturnLocation(fallback)) return fallback;
+  if (isPlayerReturnLocation(primary)) return primary;
+  if (isPlayerReturnLocation(fallback)) return fallback;
   return '/songs';
 }
 
-bool _isPlayerReturnLocation(String location) {
-  if (isDiscoveryLocation(location)) return true;
-  if (isPlaylistLocation(location)) return true;
-  return switch (location) {
+bool isPlayerReturnLocation(String location) {
+  final uri = Uri.tryParse(location);
+  if (uri == null || uri.hasScheme || uri.hasAuthority) return false;
+  final path = uri.path;
+  if (isDiscoveryLocation(path)) return true;
+  if (isPlaylistLocation(path)) return true;
+  return switch (path) {
     '/' ||
     '/downloads' ||
     '/songs' ||
     '/songs/search' ||
     '/settings' ||
     '/settings/sources' ||
+    '/settings/webdav' ||
     '/settings/equalizer' ||
     '/debug' => true,
     _ => false,

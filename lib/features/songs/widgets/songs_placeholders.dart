@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/ui/expressive_loading_status.dart';
+import '../../shell/shell_bottom_area.dart';
 import '../songs_toolbar_state.dart';
 
 class SongsListSummary extends StatelessWidget {
@@ -184,10 +185,10 @@ class SongsLoading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const ExpressiveLoadingStatus(
+    return ExpressiveLoadingStatus(
       title: '正在整理本地音乐',
       subtitle: '正在读取本地音乐文件夹与歌曲信息，请稍候',
-      bottomPadding: 108,
+      bottomPadding: ShellBottomArea.contentPadding(context, 108),
     );
   }
 }
@@ -212,7 +213,12 @@ class EmptySongs extends StatelessWidget {
 
     return Center(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(28, 24, 28, 108),
+        padding: EdgeInsets.fromLTRB(
+          28,
+          24,
+          28,
+          ShellBottomArea.contentPadding(context, 108),
+        ),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 330),
           child: Column(
@@ -313,7 +319,12 @@ class EmptySongSearch extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(28, 20, 28, 108),
+        padding: EdgeInsets.fromLTRB(
+          28,
+          20,
+          28,
+          ShellBottomArea.contentPadding(context, 108),
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

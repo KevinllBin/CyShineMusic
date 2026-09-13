@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../core/api/music_api.dart';
+import '../shell/shell_bottom_area.dart';
 import '../../core/models/enums.dart';
 import '../../core/models/music_info.dart';
 import '../../core/models/online_collection_kind.dart';
@@ -27,6 +27,7 @@ import '../playlists/widgets/playlist_wide_layout.dart';
 import '../search/widgets/quality_picker_sheet.dart';
 import '../search/widgets/search_result_tile.dart';
 import 'discovery_controller.dart';
+import '../shell/shell_navigation.dart';
 
 class OnlinePlaylistDetailPage extends ConsumerStatefulWidget {
   const OnlinePlaylistDetailPage({
@@ -404,7 +405,7 @@ class _OnlinePlaylistDetailPageState
     final player = ref.read(playerControllerProvider.notifier);
     final api = ref.read(musicApiProvider);
 
-    context.go('/player', extra: _returnLocation);
+    openPlayer(context, returnLocation: _returnLocation);
     final playback = player.playFromPlaylistQueue(entry, queue);
     if (playlist.tracks.length < playlist.totalTracks) {
       unawaited(
@@ -585,7 +586,12 @@ class _DetailLoading extends StatelessWidget {
         builder: (context) {
           final scheme = Theme.of(context).colorScheme;
           final skeletonSliver = SliverPadding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 150),
+            padding: EdgeInsets.fromLTRB(
+              12,
+              0,
+              12,
+              ShellBottomArea.contentPadding(context, 150),
+            ),
             sliver: SliverList.separated(
               itemCount: wide ? 8 : 5,
               separatorBuilder: (_, _) => _trackListDivider(scheme),
@@ -704,7 +710,12 @@ class _DetailError extends StatelessWidget {
     final metadata = item == null ? source.label : _summaryMetadata(item);
     final errorContent = Center(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(28, 24, 28, 140),
+        padding: EdgeInsets.fromLTRB(
+          28,
+          24,
+          28,
+          ShellBottomArea.contentPadding(context, 140),
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -835,9 +846,14 @@ class _LoadMoreTracksIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.fromLTRB(16, 12, 16, 156),
-      child: Center(
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        12,
+        16,
+        ShellBottomArea.contentPadding(context, 156),
+      ),
+      child: const Center(
         child: SizedBox.square(
           dimension: 22,
           child: CircularProgressIndicator(strokeWidth: 2.4),
@@ -857,7 +873,12 @@ class _LoadMoreTracksError extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 156),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        12,
+        16,
+        ShellBottomArea.contentPadding(context, 156),
+      ),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 900),

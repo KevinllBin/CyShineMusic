@@ -96,13 +96,11 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 120));
       expect(router.routeInformationProvider.value.uri.path, '/player');
-      final exitSlide = tester.widget<SlideTransition>(
-        find.byKey(const ValueKey('player-exit-slide')),
-      );
-      expect(exitSlide.position.value.dy, greaterThan(0));
-      expect(exitSlide.position.value.dy, lessThan(1));
+      final exitSlide = tester.widget<PlayerPage>(find.byType(PlayerPage));
+      expect((1 - exitSlide.progress.value), greaterThan(0));
+      expect((1 - exitSlide.progress.value), lessThan(1));
 
-      await tester.pump(const Duration(milliseconds: 220));
+      await _pumpUi(tester);
       await tester.pump();
       expect(
         router.routeInformationProvider.value.uri.toString(),
@@ -437,11 +435,9 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 120));
     expect(router.routeInformationProvider.value.uri.path, '/player');
-    final exitSlide = tester.widget<SlideTransition>(
-      find.byKey(const ValueKey('player-exit-slide')),
-    );
-    expect(exitSlide.position.value.dy, greaterThan(0));
-    await tester.pump(const Duration(milliseconds: 220));
+    final exitSlide = tester.widget<PlayerPage>(find.byType(PlayerPage));
+    expect((1 - exitSlide.progress.value), greaterThan(0));
+    await _pumpUi(tester);
     await tester.pump();
     expect(router.routeInformationProvider.value.uri.path, '/songs');
     await _pumpUi(tester);
@@ -705,25 +701,20 @@ void main() {
     // absorbs it — so the tracked distance comes from the moves after it.
     await gesture.moveBy(const Offset(0, -20));
     await tester.pump();
-    await gesture.moveBy(const Offset(0, -130));
+    await gesture.moveBy(const Offset(0, -30));
     await tester.pump();
 
-    final dragged = tester.widget<SlideTransition>(
-      find.byKey(const ValueKey('player-exit-slide')),
-    );
-    expect(dragged.position.value.dy, greaterThan(0));
-    expect(dragged.position.value.dy, lessThan(1));
+    final dragged = tester.widget<PlayerPage>(find.byType(PlayerPage));
+    expect(dragged.progress.value, greaterThan(0));
+    expect(dragged.progress.value, lessThan(1));
     expect(router.routeInformationProvider.value.uri.path, '/songs');
 
     await gesture.up();
     await _pumpUi(tester);
 
-    // 150 of 844 logical pixels is short of the reveal threshold: the player
-    // parks itself again and the route never changes.
-    final settled = tester.widget<SlideTransition>(
-      find.byKey(const ValueKey('player-exit-slide')),
-    );
-    expect(settled.position.value.dy, 1);
+    // A 30dp drag is below the 56dp threshold; the player returns to the capsule.
+    final settled = tester.widget<PlayerPage>(find.byType(PlayerPage));
+    expect(settled.progress.value, 0);
     expect(router.routeInformationProvider.value.uri.path, '/songs');
     expect(tester.takeException(), isNull);
   });
@@ -776,14 +767,8 @@ void main() {
     // back to settings rather than the '/songs' default.
     expect(page.returnLocation, '/settings');
     expect(
-      tester
-          .widget<SlideTransition>(
-            find.byKey(const ValueKey('player-exit-slide')),
-          )
-          .position
-          .value
-          .dy,
-      0,
+      tester.widget<PlayerPage>(find.byType(PlayerPage)).progress.value,
+      1,
     );
     expect(tester.takeException(), isNull);
   });

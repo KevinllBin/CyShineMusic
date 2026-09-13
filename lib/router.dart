@@ -19,7 +19,9 @@ import 'features/settings/settings_page.dart';
 import 'features/settings/webdav_sync_page.dart';
 import 'features/music_sources/music_source_page.dart';
 import 'features/shell/app_shell.dart';
+import 'features/shell/player_pull_scope.dart';
 import 'features/shell/shell_page_storage.dart';
+import 'features/shell/shell_route_utils.dart';
 import 'features/songs/songs_page.dart';
 import 'theme/app_motion.dart';
 
@@ -33,6 +35,7 @@ GoRouter createAppRouter({
   String initialLocation = '/',
   GlobalKey<NavigatorState>? navigatorKey,
 }) {
+  GoRouter.optionURLReflectsImperativeAPIs = true;
   return GoRouter(
     navigatorKey: navigatorKey,
     initialLocation: initialLocation,
@@ -137,12 +140,16 @@ GoRouter createAppRouter({
           ),
           GoRoute(
             path: '/player',
-            // The player itself is hosted by AppShell as a drag-driven layer
-            // above the route content, so entering and leaving `/player` never
-            // remounts it. The route only carries the location and its
-            // `extra` return target; see AppShell's player pull layer.
-            pageBuilder: (context, state) =>
-                const NoTransitionPage(child: SizedBox.shrink()),
+            // Keep the originating page mounted and painted below the shell's
+            // player layer. A push/pop preserves scroll, search and detail state.
+            pageBuilder: (context, state) => CustomTransitionPage<void>(
+              opaque: false,
+              transitionDuration: Duration.zero,
+              reverseTransitionDuration: Duration.zero,
+              transitionsBuilder: (_, animation, secondaryAnimation, child) =>
+                  child,
+              child: _PlayerRouteBackdrop(),
+            ),
           ),
           GoRoute(path: '/history', redirect: (_, _) => '/downloads'),
           GoRoute(
@@ -216,6 +223,18 @@ GoRouter createAppRouter({
   );
 }
 
+class _PlayerRouteBackdrop extends StatelessWidget {
+  const _PlayerRouteBackdrop();
+  @override
+  Widget build(BuildContext context) => PopScope(
+    canPop: false,
+    onPopInvokedWithResult: (didPop, _) {
+      if (!didPop) PlayerPullScope.maybeOf(context)?.onClose();
+    },
+    child: const SizedBox.shrink(),
+  );
+}
+
 /// 发现页卡片 → 歌单/榜单详情：页面从被点击的卡片矩形展开（M3 container
 /// transform），封面 Hero 沿同一条曲线飞到头图；返回时原路收回。起点随
 /// extra 传入，没有起点（深链、预览弹窗）时退化为整页淡入。
@@ -282,30 +301,8 @@ T? _routePayload<T extends Object>(Object? extra) {
 }
 
 String _playerReturnLocationFromExtra(Object? extra) {
-  if (extra is String && _isPlayerReturnLocation(extra)) return extra;
+  if (extra is String && isPlayerReturnLocation(extra)) return extra;
   return '/songs';
-}
-
-bool _isPlayerReturnLocation(String location) {
-  if (location.startsWith('/discover/playlists/') ||
-      location.startsWith('/discover/leaderboards/')) {
-    return true;
-  }
-  if (location == '/playlists' || location.startsWith('/playlists/')) {
-    return true;
-  }
-  return switch (location) {
-    '/' ||
-    '/downloads' ||
-    '/songs' ||
-    '/songs/search' ||
-    '/settings' ||
-    '/settings/sources' ||
-    '/settings/webdav' ||
-    '/settings/equalizer' ||
-    '/debug' => true,
-    _ => false,
-  };
 }
 
 String _playlistBackLocationFromUri(Uri uri) {

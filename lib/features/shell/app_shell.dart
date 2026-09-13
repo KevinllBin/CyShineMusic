@@ -6,21 +6,29 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/storage/settings_store.dart';
 import '../../core/ui/app_toast.dart';
+import '../../core/ui/cover_image_source.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_theme.dart';
 import '../player/player_page.dart';
+import '../player/widgets/spinning_cover_art.dart';
+import '../player/player_controller.dart';
 import '../playlists/playlist_detail_toolbar_state.dart';
 import '../songs/songs_toolbar_state.dart';
 import 'player_pull_scope.dart';
+import 'player_transition.dart';
+import 'shell_bottom_area.dart';
 import 'shell_route_utils.dart';
 import 'shell_toolbar_visibility.dart';
 import 'tab_location_memory.dart';
 import 'widgets/bottom_toolbar.dart';
 import 'widgets/discovery_category_fab.dart';
+import 'widgets/native_bottom_navigation.dart';
 import 'widgets/search_paging_fab.dart';
 import 'widgets/shell_header.dart';
 import 'widgets/toolbar_metrics.dart';
+import 'widgets/toolbar_capsule.dart';
 
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({
@@ -58,10 +66,16 @@ class _AppShellState extends ConsumerState<AppShell>
   /// async blur pipeline only ever runs its cold start once.
   bool _playerLayerMounted = false;
   bool _pullActive = false;
-  bool _dismissing = false;
+  late final AnimationController _coverRotation;
+  late final PlayerTransition _transition;
+  int _pullGeneration = 0;
+  double? _settleTarget;
+  bool _settledExpanded = false;
+  bool _dragFromPlayer = false;
+  double _dragStartProgress = 0;
+  String _underlayPlaylistBack = '/';
   Timer? _returnToDesktopTimer;
   AppToastHandle? _returnToDesktopToast;
-  double _lastPullDelta = 0;
 
   bool _toolbarScrollSequenceActive = false;
   double _lastToolbarScrollDelta = 0;
@@ -76,12 +90,23 @@ class _AppShellState extends ConsumerState<AppShell>
       duration: AppMotion.medium,
     );
     final startsOnPlayer = widget.location == '/player';
+    _settledExpanded = startsOnPlayer;
     _pull = AnimationController(
       vsync: this,
       value: startsOnPlayer ? 1 : 0,
       duration: AppMotion.medium,
     );
     _playerLayerMounted = startsOnPlayer;
+    _playerReturnLocation = normalizedPlayerReturnLocation(
+      startsOnPlayer ? widget.playerReturnLocation : widget.routeLocation,
+      '/songs',
+    );
+    _coverRotation = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 24),
+    );
+    _transition = PlayerTransition(progress: _pull, rotation: _coverRotation);
+    if (ref.read(playerControllerProvider).playing) _coverRotation.repeat();
     // Built once: the tear-offs below are stable across builds, so dependents
     // of PlayerPullScope never rebuild.
     _pullGestures = PlayerPullGestures(
@@ -90,6 +115,8 @@ class _AppShellState extends ConsumerState<AppShell>
       onUpdate: _handlePullUpdate,
       onEnd: _handlePullEnd,
       onCancel: _handlePullCancel,
+      onOpen: _handleOpenPlayer,
+      onClose: _dismissPlayer,
     );
     _rememberTabLocation();
   }
@@ -98,6 +125,8 @@ class _AppShellState extends ConsumerState<AppShell>
   void dispose() {
     _resetTopLevelBack();
     _toolbarRevealController.dispose();
+    _transition.dispose();
+    _coverRotation.dispose();
     _pull.dispose();
     super.dispose();
   }
@@ -113,25 +142,28 @@ class _AppShellState extends ConsumerState<AppShell>
       _routeMotion = _motionFor(oldWidget.location, widget.location);
       _toolbarScrollSequenceActive = false;
       _lastToolbarScrollDelta = 0;
-      // A drag that just committed already faded the toolbar out; resetting
-      // reveal here would flash the capsule back in for one frame.
+      // Preserve the underlying toolbar's scroll position during the morph.
       if (!_pullActive && _pull.value == 0) {
         _toolbarRevealController.value = 1;
       }
       if (widget.location == '/player') {
+        _underlayPlaylistBack = oldWidget.playlistBackLocation;
         _playerReturnLocation = normalizedPlayerReturnLocation(
           widget.playerReturnLocation,
-          oldWidget.location,
+          oldWidget.routeLocation,
         );
         _playerLayerMounted = true;
-        if (_pull.value < 1) {
-          _animatePullTo(1, curve: AppMotion.emphasizedDecelerate);
+        if (_pull.value < 1 && _settleTarget != 1 && !_pullActive) {
+          _commitPull();
         }
       } else {
         if (oldWidget.location == '/player') {
           // The dismiss animation has already parked it off screen; this is
           // just a backstop for navigation that bypassed _dismissPlayer.
-          _pull.stop(canceled: false);
+          _pullGeneration++;
+          _settleTarget = null;
+          _settledExpanded = false;
+          _pull.stop();
           _pull.value = 0;
           _animateToolbarTo(1);
         } else if (oldWidget.location != '/player') {
@@ -149,117 +181,140 @@ class _AppShellState extends ConsumerState<AppShell>
     }
   }
 
-  double get _pullExtent => MediaQuery.sizeOf(context).height;
+  double get _pullExtent => _transition.travel;
+
+  String get _contentLocation => widget.location == '/player'
+      ? Uri.parse(_playerReturnLocation).path
+      : widget.location;
 
   void _handlePullWarm() {
-    if (_playerLayerMounted || widget.location == '/player') return;
-    setState(() => _playerLayerMounted = true);
+    _transition.capture();
+    if (!_playerLayerMounted) setState(() => _playerLayerMounted = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _transition.capture();
+    });
   }
 
-  void _handlePullStart() {
+  void _handleOpenPlayer() {
+    _releaseRouteFocus();
+    _handlePullWarm();
+    _pullActive = false;
+    _commitPull();
+  }
+
+  void _handlePullStart({bool fromPlayer = false}) {
+    _pullGeneration++;
+    _settleTarget = null;
+    _pull.stop();
+    _handlePullWarm();
     _pullActive = true;
-    _lastPullDelta = 0;
-    _pull.stop(canceled: false);
-    _toolbarRevealController.stop(canceled: false);
+    _dragFromPlayer = fromPlayer;
+    _dragStartProgress = _pull.value;
+    _toolbarRevealController.stop();
     _releaseRouteFocus();
   }
 
   void _handlePullUpdate(double dy) {
-    if (dy == 0) return;
-    _lastPullDelta = dy;
-    // 1:1 with the finger: the page tracks exactly where it is dragged.
-    _pull.value = (_pull.value - dy / _pullExtent).clamp(0.0, 1.0).toDouble();
-    _syncToolbarToPull();
-  }
-
-  void _syncToolbarToPull() {
-    if (widget.location == '/player') return;
-    _toolbarRevealController.value = (1 - _pull.value / playerPullToolbarFade)
-        .clamp(0.0, 1.0)
-        .toDouble();
+    if (!_pullActive || dy == 0) return;
+    _pull.value = (_pull.value - dy / _pullExtent).clamp(0.0, 1.0);
   }
 
   void _handlePullEnd(double velocityDy) {
     if (!_pullActive) return;
     _pullActive = false;
-    final progress = _pull.value;
-    final lastDelta = _lastPullDelta;
-    _lastPullDelta = 0;
-
-    final bool reveal;
-    if (velocityDy.abs() > playerPullFlingVelocity) {
-      reveal = velocityDy < 0;
-    } else {
-      // Direction-biased thresholds, same shape as the toolbar scroll settle.
-      reveal = switch (lastDelta) {
-        < 0 => progress >= toolbarShowDirectionThreshold,
-        > 0 => progress > toolbarHideDirectionThreshold,
-        _ => progress >= 0.5,
-      };
-    }
-
-    if (widget.location == '/player') {
-      if (reveal) {
-        _animatePullTo(1, curve: AppMotion.emphasizedDecelerate);
-      } else {
-        _dismissPlayer();
-      }
-      return;
-    }
-
+    final reveal = PlayerMotion.shouldExpand(
+      progress: _pull.value,
+      travel: _pullExtent,
+      velocityY: velocityDy,
+      wasExpanded: _settledExpanded,
+      fromPlayer: _dragFromPlayer,
+      startProgress: _dragStartProgress,
+    );
     if (reveal) {
-      _commitPull();
+      _commitPull(velocityDy: velocityDy);
     } else {
-      _animatePullTo(0);
-      _animateToolbarTo(1);
+      _settleClosed(velocityDy: velocityDy);
     }
   }
 
   void _handlePullCancel() {
     if (!_pullActive) return;
-    _handlePullEnd(0);
-  }
-
-  /// Seats the player fully *before* navigating: the route swap discards the
-  /// outgoing page in the same frame, so committing early would expose the
-  /// bare shell surface beneath a still-rising player.
-  void _commitPull() {
-    _animatePullTo(1, curve: AppMotion.emphasizedDecelerate).whenComplete(() {
-      if (!mounted || widget.location == '/player') return;
-      context.go(
-        '/player',
-        extra: normalizedPlayerReturnLocation(
-          widget.routeLocation,
-          _playerReturnLocation,
-        ),
-      );
-    });
-  }
-
-  Future<void> _dismissPlayer([String? target]) async {
-    if (_dismissing) return;
-    _dismissing = true;
-    final destination = target ?? _playerReturnLocation;
-    try {
-      await _animatePullTo(0, curve: AppMotion.emphasizedAccelerate);
-    } finally {
-      _dismissing = false;
+    _pullActive = false;
+    if (_settledExpanded) {
+      _commitPull();
+    } else {
+      _settleClosed();
     }
-    if (!mounted || _pull.value != 0) return;
-    context.go(destination);
   }
 
-  TickerFuture _animatePullTo(double target, {Curve? curve}) {
-    if ((_pull.value - target).abs() < 0.001 ||
-        (MediaQuery.maybeDisableAnimationsOf(context) ?? false)) {
+  Future<void> _commitPull({double velocityDy = 0}) async {
+    final generation = ++_pullGeneration;
+    _settleTarget = 1;
+    if (!_playerLayerMounted) setState(() => _playerLayerMounted = true);
+    // Lay out the real destination before the first visible shared-cover frame.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted || generation != _pullGeneration) return;
+    _transition.capture();
+    // The transparent route keeps the origin alive. Activate the controls
+    // immediately instead of waiting through the spring's subpixel tail.
+    if (widget.location != '/player') {
+      _playerReturnLocation = widget.routeLocation;
+      unawaited(context.push<void>('/player', extra: _playerReturnLocation));
+    }
+    try {
+      await _animatePullTo(1, velocityDy: velocityDy).orCancel;
+    } on TickerCanceled {
+      return;
+    }
+    if (!mounted || generation != _pullGeneration || _pull.value != 1) return;
+    _settledExpanded = true;
+    _settleTarget = null;
+  }
+
+  Future<void> _dismissPlayer([String? target]) => _settleClosed(
+    destination: target,
+    velocityDy: -_pull.velocity * _pullExtent,
+  );
+
+  Future<void> _settleClosed({
+    String? destination,
+    double velocityDy = 0,
+  }) async {
+    final generation = ++_pullGeneration;
+    _settleTarget = 0;
+    _transition.capture();
+    try {
+      await _animatePullTo(0, velocityDy: velocityDy).orCancel;
+    } on TickerCanceled {
+      return;
+    }
+    if (!mounted || generation != _pullGeneration || _pull.value != 0) return;
+    _settledExpanded = false;
+    _settleTarget = null;
+    if (widget.location == '/player') {
+      if (destination == null && GoRouter.of(context).canPop()) {
+        context.pop();
+      } else {
+        context.go(destination ?? _playerReturnLocation);
+      }
+    }
+    _animateToolbarTo(1);
+  }
+
+  TickerFuture _animatePullTo(double target, {double velocityDy = 0}) {
+    if ((_pull.value - target).abs() < 1e-9 ||
+        MediaQuery.disableAnimationsOf(context)) {
       _pull.value = target;
       return TickerFuture.complete();
     }
-    final remaining = (_pull.value - target).abs();
-    return _pull.animateTo(
-      target,
-      duration: Duration(milliseconds: (140 + 180 * remaining).round()),
-      curve: curve ?? AppMotion.emphasized,
+    return _pull.animateWith(
+      PlayerSpringSimulation(
+        _pull.value,
+        target,
+        -velocityDy / _pullExtent,
+        distanceTolerance:
+            0.01 / (MediaQuery.devicePixelRatioOf(context) * _pullExtent),
+      ),
     );
   }
 
@@ -288,12 +343,15 @@ class _AppShellState extends ConsumerState<AppShell>
       await navigator.maybePop();
       return true;
     }
+    if (widget.location == '/player') {
+      _pullActive = false;
+      unawaited(_dismissPlayer());
+      return true;
+    }
     // Mid-pull: put the player back where it came from instead of navigating.
     if (_pullActive || (_pull.value > 0 && widget.location != '/player')) {
       _pullActive = false;
-      _lastPullDelta = 0;
-      _animatePullTo(0);
-      _animateToolbarTo(1);
+      unawaited(_settleClosed());
       return true;
     }
     if (isSongsLibraryLocation(widget.location)) {
@@ -329,8 +387,6 @@ class _AppShellState extends ConsumerState<AppShell>
       context.go('/settings');
     } else if (context.canPop()) {
       context.pop();
-    } else if (widget.location == '/player') {
-      unawaited(_dismissPlayer());
     } else if (isDiscoveryLocation(widget.location) && widget.location != '/') {
       context.go('/');
     } else if (isPlaylistLocation(widget.location)) {
@@ -377,7 +433,9 @@ class _AppShellState extends ConsumerState<AppShell>
 
   bool _handleToolbarScrollNotification(ScrollNotification notification) {
     // While a player pull owns the toolbar reveal, scrolling must not fight it.
-    if (_pullActive) return false;
+    if (_pullActive || ref.read(settingsProvider).useNativeNavigation) {
+      return false;
+    }
     final songsBatchMode =
         isSongsLibraryLocation(widget.location) &&
         ref.read(songsToolbarStateProvider).batchMode;
@@ -475,26 +533,90 @@ class _AppShellState extends ConsumerState<AppShell>
 
   @override
   Widget build(BuildContext context) {
+    final contentLocation = _contentLocation;
+    final contentRoute = widget.location == '/player'
+        ? _playerReturnLocation
+        : widget.routeLocation;
+    final viewport = MediaQuery.sizeOf(context);
+    if (_transition.viewport != viewport) {
+      _transition.viewport = viewport;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _transition.capture(refreshSource: true);
+      });
+    }
+    _transition.bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+    ref.listen<bool>(playerControllerProvider.select((s) => s.playing), (
+      _,
+      playing,
+    ) {
+      if (playing) {
+        if (!_coverRotation.isAnimating) _coverRotation.repeat();
+      } else {
+        _coverRotation.stop(canceled: false);
+      }
+    });
     final baseScheme = Theme.of(context).colorScheme;
-    final scheme = shellSchemeFor(widget.location, baseScheme);
+    final scheme = shellSchemeFor(contentLocation, baseScheme);
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
     final isPlayer = widget.location == '/player';
     final isImmersivePlaylist = isImmersivePlaylistDetailLocation(
-      widget.location,
+      contentLocation,
     );
     // 发现区各页自绘顶栏（ShellSectionHeader）：导航器高度在「发现 ↔
     // 歌单/榜单详情」之间保持不变，详情页的容器变换展开/收回时下层内容
     // 才不会跳动。
     final hidesShellHeader =
-        isPlayer || isImmersivePlaylist || isDiscoveryLocation(widget.location);
+        isImmersivePlaylist || isDiscoveryLocation(contentLocation);
     final toolbarTravelExtent = _bottomToolbarTravelExtent(context);
     _toolbarTravelExtent = toolbarTravelExtent;
+    final useNativeNavigation = ref.watch(
+      settingsProvider.select((settings) => settings.useNativeNavigation),
+    );
+    final showNativePlayer =
+        useNativeNavigation &&
+        ref.watch(
+          playerControllerProvider.select(
+            (state) => state.hasTrack || state.loading,
+          ),
+        );
+    final nativeControlsVisible =
+        useNativeNavigation &&
+        MediaQuery.viewInsetsOf(context).bottom == 0 &&
+        ref.watch(shellToolbarVisibleProvider) &&
+        !(isSongsLibraryLocation(contentLocation) &&
+            ref.watch(
+              songsToolbarStateProvider.select((state) => state.batchMode),
+            )) &&
+        !(isPlaylistDetailLocation(contentLocation) &&
+            ref.watch(
+              playlistDetailToolbarStateProvider.select(
+                (state) => state.batchMode,
+              ),
+            ));
+    final nativeBottomExtent = nativeControlsVisible
+        ? nativeBottomAreaHeight(context, showPlayer: showNativePlayer)
+        : 0.0;
+    // The player strip floats over content; only the navigation bar below it
+    // pushes the page up.
+    final nativeFloatingExtent = nativeControlsVisible && showNativePlayer
+        ? nativeFloatingPlayerExtent(context)
+        : 0.0;
+
+    ref.listen<bool>(
+      settingsProvider.select((settings) => settings.useNativeNavigation),
+      (previous, next) {
+        _toolbarScrollSequenceActive = false;
+        _lastToolbarScrollDelta = 0;
+        _toolbarRevealController.stop(canceled: false);
+        _toolbarRevealController.value = 1;
+      },
+    );
 
     ref.listen<bool>(shellToolbarVisibleProvider, (previous, next) {
       if (next && previous == false) _animateToolbarTo(1);
     });
     ref.listen<SongsToolbarState>(songsToolbarStateProvider, (previous, next) {
-      if (!isSongsLibraryLocation(widget.location)) return;
+      if (!isSongsLibraryLocation(contentLocation)) return;
       if (next.batchMode) {
         _toolbarScrollSequenceActive = false;
         _lastToolbarScrollDelta = 0;
@@ -507,7 +629,7 @@ class _AppShellState extends ConsumerState<AppShell>
       previous,
       next,
     ) {
-      if (!isPlaylistDetailLocation(widget.location)) return;
+      if (!isPlaylistDetailLocation(contentLocation)) return;
       if (next.batchMode) {
         _toolbarScrollSequenceActive = false;
         _lastToolbarScrollDelta = 0;
@@ -519,132 +641,159 @@ class _AppShellState extends ConsumerState<AppShell>
 
     return BackButtonListener(
       onBackButtonPressed: _handleBackButton,
-      child: PlayerPullScope(
-        gestures: _pullGestures,
-        child: Scaffold(
-          extendBody: true,
-          resizeToAvoidBottomInset: true,
-          backgroundColor: scheme.appSurface,
-          body: Stack(
-            // Every child carries an explicit key so element matching never
-            // falls back to list position. The player layer slot below appears
-            // and disappears, and without keys that index shift would rebuild
-            // the toolbar subtree — killing any in-flight drag recognizer.
-            children: [
-              Positioned.fill(
-                key: const ValueKey('shell-content'),
-                child: ColoredBox(
-                  color: scheme.appSurface,
-                  child: Padding(
-                    // The immersive player page fills the whole screen and
-                    // handles its own bottom safe area internally.
-                    padding: EdgeInsets.only(
-                      bottom: isPlayer ? 0 : math.max(bottomInset, 12),
-                    ),
-                    child: Column(
-                      children: [
-                        if (hidesShellHeader)
-                          const SizedBox.shrink()
-                        else
-                          AnimatedSize(
-                            duration: AppMotion.short,
-                            curve: AppMotion.emphasized,
-                            alignment: Alignment.topCenter,
-                            child: ShellHeader(
-                              location: widget.location,
-                              playlistBackLocation: widget.playlistBackLocation,
-                            ),
-                          ),
-                        Expanded(
-                          child: RepaintBoundary(
-                            child: ClipRect(
-                              child: AnimatedSwitcher(
-                                duration:
-                                    isPlayer ||
-                                        _routeMotion ==
-                                            _ShellRouteMotion.playerExit
-                                    ? AppMotion.medium
-                                    : AppMotion.long,
-                                switchInCurve: AppMotion.emphasizedDecelerate,
-                                switchOutCurve: AppMotion.emphasizedAccelerate,
-                                // A pushed GoRouter route can reuse GlobalKeys
-                                // from the shell child below it. Keeping both
-                                // route trees mounted during the transition
-                                // would therefore trigger duplicate-key errors.
-                                layoutBuilder: (currentChild, _) =>
-                                    currentChild ?? const SizedBox.shrink(),
-                                transitionBuilder: _buildRouteTransition,
-                                child: KeyedSubtree(
-                                  key: ValueKey(
-                                    _shellContentAnimationKey(widget.location),
-                                  ),
-                                  child: Listener(
-                                    behavior: HitTestBehavior.translucent,
-                                    onPointerUp: (_) =>
-                                        _finishToolbarScrollSequence(),
-                                    onPointerCancel: (_) =>
-                                        _finishToolbarScrollSequence(),
-                                    child:
-                                        NotificationListener<
-                                          ScrollNotification
-                                        >(
-                                          onNotification:
-                                              _handleToolbarScrollNotification,
-                                          child: widget.child,
+      child: PlayerTransitionScope(
+        transition: _transition,
+        child: PlayerPullScope(
+          gestures: _pullGestures,
+          child: ShellBottomArea(
+            nativeNavigation: useNativeNavigation,
+            extent: nativeBottomExtent,
+            floatingExtent: nativeFloatingExtent,
+            child: Scaffold(
+              extendBody: true,
+              resizeToAvoidBottomInset: true,
+              backgroundColor: scheme.appSurface,
+              body: Stack(
+                key: _transition.rootKey,
+                // Every child carries an explicit key so element matching never
+                // falls back to list position. The player layer slot below appears
+                // and disappears, and without keys that index shift would rebuild
+                // the toolbar subtree — killing any in-flight drag recognizer.
+                children: [
+                  Positioned.fill(
+                    key: const ValueKey('shell-content'),
+                    child: ColoredBox(
+                      color: scheme.appSurface,
+                      child: Padding(
+                        // The immersive player page fills the whole screen and
+                        // handles its own bottom safe area internally.
+                        padding: EdgeInsets.only(
+                          bottom: useNativeNavigation
+                              ? nativeControlsVisible
+                                    ? nativeBottomExtent - nativeFloatingExtent
+                                    : MediaQuery.paddingOf(context).bottom
+                              : math.max(bottomInset, 12),
+                        ),
+                        child: Column(
+                          children: [
+                            if (hidesShellHeader)
+                              const SizedBox.shrink()
+                            else
+                              AnimatedSize(
+                                duration: AppMotion.short,
+                                curve: AppMotion.emphasized,
+                                alignment: Alignment.topCenter,
+                                child: ShellHeader(
+                                  location: contentLocation,
+                                  playlistBackLocation: isPlayer
+                                      ? _underlayPlaylistBack
+                                      : widget.playlistBackLocation,
+                                ),
+                              ),
+                            Expanded(
+                              child: RepaintBoundary(
+                                child: ClipRect(
+                                  child: AnimatedSwitcher(
+                                    duration:
+                                        isPlayer ||
+                                            _routeMotion ==
+                                                _ShellRouteMotion.playerExit
+                                        ? AppMotion.medium
+                                        : AppMotion.long,
+                                    switchInCurve:
+                                        AppMotion.emphasizedDecelerate,
+                                    switchOutCurve:
+                                        AppMotion.emphasizedAccelerate,
+                                    // A pushed GoRouter route can reuse GlobalKeys
+                                    // from the shell child below it. Keeping both
+                                    // route trees mounted during the transition
+                                    // would therefore trigger duplicate-key errors.
+                                    layoutBuilder: (currentChild, _) =>
+                                        currentChild ?? const SizedBox.shrink(),
+                                    transitionBuilder: _buildRouteTransition,
+                                    child: KeyedSubtree(
+                                      key: ValueKey(
+                                        _shellContentAnimationKey(
+                                          contentLocation,
                                         ),
+                                      ),
+                                      child: Listener(
+                                        behavior: HitTestBehavior.translucent,
+                                        onPointerUp: (_) =>
+                                            _finishToolbarScrollSequence(),
+                                        onPointerCancel: (_) =>
+                                            _finishToolbarScrollSequence(),
+                                        child:
+                                            NotificationListener<
+                                              ScrollNotification
+                                            >(
+                                              onNotification:
+                                                  _handleToolbarScrollNotification,
+                                              child: widget.child,
+                                            ),
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
-                ),
-              ),
-              _buildPlayerLayer(isPlayer),
-              Positioned(
-                key: const ValueKey('shell-toolbar'),
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: BottomToolbar(
-                  location: widget.location,
-                  routeLocation: widget.routeLocation,
-                  reveal: _toolbarRevealController,
-                  travelExtent: toolbarTravelExtent,
-                ),
-              ),
-              if (widget.location == '/')
-                Positioned.fill(
-                  key: ValueKey('shell-fab'),
-                  child: const Stack(
-                    children: [
-                      DiscoveryCategoryFabLayer(),
-                      SearchPagingFabLayer(),
-                    ],
+                  if (contentLocation == '/')
+                    const Positioned.fill(
+                      key: ValueKey('shell-fab'),
+                      child: Stack(
+                        children: [
+                          DiscoveryCategoryFabLayer(),
+                          SearchPagingFabLayer(),
+                        ],
+                      ),
+                    ),
+                  _buildPlayerLayer(isPlayer),
+                  Positioned(
+                    key: const ValueKey('shell-toolbar'),
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: AnimatedBuilder(
+                      animation: _pull,
+                      builder: (context, child) => IgnorePointer(
+                        ignoring: _pull.value > 0,
+                        child: ExcludeSemantics(
+                          excluding: _pull.value > 0,
+                          child: child!,
+                        ),
+                      ),
+                      child: useNativeNavigation
+                          ? NativeBottomNavigation(
+                              location: contentLocation,
+                              routeLocation: contentRoute,
+                              showPlayer: showNativePlayer,
+                              visible: nativeControlsVisible,
+                              reveal: _toolbarRevealController,
+                            )
+                          : BottomToolbar(
+                              location: contentLocation,
+                              routeLocation: contentRoute,
+                              reveal: _toolbarRevealController,
+                              travelExtent: toolbarTravelExtent,
+                            ),
+                    ),
                   ),
-                ),
-            ],
+                ],
+              ),
+            ),
           ),
         ),
       ),
     );
   }
 
-  /// The player layer sits above the route content but below the floating
-  /// toolbar, so the capsule keeps hovering over an empty player exactly as it
-  /// did when the player was a route child.
-  ///
-  /// Every wrapper here is unconditional and only flips parameters: inserting
-  /// or removing one would re-slot the subtree and restart the backdrop's blur
-  /// render, which reads as a flash of flat colour.
   Widget _buildPlayerLayer(bool isPlayer) {
     if (!_playerLayerMounted) {
-      // Zero-sized but still positioned: a non-positioned child would make the
-      // Stack size itself to this placeholder instead of the incoming
-      // constraints, collapsing every Positioned.fill sibling.
       return const Positioned(
         key: ValueKey('shell-player'),
         left: 0,
@@ -654,23 +803,33 @@ class _AppShellState extends ConsumerState<AppShell>
         child: SizedBox.shrink(),
       );
     }
+    final track = ref.watch(playerControllerProvider.select((s) => s.track));
+    final scheme = Theme.of(context).colorScheme;
+    final cover = RepaintBoundary(
+      child: RotationTransition(
+        turns: _coverRotation,
+        child: PlayerArtworkImage(
+          url: CoverImageSource.normalizeUrl(track?.coverUrl, size: 700),
+          bytes: track?.coverBytes,
+          animate: false,
+          placeholder: ColoredBox(
+            color: scheme.surfaceContainerHighest,
+            child: const Center(child: Icon(Icons.album_rounded)),
+          ),
+        ),
+      ),
+    );
     return Positioned(
       key: const ValueKey('shell-player'),
       left: 0,
       right: 0,
       top: 0,
-      // Pinned to the full screen height and translated during the pull. A
-      // height that tracked the drag — or shrank for the keyboard — would
-      // re-run the backdrop's blur pipeline on every frame.
       height: MediaQuery.sizeOf(context).height,
       child: MediaQuery.removeViewInsets(
         context: context,
         removeBottom: true,
         child: AnimatedBuilder(
-          animation: _pull,
-          // Passed as `child` so the player's element subtree is untouched by
-          // these rebuilds; the page's own SlideTransition listens to _pull
-          // and only repaints.
+          animation: _transition,
           child: PlayerPage(
             returnLocation: _playerReturnLocation,
             progress: _pull,
@@ -678,17 +837,49 @@ class _AppShellState extends ConsumerState<AppShell>
             onDismissRequested: _dismissPlayer,
           ),
           builder: (context, child) {
-            final progress = _pull.value;
-            final visible = progress > 0 || isPlayer;
-            return AbsorbPointer(
-              // Mid-pull the page is visible but not the route: swallow taps
-              // instead of letting them reach the page underneath.
-              absorbing: progress > 0 && !isPlayer,
+            final p = _pull.value;
+            final visible = p > 0 || isPlayer;
+            final flight = track == null ? null : _transition.coverRect;
+            return IgnorePointer(
+              ignoring: !visible,
               child: ExcludeSemantics(
                 excluding: !visible,
                 child: TickerMode(
                   enabled: visible,
-                  child: Opacity(opacity: visible ? 1 : 0, child: child!),
+                  child: Opacity(
+                    opacity: visible ? 1 : 0,
+                    child: PlayerPullHandle(
+                      child: Stack(
+                        fit: StackFit.expand,
+                        clipBehavior: Clip.none,
+                        children: [
+                          ClipRRect(
+                            key: const ValueKey('player-surface-clip'),
+                            clipper: _PlayerSurfaceClipper(_transition.surface),
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                ColoredBox(color: toolbarCapsuleColor(scheme)),
+                                Transform.translate(
+                                  key: const ValueKey('player-exit-slide'),
+                                  offset: Offset(0, (1 - p) * _pullExtent),
+                                  child: child,
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (flight != null)
+                            Positioned.fromRect(
+                              key: const ValueKey('player-shared-cover'),
+                              rect: flight,
+                              child: IgnorePointer(
+                                child: ClipOval(child: cover),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
             );
@@ -699,23 +890,12 @@ class _AppShellState extends ConsumerState<AppShell>
   }
 
   Widget _buildRouteTransition(Widget child, Animation<double> animation) {
-    final incoming =
-        child.key == ValueKey(_shellContentAnimationKey(widget.location));
-    // Entering the player slides the whole page up from the bottom edge —
-    // the mirror of the player's own downward exit animation. A fade here
-    // would read as a flicker, so the page slides in fully opaque.
-    if (_routeMotion == _ShellRouteMotion.playerEnter && incoming) {
-      return SlideTransition(
-        position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
-            .animate(
-              CurvedAnimation(
-                parent: animation,
-                curve: AppMotion.emphasizedDecelerate,
-              ),
-            ),
-        child: child,
-      );
+    if (_routeMotion == _ShellRouteMotion.playerEnter ||
+        _routeMotion == _ShellRouteMotion.playerExit) {
+      return child;
     }
+    final incoming =
+        child.key == ValueKey(_shellContentAnimationKey(_contentLocation));
     final offset =
         Tween<Offset>(begin: _routeOffset(incoming), end: Offset.zero).animate(
           CurvedAnimation(
@@ -725,11 +905,8 @@ class _AppShellState extends ConsumerState<AppShell>
                 : AppMotion.emphasizedAccelerate,
           ),
         );
-    final animateScale =
-        _routeMotion != _ShellRouteMotion.playerEnter &&
-        _routeMotion != _ShellRouteMotion.playerExit;
     final scale = Tween<double>(
-      begin: incoming && animateScale ? 0.992 : 1,
+      begin: incoming ? 0.992 : 1,
       end: 1,
     ).animate(CurvedAnimation(parent: animation, curve: AppMotion.emphasized));
 
@@ -802,18 +979,20 @@ Future<void> _moveAppTaskToBack() async {
 }
 
 double _bottomToolbarTravelExtent(BuildContext context) {
-  final viewport = MediaQuery.sizeOf(context);
-  final scaledLabelHeight = MediaQuery.textScalerOf(
-    context,
-  ).scale(toolbarLabelFontSizeFor(viewport));
-  final actionHeight = math.max(
-    toolbarMinActionHeightFor(viewport),
-    toolbarActionVerticalChromeFor(viewport) + scaledLabelHeight,
-  );
-  final toolbarHeight = actionHeight + 8;
+  final toolbarHeight = toolbarHeightFor(context);
   final safeBottom = math.max(
     MediaQuery.paddingOf(context).bottom,
     toolbarMinimumBottomInset,
   );
   return toolbarHeight + safeBottom;
+}
+
+class _PlayerSurfaceClipper extends CustomClipper<RRect> {
+  const _PlayerSurfaceClipper(this.surface);
+  final RRect surface;
+  @override
+  RRect getClip(Size size) => surface;
+  @override
+  bool shouldReclip(_PlayerSurfaceClipper oldClipper) =>
+      surface != oldClipper.surface;
 }

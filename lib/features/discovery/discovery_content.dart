@@ -8,6 +8,7 @@ import '../../core/models/enums.dart';
 import '../../core/models/playlist_summary.dart';
 import '../../core/ui/app_refresh_indicator.dart';
 import '../../theme/app_motion.dart';
+import '../shell/shell_bottom_area.dart';
 import 'discovery_controller.dart';
 import 'widgets/discovery_helpers.dart';
 import 'widgets/discovery_placeholders.dart';
@@ -286,7 +287,12 @@ class _DiscoveryListState extends State<_DiscoveryList> {
         physics: const AlwaysScrollableScrollPhysics(
           parent: BouncingScrollPhysics(),
         ),
-        padding: const EdgeInsets.fromLTRB(12, 2, 12, 156),
+        padding: EdgeInsets.fromLTRB(
+          12,
+          2,
+          12,
+          ShellBottomArea.contentPadding(context, 156),
+        ),
         children: [
           Center(
             child: ConstrainedBox(

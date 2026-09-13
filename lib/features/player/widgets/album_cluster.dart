@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/storage/settings_store.dart';
 import '../../shell/player_pull_scope.dart';
+import '../../shell/player_transition.dart';
 import '../player_controller.dart';
 import 'mini_lyrics_panel.dart';
 import 'player_palette.dart';
@@ -97,40 +98,43 @@ class AlbumPage extends ConsumerWidget {
                                         wide: wide,
                                       ),
                                     ),
-                              child: TrackChangeSwitcher(
-                                transitionKey: artworkKey,
-                                incomingOffset: Offset.zero,
-                                scaleBegin: 0.88,
-                                expand: true,
-                                child: track == null
-                                    ? _LoadingAlbumArtwork(
-                                        size: resolvedCoverSize,
-                                      )
-                                    : SpinningCoverArt(
-                                        track: track,
-                                        size: resolvedCoverSize,
-                                        placeholder: ColoredBox(
-                                          color: Colors.white.withValues(
-                                            alpha: 0.34,
-                                          ),
-                                          child: Center(
-                                            child: Icon(
-                                              Icons.album_rounded,
-                                              size: 56,
-                                              color: playerMuted(context),
+                              child: PlayerCoverAnchor(
+                                expanded: true,
+                                child: TrackChangeSwitcher(
+                                  transitionKey: artworkKey,
+                                  incomingOffset: Offset.zero,
+                                  scaleBegin: 0.88,
+                                  expand: true,
+                                  child: track == null
+                                      ? _LoadingAlbumArtwork(
+                                          size: resolvedCoverSize,
+                                        )
+                                      : SpinningCoverArt(
+                                          track: track,
+                                          size: resolvedCoverSize,
+                                          placeholder: ColoredBox(
+                                            color: Colors.white.withValues(
+                                              alpha: 0.34,
+                                            ),
+                                            child: Center(
+                                              child: Icon(
+                                                Icons.album_rounded,
+                                                size: 56,
+                                                color: playerMuted(context),
+                                              ),
                                             ),
                                           ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withValues(
+                                                alpha: 0.16,
+                                              ),
+                                              blurRadius: 28,
+                                              offset: const Offset(0, 18),
+                                            ),
+                                          ],
                                         ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black.withValues(
-                                              alpha: 0.16,
-                                            ),
-                                            blurRadius: 28,
-                                            offset: const Offset(0, 18),
-                                          ),
-                                        ],
-                                      ),
+                                ),
                               ),
                             ),
                           ),

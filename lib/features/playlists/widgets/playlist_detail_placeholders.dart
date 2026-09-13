@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../shell/shell_bottom_area.dart';
+
 class EmptyPlaylistDetail extends StatelessWidget {
   const EmptyPlaylistDetail({super.key});
 
@@ -8,7 +10,12 @@ class EmptyPlaylistDetail extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 24, 28, 108),
+      padding: EdgeInsets.fromLTRB(
+        28,
+        24,
+        28,
+        ShellBottomArea.contentPadding(context, 108),
+      ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [

@@ -53,6 +53,9 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
+      // NavigationBar 会把 32dp 的指示胶囊和标签在这个高度里垂直居中，
+      // 内容本身约 52dp；再往下压会被 loose 约束挤扁并溢出到背景之外。
+      navigationBarTheme: const NavigationBarThemeData(height: 64),
       fontFamilyFallback: fontFallback,
       scaffoldBackgroundColor: scheme.appSurface,
       visualDensity: VisualDensity.standard,

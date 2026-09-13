@@ -3,10 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../theme/app_motion.dart';
 import '../../player/player_controller.dart';
 import '../../player/widgets/spinning_cover_art.dart';
+import '../player_transition.dart';
 
-/// Mini "now playing" strip that shares the bottom toolbar capsule: spinning
-/// cover art on the left, track title in the middle, transport controls on
-/// the right. Swapped in and out of the capsule by the toolbar pager.
+/// Playback contents shared by the legacy toolbar pager and native navigation's
+/// independent floating player. The parent owns navigation and drag gestures.
 class MiniPlayerBar extends ConsumerWidget {
   const MiniPlayerBar({
     super.key,
@@ -55,24 +55,27 @@ class MiniPlayerBar extends ConsumerWidget {
               onTap: onOpenPlayer,
               child: Row(
                 children: [
-                  SizedBox.square(
-                    dimension: coverSize,
-                    child: track == null
-                        ? _IdleCover(scheme: scheme)
-                        : SpinningCoverArt(
-                            track: track,
-                            size: coverSize,
-                            placeholder: ColoredBox(
-                              color: scheme.surfaceContainerHighest,
-                              child: Center(
-                                child: Icon(
-                                  Icons.album_rounded,
-                                  size: 20,
-                                  color: scheme.onSurfaceVariant,
+                  PlayerCoverAnchor(
+                    expanded: false,
+                    child: SizedBox.square(
+                      dimension: coverSize,
+                      child: track == null
+                          ? _IdleCover(scheme: scheme)
+                          : SpinningCoverArt(
+                              track: track,
+                              size: coverSize,
+                              placeholder: ColoredBox(
+                                color: scheme.surfaceContainerHighest,
+                                child: Center(
+                                  child: Icon(
+                                    Icons.album_rounded,
+                                    size: 20,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
+                    ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(

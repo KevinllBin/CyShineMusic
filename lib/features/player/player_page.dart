@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../theme/app_motion.dart';
+import '../shell/player_transition.dart';
 import 'player_controller.dart';
 import 'widgets/album_cluster.dart';
 import 'widgets/immersive_background.dart';
@@ -20,9 +21,8 @@ class PlayerPage extends ConsumerStatefulWidget {
 
   final String returnLocation;
 
-  /// Shell-owned reveal progress: 0 parks the page just below the screen,
-  /// 1 seats it fully. Driven either by a settle animation or directly by the
-  /// pull gesture, which is why the page never animates itself.
+  /// Shell-owned reveal progress: 0 is the capsule, 1 is the full player.
+  /// Background and controls follow separate phases of this same progress.
   final Animation<double> progress;
 
   /// True only while `/player` is the active route. The page stays mounted
@@ -40,28 +40,6 @@ class PlayerPage extends ConsumerStatefulWidget {
 }
 
 class _PlayerPageState extends ConsumerState<PlayerPage> {
-  late Animation<Offset> _slide;
-
-  @override
-  void initState() {
-    super.initState();
-    _slide = _slideFor(widget.progress);
-  }
-
-  @override
-  void didUpdateWidget(covariant PlayerPage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.progress != widget.progress) {
-      _slide = _slideFor(widget.progress);
-    }
-  }
-
-  Animation<Offset> _slideFor(Animation<double> progress) {
-    return progress.drive(
-      Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     // Watch only what decides the page skeleton. `position` ticks every few
@@ -86,25 +64,29 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     // Back handling and pop scoping live in AppShell: this subtree is a
     // sibling of the route content rather than the route itself, so a
     // PopScope here would register against the shell's own ModalRoute.
-    return SlideTransition(
-      key: const ValueKey('player-exit-slide'),
-      position: _slide,
-      child: IgnorePointer(
-        ignoring: !widget.active,
-        child: Scaffold(
-          // The layer is pinned to the full screen height; letting the
-          // keyboard resize it would re-run the backdrop's blur pipeline.
-          resizeToAvoidBottomInset: false,
-          body: Stack(
-            fit: StackFit.expand,
-            children: [
-              Positioned.fill(
-                key: const ValueKey('player-backdrop'),
+    return IgnorePointer(
+      ignoring: !widget.active,
+      child: Scaffold(
+        key: PlayerTransitionScope.maybeOf(context)?.pageKey,
+        backgroundColor: Colors.transparent,
+        // The layer is pinned to the full screen height; letting the
+        // keyboard resize it would re-run the backdrop's blur pipeline.
+        resizeToAvoidBottomInset: false,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            Positioned.fill(
+              key: const ValueKey('player-backdrop'),
+              child: FadeTransition(
+                opacity: widget.progress.drive(const PlayerPhase(0, 0.12)),
                 child: RepaintBoundary(
                   child: ImmersiveBackground(revealProgress: widget.progress),
                 ),
               ),
-              SafeArea(
+            ),
+            FadeTransition(
+              opacity: widget.progress.drive(const PlayerPhase(0.33, 0.86)),
+              child: SafeArea(
                 key: const ValueKey('player-chrome'),
                 child: Column(
                   children: [
@@ -119,8 +101,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                   ],
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

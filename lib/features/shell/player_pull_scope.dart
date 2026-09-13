@@ -18,13 +18,18 @@ class PlayerPullGestures {
     required this.onUpdate,
     required this.onEnd,
     required this.onCancel,
+    required this.onOpen,
+    required this.onClose,
   });
 
   /// Called on pointer-down, before the drag clears the touch slop, so the
   /// player layer can mount and render its backdrop while still off screen.
   final VoidCallback onWarm;
 
-  final VoidCallback onStart;
+  final void Function({bool fromPlayer}) onStart;
+
+  final VoidCallback onOpen;
+  final VoidCallback onClose;
 
   /// Vertical finger delta in logical pixels, positive downwards.
   final ValueChanged<double> onUpdate;
@@ -73,7 +78,7 @@ class PlayerPullHandle extends StatelessWidget {
     if (pull == null) return child;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onVerticalDragStart: (_) => pull.onStart(),
+      onVerticalDragStart: (_) => pull.onStart(fromPlayer: true),
       onVerticalDragUpdate: (details) => pull.onUpdate(details.delta.dy),
       onVerticalDragEnd: (details) =>
           pull.onEnd(details.velocity.pixelsPerSecond.dy),

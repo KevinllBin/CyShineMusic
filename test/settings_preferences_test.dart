@@ -39,6 +39,7 @@ void main() {
       expect(settings.bluetoothLyricEnabled, isFalse);
       expect(settings.bluetoothFullLyricEnabled, isFalse);
       expect(settings.bluetoothLyricNoticeSeen, isFalse);
+      expect(settings.useNativeNavigation, isFalse);
       expect(settings.localMusicDir, settings.downloadDir);
     },
   );
@@ -135,6 +136,28 @@ void main() {
       }),
       throwsA(isA<FormatException>()),
     );
+  });
+
+  test('native navigation is opt-in and persists across restarts', () async {
+    final prefs = await SharedPreferences.getInstance();
+    final container = _settingsContainer(prefs);
+    expect(AppSettings.fallback.useNativeNavigation, isFalse);
+    expect(container.read(settingsProvider).useNativeNavigation, isFalse);
+    await container
+        .read(settingsProvider.notifier)
+        .setUseNativeNavigation(true);
+    container.dispose();
+
+    final restored = _settingsContainer(prefs);
+    expect(restored.read(settingsProvider).useNativeNavigation, isTrue);
+    await restored
+        .read(settingsProvider.notifier)
+        .setUseNativeNavigation(false);
+    restored.dispose();
+
+    final disabled = _settingsContainer(prefs);
+    addTearDown(disabled.dispose);
+    expect(disabled.read(settingsProvider).useNativeNavigation, isFalse);
   });
 
   test('player preferences persist', () async {

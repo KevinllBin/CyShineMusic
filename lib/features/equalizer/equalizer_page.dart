@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/ui/app_toast.dart';
 import '../settings/widgets/settings_action.dart';
 import '../shell/shell_toolbar_visibility.dart';
+import '../shell/shell_bottom_area.dart';
 import 'equalizer_store.dart';
 
 sealed class _BandEditorResult {
@@ -45,7 +46,12 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
       ),
       slivers: [
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(28, 2, 28, 126),
+          padding: EdgeInsets.fromLTRB(
+            28,
+            2,
+            28,
+            ShellBottomArea.contentPadding(context, 126),
+          ),
           sliver: SliverToBoxAdapter(
             child: Center(
               child: ConstrainedBox(
