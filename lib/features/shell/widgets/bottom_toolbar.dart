@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../theme/app_motion.dart';
@@ -13,7 +12,7 @@ import '../shell_navigation.dart';
 import '../shell_route_utils.dart';
 import '../shell_toolbar_visibility.dart';
 import 'mini_player_bar.dart';
-import 'playback_glyph.dart';
+import 'toolbar_action.dart';
 import 'toolbar_capsule.dart';
 import 'toolbar_metrics.dart';
 
@@ -362,7 +361,7 @@ class _MainToolbar extends ConsumerWidget {
             top: (toolbarHeight - actionHeight) / 2,
             duration: AppMotion.medium,
             curve: AppMotion.emphasized,
-            child: _ToolbarSlidingIndicator(
+            child: ToolbarSlidingIndicator(
               width: actionWidth,
               height: actionHeight,
             ),
@@ -370,7 +369,7 @@ class _MainToolbar extends ConsumerWidget {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _ToolbarAction(
+              ToolbarAction(
                 tooltip: '发现',
                 label: '发现',
                 icon: Icons.explore_rounded,
@@ -385,7 +384,7 @@ class _MainToolbar extends ConsumerWidget {
                   '/',
                 ),
               ),
-              _ToolbarAction(
+              ToolbarAction(
                 tooltip: '歌曲',
                 label: '歌曲',
                 icon: Icons.library_music_rounded,
@@ -403,7 +402,7 @@ class _MainToolbar extends ConsumerWidget {
                   '/songs',
                 ),
               ),
-              _ToolbarAction(
+              ToolbarAction(
                 tooltip: '播放页',
                 label: '播放',
                 icon: Icons.graphic_eq_rounded,
@@ -414,7 +413,7 @@ class _MainToolbar extends ConsumerWidget {
                 onPressed: () =>
                     navigateShellTo(context, routeLocation, '/player'),
               ),
-              _ToolbarAction(
+              ToolbarAction(
                 tooltip: '设置',
                 label: '设置',
                 icon: Icons.tune_rounded,
@@ -435,147 +434,5 @@ class _MainToolbar extends ConsumerWidget {
         ],
       ),
     );
-  }
-}
-
-class _ToolbarSlidingIndicator extends StatelessWidget {
-  const _ToolbarSlidingIndicator({required this.width, required this.height});
-
-  final double width;
-  final double height;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return IgnorePointer(
-      child: Container(
-        width: width,
-        height: height,
-        decoration: BoxDecoration(
-          color: scheme.secondaryContainer,
-          borderRadius: BorderRadius.circular(999),
-        ),
-      ),
-    );
-  }
-}
-
-class _ToolbarAction extends StatefulWidget {
-  const _ToolbarAction({
-    required this.tooltip,
-    required this.label,
-    required this.icon,
-    required this.onPressed,
-    required this.width,
-    required this.height,
-    this.selected = false,
-    this.animatedPlayback = false,
-  });
-
-  final String tooltip;
-  final String label;
-  final IconData icon;
-  final VoidCallback? onPressed;
-  final double width;
-  final double height;
-  final bool selected;
-  final bool animatedPlayback;
-
-  @override
-  State<_ToolbarAction> createState() => _ToolbarActionState();
-}
-
-class _ToolbarActionState extends State<_ToolbarAction>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _scale;
-
-  @override
-  void initState() {
-    super.initState();
-    _scale = AnimationController.unbounded(vsync: this, value: 1);
-  }
-
-  @override
-  void dispose() {
-    _scale.dispose();
-    super.dispose();
-  }
-
-  void _springTo(double target) {
-    _scale.animateWith(
-      SpringSimulation(AppMotion.expressiveSpring, _scale.value, target, 0),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final viewport = MediaQuery.sizeOf(context);
-    final iconExtent = toolbarIconExtentFor(viewport);
-    final iconSize = toolbarIconSizeFor(viewport);
-    final labelFontSize = toolbarLabelFontSizeFor(viewport);
-    final enabled = widget.onPressed != null;
-    final selected = widget.selected;
-    final foregroundColor = selected
-        ? scheme.onSecondaryContainer
-        : scheme.onSurfaceVariant.withValues(alpha: enabled ? 1 : 0.72);
-
-    final child = GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: enabled ? widget.onPressed : null,
-      onTapDown: enabled ? (_) => _springTo(0.92) : null,
-      onTapUp: enabled ? (_) => _springTo(1) : null,
-      onTapCancel: enabled ? () => _springTo(1) : null,
-      child: AnimatedBuilder(
-        animation: _scale,
-        builder: (context, child) =>
-            Transform.scale(scale: _scale.value, child: child),
-        child: AnimatedContainer(
-          duration: AppMotion.medium,
-          curve: AppMotion.emphasized,
-          width: widget.width,
-          height: widget.height,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: iconExtent,
-                  height: iconExtent,
-                  child: Center(
-                    child: widget.animatedPlayback
-                        ? AnimatedPlaybackGlyph(color: foregroundColor)
-                        : Icon(
-                            widget.icon,
-                            color: foregroundColor,
-                            size: iconSize,
-                          ),
-                  ),
-                ),
-                const SizedBox(height: 1),
-                Text(
-                  widget.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: selected
-                        ? scheme.onSecondaryContainer
-                        : scheme.onSurfaceVariant.withValues(
-                            alpha: enabled ? 1 : 0.72,
-                          ),
-                    fontSize: labelFontSize,
-                    fontWeight: FontWeight.w600,
-                    height: 1,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-
-    return Tooltip(message: widget.tooltip, child: child);
   }
 }

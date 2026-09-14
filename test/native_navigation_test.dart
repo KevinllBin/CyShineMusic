@@ -18,6 +18,7 @@ import 'package:cy_shine_music/features/shell/app_shell.dart';
 import 'package:cy_shine_music/features/shell/player_transition.dart';
 import 'package:cy_shine_music/features/shell/shell_navigation.dart';
 import 'package:cy_shine_music/features/shell/widgets/bottom_toolbar.dart';
+import 'package:cy_shine_music/features/shell/widgets/dual_capsule_bottom_navigation.dart';
 import 'package:cy_shine_music/features/shell/widgets/mini_player_bar.dart';
 import 'package:cy_shine_music/features/songs/songs_toolbar_state.dart';
 import 'package:cy_shine_music/router.dart';
@@ -43,13 +44,12 @@ void main() {
     await _pumpUi(tester);
     expect(find.byTooltip('播放页'), findsOneWidget);
 
-    final setting = find.descendant(
-      of: find.byKey(const ValueKey('use-native-navigation-setting')),
-      matching: find.byType(Switch),
-    );
+    final setting = find.byKey(const ValueKey('navigation-mode-menu-anchor'));
     await tester.ensureVisible(setting);
     await _pumpUi(tester);
     await tester.tap(setting);
+    await _pumpUi(tester);
+    await tester.tap(find.text('原生导航').last);
     await _pumpUi(tester);
     expect(harness.location, '/settings');
     expect(find.byType(BottomToolbar), findsNothing);
@@ -62,12 +62,69 @@ void main() {
     await _pumpUi(tester);
     await tester.tap(setting);
     await _pumpUi(tester);
+    await tester.tap(find.text('单胶囊').last);
+    await _pumpUi(tester);
     expect(find.byType(NavigationBar), findsNothing);
     expect(find.byTooltip('播放页'), findsOneWidget);
     expect(harness.location, '/settings');
     expect(harness.controller.snapshot.playing, isTrue);
     expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(seconds: 4));
   });
+
+  testWidgets(
+    'dual capsule navigation renders mini player and navigation capsule',
+    (tester) async {
+      final harness = await _pumpApp(tester, native: false);
+      final setting = find.byKey(const ValueKey('navigation-mode-menu-anchor'));
+      await tester.ensureVisible(setting);
+      await _pumpUi(tester);
+      await tester.tap(setting);
+      await _pumpUi(tester);
+      await tester.tap(find.text('双胶囊').last);
+      await _pumpUi(tester);
+
+      expect(find.byType(DualCapsuleBottomNavigation), findsOneWidget);
+      expect(_miniPlayer.hitTestable(), findsOneWidget);
+      expect(find.text('发现'), findsOneWidget);
+      expect(find.text('歌曲'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(DualCapsuleBottomNavigation),
+          matching: find.text('设置'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('发现'));
+      await _pumpUi(tester);
+      expect(harness.location, '/');
+      expect(find.byType(DualCapsuleBottomNavigation), findsOneWidget);
+
+      await tester.tap(find.byTooltip('打开播放页'));
+      await _pumpUi(tester);
+      expect(harness.location, '/player');
+      expect(
+        find.descendant(
+          of: find.byType(DualCapsuleBottomNavigation),
+          matching: find.text('发现'),
+        ).hitTestable(),
+        findsNothing,
+      );
+
+      await tester.binding.handlePopRoute();
+      await _pumpUi(tester);
+      expect(harness.location, '/');
+      expect(
+        find.descendant(
+          of: find.byType(DualCapsuleBottomNavigation),
+          matching: find.text('发现'),
+        ).hitTestable(),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(seconds: 4));
+    },
+  );
 
   testWidgets(
     'native player is visible for tracks and loading, including pause',

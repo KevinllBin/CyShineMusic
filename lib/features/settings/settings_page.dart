@@ -424,19 +424,24 @@ class SettingsPage extends ConsumerWidget {
                                   .setUseDynamicColor(value),
                             ),
                             const SizedBox(height: 4),
-                            SettingsSwitchAction(
-                              key: const ValueKey(
-                                'use-native-navigation-setting',
-                              ),
+                            SettingsMenuAction(
+                              key: const ValueKey('navigation-mode-menu'),
+                              menuId: 'navigation-mode-menu',
                               icon: Icons.view_day_outlined,
-                              title: '使用原生导航菜单',
-                              subtitle: settings.useNativeNavigation
-                                  ? '底部导航与播放条分开显示'
-                                  : '使用原有悬浮菜单与播放控件',
-                              value: settings.useNativeNavigation,
-                              onChanged: (value) => ref
-                                  .read(settingsProvider.notifier)
-                                  .setUseNativeNavigation(value),
+                              title: '导航模式',
+                              subtitle:
+                                  '${settings.navigationMode.label} · '
+                                  '${settings.navigationMode.description}',
+                              options: [
+                                for (final mode in AppNavigationMode.values)
+                                  SettingsMenuOption(
+                                    id: mode.code,
+                                    label: mode.label,
+                                    selected: mode == settings.navigationMode,
+                                    onSelected: () =>
+                                        _setNavigationMode(context, ref, mode),
+                                  ),
+                              ],
                             ),
                             const SizedBox(height: 4),
                             SettingsSwitchAction(
@@ -767,6 +772,22 @@ class SettingsPage extends ConsumerWidget {
         ? AppToastType.warning
         : AppToastType.success;
     showAppToast(context, '网络适配器已切换为 ${selected.label}', type: type);
+  }
+
+  Future<void> _setNavigationMode(
+    BuildContext context,
+    WidgetRef ref,
+    AppNavigationMode selected,
+  ) async {
+    final current = ref.read(settingsProvider).navigationMode;
+    if (selected == current) return;
+    await ref.read(settingsProvider.notifier).setNavigationMode(selected);
+    if (!context.mounted) return;
+    showAppToast(
+      context,
+      '导航模式已切换为 ${selected.label}',
+      type: AppToastType.success,
+    );
   }
 
   Future<void> _setSearchSourceEnabled(

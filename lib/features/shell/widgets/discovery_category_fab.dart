@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/playlist_category.dart';
+import '../../../core/storage/settings_store.dart';
 import '../../../theme/app_motion.dart';
 import '../../discovery/discovery_controller.dart';
 import '../../search/search_toolbar_state.dart';
@@ -29,7 +30,9 @@ class _DiscoveryCategoryFabLayerState
   @override
   Widget build(BuildContext context) {
     final bottomArea = ShellBottomArea.maybeOf(context);
-    if (bottomArea?.nativeNavigation == true && bottomArea!.extent == 0) {
+    if ((bottomArea?.nativeNavigation == true ||
+            bottomArea?.navigationMode == AppNavigationMode.dualCapsule) &&
+        bottomArea!.extent == 0) {
       return const SizedBox.shrink();
     }
     final source = ref.watch(selectedDiscoverySourceProvider);
@@ -54,9 +57,13 @@ class _DiscoveryCategoryFabLayerState
     final wideLayout = toolbarUsesWideMetrics(MediaQuery.sizeOf(context));
     final fabPadding = EdgeInsets.only(
       right: wideLayout ? 104 : 18,
-      bottom: bottomArea?.nativeNavigation == true
-          ? bottomArea!.extent - MediaQuery.paddingOf(context).bottom + 24
-          : 82,
+      bottom: switch (bottomArea?.navigationMode) {
+        AppNavigationMode.native =>
+          bottomArea!.extent - MediaQuery.paddingOf(context).bottom + 24,
+        AppNavigationMode.dualCapsule =>
+          bottomArea!.extent - MediaQuery.paddingOf(context).bottom + 16,
+        _ => 82,
+      },
     );
 
     return Stack(

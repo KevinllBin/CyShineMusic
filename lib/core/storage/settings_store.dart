@@ -20,6 +20,7 @@ const String _kColorStyleKey = 'theme_color_style';
 const String _kUseDynamicColorKey = 'use_dynamic_color';
 const String _kFlowingLightEnabledKey = 'flowing_light_enabled';
 const String _kUseNativeNavigationKey = 'use_native_navigation';
+const String _kNavigationModeKey = 'navigation_mode';
 const String _kNetworkAdapterModeKey = 'network_adapter_mode';
 const String _kEnabledSearchSourcesKey = 'enabled_search_source_codes';
 const String _kOnlinePlaybackQualityKey = 'online_playback_quality';
@@ -32,6 +33,25 @@ const String _kBluetoothLyricNoticeSeenKey = 'bluetooth_lyric_notice_seen';
 const String _kDebugModeKey = 'debug_mode';
 const String _kLegacyBaseUrlKey = 'base_url';
 
+enum AppNavigationMode {
+  singleCapsule('single_capsule', '单胶囊', '原有悬浮菜单与播放条滑动切换'),
+  dualCapsule('dual_capsule', '双胶囊', '播放条与导航菜单独立为上下双胶囊'),
+  native('native', '原生导航', '底部系统级导航栏搭配悬浮播放条');
+
+  const AppNavigationMode(this.code, this.label, this.description);
+
+  final String code;
+  final String label;
+  final String description;
+
+  static AppNavigationMode fromCode(String? code) {
+    for (final mode in values) {
+      if (mode.code == code) return mode;
+    }
+    return singleCapsule;
+  }
+}
+
 @immutable
 class AppSettings {
   const AppSettings({
@@ -42,7 +62,7 @@ class AppSettings {
     required this.colorStyle,
     required this.useDynamicColor,
     required this.flowingLightEnabled,
-    required this.useNativeNavigation,
+    required this.navigationMode,
     required this.networkAdapterMode,
     required this.enabledSearchSources,
     required this.onlinePlaybackQuality,
@@ -65,7 +85,8 @@ class AppSettings {
   /// Whether the player backdrop animates its extracted colors. Off falls back
   /// to the static blurred-artwork backdrop.
   final bool flowingLightEnabled;
-  final bool useNativeNavigation;
+  final AppNavigationMode navigationMode;
+  bool get useNativeNavigation => navigationMode == AppNavigationMode.native;
   final NetworkAdapterMode networkAdapterMode;
   final Set<MusicSource> enabledSearchSources;
   final OnlinePlaybackQuality onlinePlaybackQuality;
@@ -88,6 +109,7 @@ class AppSettings {
     AppColorStyle? colorStyle,
     bool? useDynamicColor,
     bool? flowingLightEnabled,
+    AppNavigationMode? navigationMode,
     bool? useNativeNavigation,
     NetworkAdapterMode? networkAdapterMode,
     Set<MusicSource>? enabledSearchSources,
@@ -107,7 +129,12 @@ class AppSettings {
     colorStyle: colorStyle ?? this.colorStyle,
     useDynamicColor: useDynamicColor ?? this.useDynamicColor,
     flowingLightEnabled: flowingLightEnabled ?? this.flowingLightEnabled,
-    useNativeNavigation: useNativeNavigation ?? this.useNativeNavigation,
+    navigationMode: navigationMode ??
+        (useNativeNavigation != null
+            ? (useNativeNavigation
+                ? AppNavigationMode.native
+                : AppNavigationMode.singleCapsule)
+            : this.navigationMode),
     networkAdapterMode: networkAdapterMode ?? this.networkAdapterMode,
     enabledSearchSources: enabledSearchSources ?? this.enabledSearchSources,
     onlinePlaybackQuality: onlinePlaybackQuality ?? this.onlinePlaybackQuality,
@@ -130,7 +157,7 @@ class AppSettings {
     colorStyle: AppColorStyle.fallback,
     useDynamicColor: false,
     flowingLightEnabled: true,
-    useNativeNavigation: false,
+    navigationMode: AppNavigationMode.singleCapsule,
     networkAdapterMode: NetworkAdapterMode.system,
     enabledSearchSources: kDefaultEnabledSearchSources,
     onlinePlaybackQuality: OnlinePlaybackQuality.highest,
@@ -170,7 +197,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
       colorStyle: AppColorStyle.fromCode(_prefs.getString(_kColorStyleKey)),
       useDynamicColor: _prefs.getBool(_kUseDynamicColorKey) ?? false,
       flowingLightEnabled: _prefs.getBool(_kFlowingLightEnabledKey) ?? true,
-      useNativeNavigation: _prefs.getBool(_kUseNativeNavigationKey) ?? false,
+      navigationMode: _decodeNavigationMode(_prefs),
       networkAdapterMode: NetworkAdapterPreference.current,
       enabledSearchSources: decodeEnabledSearchSources(
         _prefs.getStringList(_kEnabledSearchSourcesKey),
@@ -191,6 +218,14 @@ class SettingsNotifier extends Notifier<AppSettings> {
           _prefs.getBool(_kBluetoothLyricNoticeSeenKey) ?? false,
       debugMode: _prefs.getBool(_kDebugModeKey) ?? false,
     );
+  }
+
+  static AppNavigationMode _decodeNavigationMode(SharedPreferences prefs) {
+    final code = prefs.getString(_kNavigationModeKey);
+    if (code != null) return AppNavigationMode.fromCode(code);
+    return (prefs.getBool(_kUseNativeNavigationKey) ?? false)
+        ? AppNavigationMode.native
+        : AppNavigationMode.singleCapsule;
   }
 
   Future<void> setDownloadDir(String value) async {
@@ -236,9 +271,19 @@ class SettingsNotifier extends Notifier<AppSettings> {
     state = state.copyWith(flowingLightEnabled: value);
   }
 
+  Future<void> setNavigationMode(AppNavigationMode mode) async {
+    await _prefs.setString(_kNavigationModeKey, mode.code);
+    await _prefs.setBool(
+      _kUseNativeNavigationKey,
+      mode == AppNavigationMode.native,
+    );
+    state = state.copyWith(navigationMode: mode);
+  }
+
   Future<void> setUseNativeNavigation(bool value) async {
-    await _prefs.setBool(_kUseNativeNavigationKey, value);
-    state = state.copyWith(useNativeNavigation: value);
+    await setNavigationMode(
+      value ? AppNavigationMode.native : AppNavigationMode.singleCapsule,
+    );
   }
 
   Map<String, dynamic> exportAppearanceForSync() => {

@@ -24,6 +24,7 @@ import 'shell_toolbar_visibility.dart';
 import 'tab_location_memory.dart';
 import 'widgets/bottom_toolbar.dart';
 import 'widgets/discovery_category_fab.dart';
+import 'widgets/dual_capsule_bottom_navigation.dart';
 import 'widgets/native_bottom_navigation.dart';
 import 'widgets/search_paging_fab.dart';
 import 'widgets/shell_header.dart';
@@ -449,7 +450,8 @@ class _AppShellState extends ConsumerState<AppShell>
     // While a player pull owns the toolbar reveal, scrolling must not fight it.
     if (_pullActive ||
         _settleTarget == 0 ||
-        ref.read(settingsProvider).useNativeNavigation) {
+        ref.read(settingsProvider).navigationMode !=
+            AppNavigationMode.singleCapsule) {
       return false;
     }
     final songsBatchMode =
@@ -585,18 +587,18 @@ class _AppShellState extends ConsumerState<AppShell>
         isImmersivePlaylist || isDiscoveryLocation(contentLocation);
     final toolbarTravelExtent = _bottomToolbarTravelExtent(context);
     _toolbarTravelExtent = toolbarTravelExtent;
-    final useNativeNavigation = ref.watch(
-      settingsProvider.select((settings) => settings.useNativeNavigation),
+    final navigationMode = ref.watch(
+      settingsProvider.select((settings) => settings.navigationMode),
     );
-    final showNativePlayer =
-        useNativeNavigation &&
+    final showPlayerBar =
+        navigationMode != AppNavigationMode.singleCapsule &&
         ref.watch(
           playerControllerProvider.select(
             (state) => state.hasTrack || state.loading,
           ),
         );
-    final nativeControlsVisible =
-        useNativeNavigation &&
+    final shellControlsVisible =
+        navigationMode != AppNavigationMode.singleCapsule &&
         MediaQuery.viewInsetsOf(context).bottom == 0 &&
         ref.watch(shellToolbarVisibleProvider) &&
         !(isSongsLibraryLocation(contentLocation) &&
@@ -609,17 +611,24 @@ class _AppShellState extends ConsumerState<AppShell>
                 (state) => state.batchMode,
               ),
             ));
-    final nativeBottomExtent = nativeControlsVisible
-        ? nativeBottomAreaHeight(context, showPlayer: showNativePlayer)
+    final nativeBottomExtent = shellControlsVisible &&
+            navigationMode == AppNavigationMode.native
+        ? nativeBottomAreaHeight(context, showPlayer: showPlayerBar)
         : 0.0;
     // The player strip floats over content; only the navigation bar below it
     // pushes the page up.
-    final nativeFloatingExtent = nativeControlsVisible && showNativePlayer
+    final nativeFloatingExtent = shellControlsVisible &&
+            navigationMode == AppNavigationMode.native &&
+            showPlayerBar
         ? nativeFloatingPlayerExtent(context)
         : 0.0;
+    final dualBottomExtent = shellControlsVisible &&
+            navigationMode == AppNavigationMode.dualCapsule
+        ? dualCapsuleBottomAreaHeight(context, showPlayer: showPlayerBar)
+        : 0.0;
 
-    ref.listen<bool>(
-      settingsProvider.select((settings) => settings.useNativeNavigation),
+    ref.listen<AppNavigationMode>(
+      settingsProvider.select((settings) => settings.navigationMode),
       (previous, next) {
         _toolbarScrollSequenceActive = false;
         _lastToolbarScrollDelta = 0;
@@ -662,9 +671,17 @@ class _AppShellState extends ConsumerState<AppShell>
         child: PlayerPullScope(
           gestures: _pullGestures,
           child: ShellBottomArea(
-            nativeNavigation: useNativeNavigation,
-            extent: nativeBottomExtent,
-            floatingExtent: nativeFloatingExtent,
+            navigationMode: navigationMode,
+            extent: switch (navigationMode) {
+              AppNavigationMode.native => nativeBottomExtent,
+              AppNavigationMode.dualCapsule => dualBottomExtent,
+              AppNavigationMode.singleCapsule => 0.0,
+            },
+            floatingExtent: switch (navigationMode) {
+              AppNavigationMode.native => nativeFloatingExtent,
+              AppNavigationMode.dualCapsule => dualBottomExtent,
+              AppNavigationMode.singleCapsule => 0.0,
+            },
             child: Scaffold(
               extendBody: true,
               resizeToAvoidBottomInset: true,
@@ -684,11 +701,15 @@ class _AppShellState extends ConsumerState<AppShell>
                         // The immersive player page fills the whole screen and
                         // handles its own bottom safe area internally.
                         padding: EdgeInsets.only(
-                          bottom: useNativeNavigation
-                              ? nativeControlsVisible
-                                    ? nativeBottomExtent - nativeFloatingExtent
-                                    : MediaQuery.paddingOf(context).bottom
-                              : math.max(bottomInset, 12),
+                          bottom: switch (navigationMode) {
+                            AppNavigationMode.native => shellControlsVisible
+                                ? nativeBottomExtent - nativeFloatingExtent
+                                : MediaQuery.paddingOf(context).bottom,
+                            AppNavigationMode.dualCapsule =>
+                              math.max(bottomInset, 12),
+                            AppNavigationMode.singleCapsule =>
+                              math.max(bottomInset, 12),
+                          },
                         ),
                         child: Column(
                           children: [
@@ -788,20 +809,30 @@ class _AppShellState extends ConsumerState<AppShell>
                           ),
                         );
                       },
-                      child: useNativeNavigation
-                          ? NativeBottomNavigation(
-                              location: contentLocation,
-                              routeLocation: contentRoute,
-                              showPlayer: showNativePlayer,
-                              visible: nativeControlsVisible,
-                              reveal: _toolbarRevealController,
-                            )
-                          : BottomToolbar(
-                              location: contentLocation,
-                              routeLocation: contentRoute,
-                              reveal: _toolbarRevealController,
-                              travelExtent: toolbarTravelExtent,
-                            ),
+                      child: switch (navigationMode) {
+                        AppNavigationMode.dualCapsule =>
+                          DualCapsuleBottomNavigation(
+                            location: contentLocation,
+                            routeLocation: contentRoute,
+                            showPlayer: showPlayerBar,
+                            visible: shellControlsVisible,
+                            reveal: _toolbarRevealController,
+                            isPlayer: isPlayer,
+                          ),
+                        AppNavigationMode.native => NativeBottomNavigation(
+                            location: contentLocation,
+                            routeLocation: contentRoute,
+                            showPlayer: showPlayerBar,
+                            visible: shellControlsVisible,
+                            reveal: _toolbarRevealController,
+                          ),
+                        AppNavigationMode.singleCapsule => BottomToolbar(
+                            location: contentLocation,
+                            routeLocation: contentRoute,
+                            reveal: _toolbarRevealController,
+                            travelExtent: toolbarTravelExtent,
+                          ),
+                      },
                     ),
                   ),
                   _buildSharedCoverLayer(),

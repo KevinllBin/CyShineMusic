@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../theme/app_motion.dart';
@@ -40,9 +42,11 @@ class MiniPlayerBar extends ConsumerWidget {
     final canControl = track != null && !vm.loading;
     // Narrow capsules (small screens at min action width) drop the artist
     // line and shrink the artwork/buttons so everything still fits.
+    // Shorter capsules (the secondary player in dual capsule mode) scale the
+    // artwork and buttons down so they keep an even inset inside the pill.
     final compact = width < 240;
-    final coverSize = compact ? 36.0 : 44.0;
-    final buttonSize = compact ? 36.0 : 40.0;
+    final coverSize = math.min(compact ? 36.0 : 44.0, height - 8);
+    final buttonSize = math.min(compact ? 36.0 : 40.0, height - 6);
 
     return Row(
       children: [

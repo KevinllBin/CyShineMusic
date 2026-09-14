@@ -160,6 +160,32 @@ void main() {
     expect(disabled.read(settingsProvider).useNativeNavigation, isFalse);
   });
 
+  test('navigation mode persists across restarts and supports dual capsule', () async {
+    final prefs = await SharedPreferences.getInstance();
+    final container = _settingsContainer(prefs);
+    expect(AppSettings.fallback.navigationMode, AppNavigationMode.singleCapsule);
+    expect(container.read(settingsProvider).navigationMode, AppNavigationMode.singleCapsule);
+
+    await container
+        .read(settingsProvider.notifier)
+        .setNavigationMode(AppNavigationMode.dualCapsule);
+    container.dispose();
+
+    final restored = _settingsContainer(prefs);
+    expect(restored.read(settingsProvider).navigationMode, AppNavigationMode.dualCapsule);
+    expect(restored.read(settingsProvider).useNativeNavigation, isFalse);
+
+    await restored
+        .read(settingsProvider.notifier)
+        .setNavigationMode(AppNavigationMode.native);
+    restored.dispose();
+
+    final nativeMode = _settingsContainer(prefs);
+    addTearDown(nativeMode.dispose);
+    expect(nativeMode.read(settingsProvider).navigationMode, AppNavigationMode.native);
+    expect(nativeMode.read(settingsProvider).useNativeNavigation, isTrue);
+  });
+
   test('player preferences persist', () async {
     final prefs = await SharedPreferences.getInstance();
     final container = _settingsContainer(prefs);
