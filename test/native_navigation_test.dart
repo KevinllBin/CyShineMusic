@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -275,7 +278,7 @@ void main() {
     await tester.binding.handlePopRoute();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 120));
-    expect(harness.location, '/player');
+    expect(harness.location, '/settings');
     expect(transition.progress.value, inExclusiveRange(0, 1));
     expect(tester.element(find.byType(SettingsPage)), same(originalPage));
     await _pumpUi(tester);
@@ -284,29 +287,209 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('a released closing spring does not capture another list drag', (
+    tester,
+  ) async {
+    final harness = await _pumpApp(tester);
+    await tester.tap(find.byTooltip('打开播放页'));
+    await _pumpUi(tester);
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+    final player = tester.widget<PlayerPage>(find.byType(PlayerPage));
+    final closingProgress = player.progress.value;
+    final scrollable = tester.state<ScrollableState>(
+      find
+          .descendant(
+            of: find.byType(SettingsPage),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    final before = scrollable.position.pixels;
+    final gesture = await tester.startGesture(const Offset(120, 260));
+    await gesture.moveBy(const Offset(0, -20));
+    await tester.pump(const Duration(milliseconds: 16));
+    await gesture.moveBy(const Offset(0, -220));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(scrollable.position.pixels, greaterThan(before));
+    expect(player.progress.value, lessThan(closingProgress));
+    expect(harness.location, '/settings');
+    await gesture.up();
+    await _pumpUi(tester);
+    expect(harness.location, '/settings');
+    expect(
+      tester.widget<PlayerPage>(find.byType(PlayerPage)).progress.value,
+      0,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
-    'a closing spring can be grabbed and reversed without a stale pop',
+    'visible navigation accepts taps before the closing tail finishes',
     (tester) async {
       final harness = await _pumpApp(tester);
       await tester.tap(find.byTooltip('打开播放页'));
       await _pumpUi(tester);
       await tester.binding.handlePopRoute();
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 80));
-      final gesture = await tester.startGesture(
-        tester.getCenter(find.byKey(const ValueKey('player-shared-cover'))),
+      await tester.pump(const Duration(milliseconds: 240));
+      final player = tester.widget<PlayerPage>(find.byType(PlayerPage));
+      expect(player.progress.value, inExclusiveRange(0, .2));
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.text('歌曲'),
+        ),
       );
-      await gesture.moveBy(const Offset(0, -20));
       await tester.pump();
-      await gesture.moveBy(const Offset(0, -220));
+      expect(harness.location, '/songs');
+      expect(player.progress.value, greaterThan(0));
+      await _pumpUi(tester);
+      expect(harness.location, '/songs');
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final native in [false, true]) {
+    testWidgets(
+      'a released player drag lets the list scroll through its remaining surface (native=$native)',
+      (tester) async {
+        final harness = await _pumpApp(tester, native: native);
+        if (!native) {
+          await tester.drag(find.byType(BottomToolbar), const Offset(-180, 0));
+          await _pumpUi(tester);
+        }
+        await tester.tap(find.byTooltip('打开播放页'));
+        await _pumpUi(tester);
+        final player = tester.widget<PlayerPage>(find.byType(PlayerPage));
+        final closing = await tester.startGesture(
+          tester.getCenter(
+            find.byKey(const ValueKey('player-cover-menu-button')),
+          ),
+        );
+        await closing.moveBy(const Offset(0, 20));
+        await tester.pump();
+        await closing.moveBy(const Offset(0, 240));
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(harness.location, '/player');
+        await closing.up();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 30));
+        expect(harness.location, '/settings');
+        final beforeProgress = player.progress.value;
+        expect(beforeProgress, inExclusiveRange(0, 1));
+        final scrollable = tester.state<ScrollableState>(
+          find
+              .descendant(
+                of: find.byType(SettingsPage),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        );
+        final beforeOffset = scrollable.position.pixels;
+        final newTouch = await tester.startGesture(
+          tester.getCenter(find.byKey(const ValueKey('player-shared-cover'))),
+        );
+        await newTouch.moveBy(const Offset(0, -20));
+        await tester.pump(const Duration(milliseconds: 16));
+        await newTouch.moveBy(const Offset(0, -120));
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(scrollable.position.pixels, greaterThan(beforeOffset));
+        expect(player.progress.value, lessThan(beforeProgress));
+        await newTouch.up();
+        await _pumpUi(tester);
+        expect(player.progress.value, 0);
+        expect(harness.location, '/settings');
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'closing cover stays opaque above capsule chrome (native=$native)',
+      (tester) async {
+        final captureKey = GlobalKey();
+        final bytes = base64Decode(
+          'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAN0lEQVR4nO3QQREAMAgDQYoKZCGxTstUBZ+Ngcvsqb4vFpebcQcIECBAgAABAgQIECBAgACBLzDAagJHFpD83wAAAABJRU5ErkJggg==',
+        );
+        final state = _playing.copyWith(
+          playing: false,
+          track: PlayerTrack(
+            id: 'opaque-cover',
+            kind: PlayerTrackKind.localFile,
+            title: '封面测试',
+            artist: '测试',
+            album: '测试',
+            sourceLabel: '本地',
+            qualityLabel: 'flac',
+            coverBytes: bytes,
+          ),
+        );
+        await _pumpApp(
+          tester,
+          native: native,
+          initialState: state,
+          captureKey: captureKey,
+        );
+        if (!native) {
+          await tester.drag(find.byType(BottomToolbar), const Offset(-180, 0));
+          await _pumpUi(tester);
+        }
+        await tester.runAsync(
+          () => precacheImage(
+            ResizeImage(MemoryImage(bytes), width: 480, height: 480),
+            tester.element(find.byType(MiniPlayerBar)),
+          ),
+        );
+        await tester.pump();
+        final anchor = find.descendant(
+          of: find.byType(MiniPlayerBar),
+          matching: find.byType(PlayerCoverAnchor),
+        );
+        expect(
+          await _coverPixel(tester, captureKey, tester.getCenter(anchor)),
+          [24, 80, 160, 255],
+        );
+        await tester.tap(find.byTooltip('打开播放页'));
+        await _pumpUi(tester);
+        await tester.binding.handlePopRoute();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        final p = tester
+            .widget<PlayerPage>(find.byType(PlayerPage))
+            .progress
+            .value;
+        expect(p, inExclusiveRange(0, .12));
+        final flight = find.byKey(const ValueKey('player-shared-cover'));
+        expect(
+          await _coverPixel(tester, captureKey, tester.getCenter(flight)),
+          [24, 80, 160, 255],
+        );
+        await _pumpUi(tester);
+        expect(
+          await _coverPixel(tester, captureKey, tester.getCenter(anchor)),
+          [24, 80, 160, 255],
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'an explicit capsule tap can reopen the player during its closing tail',
+    (tester) async {
+      final harness = await _pumpApp(tester);
+      await tester.tap(find.byTooltip('打开播放页'));
+      await _pumpUi(tester);
+      await tester.binding.handlePopRoute();
       await tester.pump();
-      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 300));
+      final player = tester.widget<PlayerPage>(find.byType(PlayerPage));
+      expect(player.progress.value, inExclusiveRange(0, .2));
+      await tester.tap(find.byTooltip('打开播放页'));
       await _pumpUi(tester);
       expect(harness.location, '/player');
-      expect(
-        tester.widget<PlayerPage>(find.byType(PlayerPage)).progress.value,
-        1,
-      );
+      expect(player.progress.value, 1);
       await tester.binding.handlePopRoute();
       await _pumpUi(tester);
       expect(harness.location, '/settings');
@@ -424,6 +607,7 @@ Future<_Harness> _pumpApp(
   PlayerState initialState = _playing,
   Size size = const Size(390, 844),
   double textScale = 1,
+  GlobalKey? captureKey,
 }) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
@@ -463,7 +647,7 @@ Future<_Harness> _pumpApp(
           data: MediaQuery.of(
             context,
           ).copyWith(textScaler: TextScaler.linear(textScale)),
-          child: child!,
+          child: RepaintBoundary(key: captureKey, child: child!),
         ),
         routerConfig: router,
       ),
@@ -490,4 +674,26 @@ Future<void> _pumpUi(WidgetTester tester) async {
   for (var index = 0; index < 12; index++) {
     await tester.pump(const Duration(milliseconds: 100));
   }
+}
+
+Future<List<int>?> _coverPixel(
+  WidgetTester tester,
+  GlobalKey key,
+  Offset global,
+) {
+  final boundary =
+      key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+  final point = boundary.globalToLocal(global);
+  return tester.runAsync(() async {
+    final image = await boundary.toImage();
+    try {
+      final bytes = (await image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      ))!;
+      final offset = (point.dy.floor() * image.width + point.dx.floor()) * 4;
+      return List.generate(4, (i) => bytes.getUint8(offset + i));
+    } finally {
+      image.dispose();
+    }
+  });
 }

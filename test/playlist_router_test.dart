@@ -95,7 +95,10 @@ void main() {
       await tester.binding.handlePopRoute();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 120));
-      expect(router.routeInformationProvider.value.uri.path, '/player');
+      expect(
+        router.routeInformationProvider.value.uri.toString(),
+        '/playlists/night?from=manage',
+      );
       final exitSlide = tester.widget<PlayerPage>(find.byType(PlayerPage));
       expect((1 - exitSlide.progress.value), greaterThan(0));
       expect((1 - exitSlide.progress.value), lessThan(1));
@@ -434,7 +437,7 @@ void main() {
     expect(await tester.binding.handlePopRoute(), isTrue);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 120));
-    expect(router.routeInformationProvider.value.uri.path, '/player');
+    expect(router.routeInformationProvider.value.uri.path, '/songs');
     final exitSlide = tester.widget<PlayerPage>(find.byType(PlayerPage));
     expect((1 - exitSlide.progress.value), greaterThan(0));
     await _pumpUi(tester);

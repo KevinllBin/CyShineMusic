@@ -158,15 +158,17 @@ class _AppShellState extends ConsumerState<AppShell>
         }
       } else {
         if (oldWidget.location == '/player') {
-          // The dismiss animation has already parked it off screen; this is
-          // just a backstop for navigation that bypassed _dismissPlayer.
-          _pullGeneration++;
-          _settleTarget = null;
           _settledExpanded = false;
-          _pull.stop();
-          _pull.value = 0;
-          _animateToolbarTo(1);
-        } else if (oldWidget.location != '/player') {
+          // Closing releases the route immediately. Its visual tail remains
+          // in this shell and must not be snapped away by the route update.
+          if (_settleTarget != 0) {
+            _pullGeneration++;
+            _settleTarget = null;
+            _pull.stop();
+            _pull.value = 0;
+            _animateToolbarTo(1);
+          }
+        } else if (_settleTarget != 0) {
           _playerReturnLocation = normalizedPlayerReturnLocation(
             widget.location,
             _playerReturnLocation,
@@ -188,6 +190,7 @@ class _AppShellState extends ConsumerState<AppShell>
       : widget.location;
 
   void _handlePullWarm() {
+    if (_settleTarget == 0) return;
     _transition.capture();
     if (!_playerLayerMounted) setState(() => _playerLayerMounted = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -203,6 +206,9 @@ class _AppShellState extends ConsumerState<AppShell>
   }
 
   void _handlePullStart({bool fromPlayer = false}) {
+    // A released dismiss belongs to the underlying page. Only an explicit
+    // new pull on the capsule may open the player again during its tail.
+    if (fromPlayer && _settleTarget == 0) return;
     _pullGeneration++;
     _settleTarget = null;
     _pull.stop();
@@ -281,16 +287,14 @@ class _AppShellState extends ConsumerState<AppShell>
     double velocityDy = 0,
   }) async {
     final generation = ++_pullGeneration;
-    _settleTarget = 0;
+    _pullActive = false;
+    setState(() {
+      _settleTarget = 0;
+      _settledExpanded = false;
+    });
     _transition.capture();
-    try {
-      await _animatePullTo(0, velocityDy: velocityDy).orCancel;
-    } on TickerCanceled {
-      return;
-    }
-    if (!mounted || generation != _pullGeneration || _pull.value != 0) return;
-    _settledExpanded = false;
-    _settleTarget = null;
+    // Remove the transparent route and its modal barrier before animating,
+    // so the next pointer can scroll/click the live page immediately.
     if (widget.location == '/player') {
       if (destination == null && GoRouter.of(context).canPop()) {
         context.pop();
@@ -298,6 +302,13 @@ class _AppShellState extends ConsumerState<AppShell>
         context.go(destination ?? _playerReturnLocation);
       }
     }
+    try {
+      await _animatePullTo(0, velocityDy: velocityDy).orCancel;
+    } on TickerCanceled {
+      return;
+    }
+    if (!mounted || generation != _pullGeneration || _pull.value != 0) return;
+    setState(() => _settleTarget = null);
     _animateToolbarTo(1);
   }
 
@@ -349,7 +360,10 @@ class _AppShellState extends ConsumerState<AppShell>
       return true;
     }
     // Mid-pull: put the player back where it came from instead of navigating.
-    if (_pullActive || (_pull.value > 0 && widget.location != '/player')) {
+    if (_pullActive ||
+        (_pull.value > 0 &&
+            _settleTarget != 0 &&
+            widget.location != '/player')) {
       _pullActive = false;
       unawaited(_settleClosed());
       return true;
@@ -433,7 +447,9 @@ class _AppShellState extends ConsumerState<AppShell>
 
   bool _handleToolbarScrollNotification(ScrollNotification notification) {
     // While a player pull owns the toolbar reveal, scrolling must not fight it.
-    if (_pullActive || ref.read(settingsProvider).useNativeNavigation) {
+    if (_pullActive ||
+        _settleTarget == 0 ||
+        ref.read(settingsProvider).useNativeNavigation) {
       return false;
     }
     final songsBatchMode =
@@ -760,13 +776,18 @@ class _AppShellState extends ConsumerState<AppShell>
                     bottom: 0,
                     child: AnimatedBuilder(
                       animation: _pull,
-                      builder: (context, child) => IgnorePointer(
-                        ignoring: _pull.value > 0,
-                        child: ExcludeSemantics(
-                          excluding: _pull.value > 0,
-                          child: child!,
-                        ),
-                      ),
+                      builder: (context, child) {
+                        final blocked =
+                            _pull.value > 0 &&
+                            !(_settleTarget == 0 && _pull.value < 0.2);
+                        return IgnorePointer(
+                          ignoring: blocked,
+                          child: ExcludeSemantics(
+                            excluding: blocked,
+                            child: child!,
+                          ),
+                        );
+                      },
                       child: useNativeNavigation
                           ? NativeBottomNavigation(
                               location: contentLocation,
@@ -783,6 +804,7 @@ class _AppShellState extends ConsumerState<AppShell>
                             ),
                     ),
                   ),
+                  _buildSharedCoverLayer(),
                 ],
               ),
             ),
@@ -803,22 +825,7 @@ class _AppShellState extends ConsumerState<AppShell>
         child: SizedBox.shrink(),
       );
     }
-    final track = ref.watch(playerControllerProvider.select((s) => s.track));
     final scheme = Theme.of(context).colorScheme;
-    final cover = RepaintBoundary(
-      child: RotationTransition(
-        turns: _coverRotation,
-        child: PlayerArtworkImage(
-          url: CoverImageSource.normalizeUrl(track?.coverUrl, size: 700),
-          bytes: track?.coverBytes,
-          animate: false,
-          placeholder: ColoredBox(
-            color: scheme.surfaceContainerHighest,
-            child: const Center(child: Icon(Icons.album_rounded)),
-          ),
-        ),
-      ),
-    );
     return Positioned(
       key: const ValueKey('shell-player'),
       left: 0,
@@ -839,11 +846,11 @@ class _AppShellState extends ConsumerState<AppShell>
           builder: (context, child) {
             final p = _pull.value;
             final visible = p > 0 || isPlayer;
-            final flight = track == null ? null : _transition.coverRect;
+            final interactive = visible && _settleTarget != 0;
             return IgnorePointer(
-              ignoring: !visible,
+              ignoring: !interactive,
               child: ExcludeSemantics(
-                excluding: !visible,
+                excluding: !interactive,
                 child: TickerMode(
                   enabled: visible,
                   child: Opacity(
@@ -868,14 +875,6 @@ class _AppShellState extends ConsumerState<AppShell>
                               ],
                             ),
                           ),
-                          if (flight != null)
-                            Positioned.fromRect(
-                              key: const ValueKey('player-shared-cover'),
-                              rect: flight,
-                              child: IgnorePointer(
-                                child: ClipOval(child: cover),
-                              ),
-                            ),
                         ],
                       ),
                     ),
@@ -884,6 +883,53 @@ class _AppShellState extends ConsumerState<AppShell>
               ),
             );
           },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSharedCoverLayer() {
+    final track = ref.watch(playerControllerProvider.select((s) => s.track));
+    final scheme = Theme.of(context).colorScheme;
+    // Paint above the returning capsule background. This overlay never owns
+    // input, even while the cover overlaps an interactive part of the page.
+    return Positioned.fill(
+      key: const ValueKey('shell-shared-cover'),
+      child: IgnorePointer(
+        child: ExcludeSemantics(
+          child: AnimatedBuilder(
+            animation: _transition,
+            child: RepaintBoundary(
+              child: RotationTransition(
+                turns: _coverRotation,
+                child: PlayerArtworkImage(
+                  url: CoverImageSource.normalizeUrl(
+                    track?.coverUrl,
+                    size: 700,
+                  ),
+                  bytes: track?.coverBytes,
+                  animate: false,
+                  placeholder: ColoredBox(
+                    color: scheme.surfaceContainerHighest,
+                    child: const Center(child: Icon(Icons.album_rounded)),
+                  ),
+                ),
+              ),
+            ),
+            builder: (context, child) {
+              final flight = track == null ? null : _transition.coverRect;
+              return Stack(
+                children: [
+                  if (flight != null)
+                    Positioned.fromRect(
+                      key: const ValueKey('player-shared-cover'),
+                      rect: flight,
+                      child: ClipOval(child: child),
+                    ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
