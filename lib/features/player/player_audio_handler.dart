@@ -151,6 +151,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   Future<void> setAllowMixWithOthers(bool value) async {
+    unawaited(
+      AppLogger.write('audio-session', 'configure allowMixWithOthers=$value'),
+    );
     _allowMixWithOthers = value;
     final session = await AudioSession.instance;
     _bindAudioSessionEvents(session);
@@ -173,12 +176,20 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       (event) => unawaited(handleAudioInterruption(event)),
     );
     _becomingNoisySubscription ??= session.becomingNoisyEventStream.listen(
-      (_) => unawaited(pause()),
+      (_) => unawaited(_pausePlayer(reason: 'becoming_noisy')),
     );
   }
 
   @visibleForTesting
   Future<void> handleAudioInterruption(AudioInterruptionEvent event) async {
+    unawaited(
+      AppLogger.write(
+        'audio-session',
+        'interruption begin=${event.begin} type=${event.type.name} '
+            'playing=${_player.playing} allowMixWithOthers=$_allowMixWithOthers '
+            'resumeAfterInterruption=$_resumeAfterInterruption',
+      ),
+    );
     if (event.type == AudioInterruptionType.duck) {
       _ducked = event.begin;
       await _player.setVolume(event.begin ? 0.2 : 1);
@@ -187,7 +198,10 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     if (event.begin) {
       _resumeAfterInterruption = _player.playing;
       if (_resumeAfterInterruption) {
-        await _pausePlayer(preserveInterruptionResume: true);
+        await _pausePlayer(
+          preserveInterruptionResume: true,
+          reason: 'audio_interruption_${event.type.name}',
+        );
       }
       return;
     }
@@ -242,7 +256,10 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _currentMediaItem = item;
     mediaItem.add(item);
     _broadcastState(_player.snapshot);
-    if (_player.playing) await _player.pause();
+    if (_player.playing) {
+      _logTransport('pause', reason: 'track_transition');
+      await _player.pause();
+    }
   }
 
   void failTrackTransition(Object error) {
@@ -404,7 +421,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       isAndroid: Platform.isAndroid,
     )) {
       final session = await AudioSession.instance;
-      if (!await session.setActive(true)) return;
+      final granted = await session.setActive(true);
+      unawaited(AppLogger.write('audio-session', 'activate granted=$granted'));
+      if (!granted) return;
     }
     if (pauseGeneration != _pauseGeneration) return;
     await _player.play();
@@ -413,19 +432,23 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> pause() => _pausePlayer();
 
-  Future<void> _pausePlayer({bool preserveInterruptionResume = false}) {
+  Future<void> _pausePlayer({
+    bool preserveInterruptionResume = false,
+    String reason = 'transport_callback',
+  }) {
     _pauseGeneration++;
     if (!preserveInterruptionResume) _resumeAfterInterruption = false;
-    _logTransport('pause');
+    _logTransport('pause', reason: reason);
     return _player.pause();
   }
 
   @override
   Future<void> click([MediaButton button = MediaButton.media]) async {
+    unawaited(AppLogger.write('player-control', 'media_button=${button.name}'));
     switch (button) {
       case MediaButton.media:
         if (_player.playing) {
-          await pause();
+          await _pausePlayer(reason: 'media_button');
         } else {
           await play();
         }
@@ -488,6 +511,20 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _logTransport('stop');
     await _player.stop();
     await super.stop();
+  }
+
+  @override
+  Future<void> onTaskRemoved() async {
+    _logTransport('task_removed');
+    await super.onTaskRemoved();
+    await AppLogger.flush();
+  }
+
+  @override
+  Future<void> onNotificationDeleted() async {
+    _logTransport('notification_deleted');
+    await super.onNotificationDeleted();
+    await AppLogger.flush();
   }
 
   Future<void> disposeHandler() async {
@@ -593,7 +630,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     );
   }
 
-  void _logTransport(String action, {Duration? target}) {
+  void _logTransport(String action, {Duration? target, String? reason}) {
     final extras = _currentMediaItem?.extras;
     final kind = extras?['trackKind']?.toString() ?? 'none';
     final source = extras?['source']?.toString() ?? 'none';
@@ -602,6 +639,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
       AppLogger.write(
         'player-transport',
         'action=$action state=${_player.processingState.name} '
+            'reason=${reason ?? 'transport_callback'} '
+            'lifecycle=${WidgetsBinding.instance.lifecycleState?.name ?? 'unknown'} '
             'playing=${_player.playing} positionMs=${_player.position.inMilliseconds} '
             'targetMs=${target?.inMilliseconds ?? -1} '
             'kind=$kind source=$source quality=$quality',

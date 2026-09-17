@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.os.storage.StorageManager
 import android.os.storage.StorageVolume
 import android.view.Display
@@ -17,6 +18,7 @@ import android.view.Surface
 import android.view.SurfaceView
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
 import com.cyshine.music.source.MusicSourceRuntimeBridge
@@ -190,6 +192,25 @@ class MainActivity : AudioServiceActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "moveToBack" -> result.success(moveTaskToBack(true))
+                    "diagnostics" -> {
+                        val power = getSystemService(POWER_SERVICE) as PowerManager
+                        result.success(mapOf(
+                            "manufacturer" to Build.MANUFACTURER,
+                            "model" to Build.MODEL,
+                            "androidRelease" to Build.VERSION.RELEASE,
+                            "sdk" to Build.VERSION.SDK_INT,
+                            "abis" to Build.SUPPORTED_ABIS.toList(),
+                            "powerSaveMode" to power.isPowerSaveMode,
+                            "batteryOptimizationIgnored" to (
+                                Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+                                    power.isIgnoringBatteryOptimizations(packageName)
+                            ),
+                            "deviceIdleMode" to (
+                                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && power.isDeviceIdleMode
+                            ),
+                            "notificationsEnabled" to NotificationManagerCompat.from(this).areNotificationsEnabled(),
+                        ))
+                    }
                     else -> result.notImplemented()
                 }
             }

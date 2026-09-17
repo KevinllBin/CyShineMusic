@@ -1,7 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -11,7 +15,6 @@ import 'package:path_provider/path_provider.dart';
 class AppLogger {
   const AppLogger._();
 
-  static final _queue = StreamController<String>(sync: false);
   static final _live = StreamController<String>.broadcast(sync: false);
   static final List<String> _recent = <String>[];
   static File? _file;
@@ -19,6 +22,56 @@ class AppLogger {
   static Future<void>? _initFuture;
   static const _maxBytes = 1024 * 1024;
   static const _maxRecentLines = 500;
+  static final sessionId = '${DateTime.now().microsecondsSinceEpoch}-$pid';
+  static String _environment = 'environment=unavailable';
+  static String _androidDiagnostics = 'unavailable';
+
+  static Future<void> logEnvironment() async {
+    final environment = <String, Object?>{
+      'platform': Platform.operatingSystem,
+      'os': Platform.operatingSystemVersion,
+      'mode': kReleaseMode ? 'release' : (kProfileMode ? 'profile' : 'debug'),
+      'timezone': DateTime.now().timeZoneName,
+      'utcOffsetMinutes': DateTime.now().timeZoneOffset.inMinutes,
+    };
+    try {
+      final info = await PackageInfo.fromPlatform().timeout(
+        const Duration(seconds: 2),
+      );
+      environment.addAll({
+        'app': info.appName,
+        'package': info.packageName,
+        'version': info.version,
+        'build': info.buildNumber,
+      });
+    } catch (error) {
+      environment['packageInfoError'] = error.toString();
+    }
+    _environment = jsonEncode(environment);
+    await write('app-session', 'start environment=$_environment');
+    await logAndroidDiagnostics('startup');
+  }
+
+  static Future<void> logAndroidDiagnostics(String reason) async {
+    if (!Platform.isAndroid) return;
+    try {
+      final data = await const MethodChannel('cy_shine_music/app_task')
+          .invokeMapMethod<String, dynamic>('diagnostics')
+          .timeout(const Duration(seconds: 2));
+      _androidDiagnostics = jsonEncode(data);
+      await write(
+        'android-runtime',
+        'reason=$reason data=$_androidDiagnostics',
+      );
+    } catch (error) {
+      await write('android-runtime', 'reason=$reason unavailable=$error');
+    }
+  }
+
+  static String exportText(List<String> lines) =>
+      '${DateTime.now().toIso8601String()} [log-export] session=$sessionId '
+      'pid=$pid environment=$_environment '
+      'lastAndroidSnapshot=$_androidDiagnostics\n${lines.join('\n')}';
 
   static Future<void> _ensureInit() => _initFuture ??= _initialize();
 
@@ -35,22 +88,22 @@ class AppLogger {
       }
       _file = file;
       _sink = file.openWrite(mode: FileMode.writeOnlyAppend);
-      _queue.stream.listen((line) {
-        try {
-          _sink?.writeln(line);
-        } catch (_) {}
-      });
     } catch (_) {
       // Persistence is best-effort; console logging still works.
     }
   }
 
   static Future<void> write(String scope, String message) async {
-    final line = '${DateTime.now().toIso8601String()} [$scope] $message';
+    final line =
+        '${DateTime.now().toIso8601String()} [$scope] '
+        'session=$sessionId $message';
     developer.log(message, name: 'lx.$scope');
     _remember(line);
     await _ensureInit();
-    if (!_queue.isClosed) _queue.add(line);
+    // Write into the sink before completing so a following flush includes it.
+    try {
+      _sink?.writeln(line);
+    } catch (_) {}
   }
 
   static Stream<String> get liveLines => _live.stream;

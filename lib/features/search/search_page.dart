@@ -20,6 +20,7 @@ import '../discovery/discovery_controller.dart';
 import '../music_sources/music_source_action_guard.dart';
 import '../player/player_controller.dart';
 import '../playlists/playlist_browser_sheet.dart';
+import '../playlists/playlist_models.dart';
 import '../playlists/playlist_store.dart';
 import '../shell/widgets/shell_header.dart';
 import 'search_controller.dart';
@@ -219,12 +220,29 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   }
 
   Future<void> _play(MusicInfo music) async {
+    // Capture the visible page before awaiting the source check, since a new
+    // search or page change may replace the results while it is pending.
+    final results = List<MusicInfo>.of(
+      ref.read(searchControllerProvider).response?.list ?? [music],
+    );
     final available = await ensureOnlineMusicSourcesAvailable(context, [
       music.source,
     ]);
     if (!available || !mounted) return;
+    final entry = PlaylistTrack.fromMusicInfo(
+      music,
+    ).toQueueEntry(playlistId: 'search');
+    if (entry == null) return;
+    // Queue only metadata. The player resolves the selected song now and
+    // fetches other playback URLs only when those songs are played.
+    final queue = [
+      for (final result in results)
+        ?PlaylistTrack.fromMusicInfo(result).toQueueEntry(playlistId: 'search'),
+    ];
     openPlayer(context, returnLocation: '/');
-    await ref.read(playerControllerProvider.notifier).playFromMusic(music);
+    await ref
+        .read(playerControllerProvider.notifier)
+        .playFromPlaylistQueue(entry, queue);
   }
 
   Future<void> _selectPlaylistForMusic(MusicInfo music) async {

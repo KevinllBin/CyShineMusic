@@ -17,6 +17,8 @@ const double _swipeDragResistance = 0.55;
 const double _swipeMaxDrag = 44;
 const double _swipeBlockedMaxDrag = 14;
 const double _swipeExitExtent = 72;
+const double _swipeCommitOffset = 48 * _swipeDragResistance;
+const double _swipeFlingOffset = 12 * _swipeDragResistance;
 const Duration _swipeExitDuration = Duration(milliseconds: 130);
 
 class FloatingPlayerBar extends ConsumerStatefulWidget {
@@ -41,7 +43,6 @@ class _FloatingPlayerBarState extends ConsumerState<FloatingPlayerBar>
   late final AnimationController _shift = AnimationController.unbounded(
     vsync: this,
   );
-  double _horizontalDistance = 0;
   VoidCallback? _pendingSkip;
 
   @override
@@ -56,7 +57,6 @@ class _FloatingPlayerBarState extends ConsumerState<FloatingPlayerBar>
   }
 
   void _startHorizontalDrag(DragStartDetails details) {
-    _horizontalDistance = 0;
     _shift.stop();
     // A new swipe during the exit animation still honours the earlier swipe.
     _pendingSkip?.call();
@@ -64,7 +64,6 @@ class _FloatingPlayerBarState extends ConsumerState<FloatingPlayerBar>
 
   void _updateHorizontalDrag(DragUpdateDetails details) {
     final dx = details.delta.dx;
-    _horizontalDistance += dx;
     final target = _shift.value + dx * _swipeDragResistance;
     final limit = _canSwitchToward(ref.read(playerControllerProvider), target)
         ? _swipeMaxDrag
@@ -73,17 +72,18 @@ class _FloatingPlayerBarState extends ConsumerState<FloatingPlayerBar>
   }
 
   void _cancelHorizontalDrag() {
-    _horizontalDistance = 0;
     _settle(0);
   }
 
   void _finishHorizontalDrag(DragEndDetails details) {
-    final distance = _horizontalDistance;
-    _horizontalDistance = 0;
+    final offset = _shift.value;
     final velocity = details.velocity.pixelsPerSecond.dx;
-    final fling = distance.abs() >= 12 && velocity.abs() >= 450;
-    final direction = fling ? velocity : distance;
-    final commit = distance.abs() >= 48 || fling;
+    final fling =
+        offset.abs() >= _swipeFlingOffset &&
+        velocity.abs() >= 450 &&
+        velocity.sign == offset.sign;
+    final direction = fling ? velocity : offset;
+    final commit = offset.abs() >= _swipeCommitOffset || fling;
     if (!commit ||
         !_canSwitchToward(ref.read(playerControllerProvider), direction)) {
       _settle(velocity * _swipeDragResistance);

@@ -6,12 +6,14 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
+import 'core/services/app_logger.dart';
 import 'core/debug/debug_paint_guard.dart';
 import 'core/storage/settings_store.dart';
 import 'features/player/player_audio_handler.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await AppLogger.logEnvironment();
   DebugPaintGuard.install();
   if (Platform.isAndroid) {
     SystemChrome.setSystemUIOverlayStyle(

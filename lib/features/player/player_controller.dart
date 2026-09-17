@@ -540,6 +540,12 @@ class PlayerController extends StateNotifier<PlayerState>
       );
       try {
         if (!mounted || pauseGeneration != _sleepTimerPauseGeneration) return;
+        unawaited(
+          AppLogger.write(
+            'player-control',
+            'pause_request source=stall_recovery',
+          ),
+        );
         await _audioHandler.pause();
         if (!mounted ||
             pauseGeneration != _sleepTimerPauseGeneration ||
@@ -885,6 +891,9 @@ class PlayerController extends StateNotifier<PlayerState>
   }
 
   Future<void> pauseForSleepTimer() async {
+    unawaited(
+      AppLogger.write('player-control', 'pause_request source=sleep_timer'),
+    );
     // Leave an in-flight load intact, but revoke its permission to autoplay.
     _sleepTimerPauseGeneration++;
     _pausedBySleepTimer = true;
@@ -914,6 +923,9 @@ class PlayerController extends StateNotifier<PlayerState>
       return;
     }
     if (_audioHandler.playing) {
+      unawaited(
+        AppLogger.write('player-control', 'pause_request source=app_toggle'),
+      );
       await _audioHandler.pause();
       _persistPositionCheckpoint();
     } else {
@@ -1701,6 +1713,19 @@ class PlayerController extends StateNotifier<PlayerState>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    unawaited(
+      AppLogger.write(
+        'app-lifecycle',
+        'state=${state.name} playing=${_audioHandler.playing} '
+            'processing=${_audioHandler.processingState.name} '
+            'positionMs=${_audioHandler.position.inMilliseconds}',
+      ),
+    );
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.resumed) {
+      unawaited(AppLogger.logAndroidDiagnostics(state.name));
+      unawaited(AppLogger.flush());
+    }
     if (state != AppLifecycleState.resumed) {
       _persistPositionCheckpoint();
     }

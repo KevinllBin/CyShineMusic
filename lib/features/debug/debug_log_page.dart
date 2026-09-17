@@ -63,7 +63,7 @@ class _DebugLogPageState extends State<DebugLogPage> {
   }
 
   Future<void> _copyAll() async {
-    await Clipboard.setData(ClipboardData(text: _lines.join('\n')));
+    await Clipboard.setData(ClipboardData(text: AppLogger.exportText(_lines)));
     if (!mounted) return;
     showAppToast(context, '日志已复制', type: AppToastType.success);
   }
