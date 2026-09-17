@@ -48,7 +48,7 @@ class AppLogger {
       environment['packageInfoError'] = error.toString();
     }
     _environment = jsonEncode(environment);
-    await write('app-session', 'start environment=$_environment');
+    await write('app-session', 'start session=$sessionId environment=$_environment');
     await logAndroidDiagnostics('startup');
   }
 
@@ -94,9 +94,7 @@ class AppLogger {
   }
 
   static Future<void> write(String scope, String message) async {
-    final line =
-        '${DateTime.now().toIso8601String()} [$scope] '
-        'session=$sessionId $message';
+    final line = '${DateTime.now().toIso8601String()} [$scope] $message';
     developer.log(message, name: 'lx.$scope');
     _remember(line);
     await _ensureInit();
