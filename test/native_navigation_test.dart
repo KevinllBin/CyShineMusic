@@ -679,6 +679,7 @@ Future<_Harness> _pumpApp(
   });
   SharedPreferences.setMockInitialValues({
     if (native) 'use_native_navigation': true,
+    'discovery_source_order': ['kw', 'kg', 'tx', 'wy', 'mg'],
   });
   final prefs = await SharedPreferences.getInstance();
   final audioHandler = PlayerAudioHandler();

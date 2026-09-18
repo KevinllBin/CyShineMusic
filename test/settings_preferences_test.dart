@@ -515,7 +515,7 @@ void main() {
 
       final indicator = find.byKey(const ValueKey('search-source-indicator'));
       final initialLeft = tester.getTopLeft(indicator).dx;
-      await tester.tap(find.byKey(const ValueKey('search-source-wy')));
+      await tester.tap(find.byKey(const ValueKey('search-source-tx')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 150));
       final middleLeft = tester.getTopLeft(indicator).dx;

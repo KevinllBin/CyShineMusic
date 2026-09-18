@@ -39,6 +39,14 @@ import 'package:cy_shine_music/features/shell/widgets/discovery_category_fab.dar
 import 'package:cy_shine_music/features/shell/widgets/shell_header.dart';
 import 'package:cy_shine_music/router.dart';
 
+const _testDiscoverySources = <MusicSource>[
+  MusicSource.kw,
+  MusicSource.kg,
+  MusicSource.tx,
+  MusicSource.wy,
+  MusicSource.mg,
+];
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -78,7 +86,10 @@ void main() {
     await _useViewport(tester, const Size(390, 844));
     final fake = _FakeDiscoveryApi();
     final container = ProviderContainer(
-      overrides: [musicApiProvider.overrideWithValue(fake)],
+      overrides: [
+        discoverySourcesProvider.overrideWithValue(_testDiscoverySources),
+        musicApiProvider.overrideWithValue(fake),
+      ],
     );
     addTearDown(container.dispose);
 
@@ -116,7 +127,10 @@ void main() {
       await _useViewport(tester, const Size(390, 844));
       final fake = _FakeDiscoveryApi();
       final container = ProviderContainer(
-        overrides: [musicApiProvider.overrideWithValue(fake)],
+        overrides: [
+          discoverySourcesProvider.overrideWithValue(_testDiscoverySources),
+          musicApiProvider.overrideWithValue(fake),
+        ],
       );
       addTearDown(container.dispose);
 
@@ -147,6 +161,7 @@ void main() {
       final router = createAppRouter();
       final container = ProviderContainer(
         overrides: [
+          discoverySourcesProvider.overrideWithValue(_testDiscoverySources),
           sharedPreferencesProvider.overrideWithValue(prefs),
           musicApiProvider.overrideWithValue(fake),
           playerAudioHandlerProvider.overrideWithValue(audioHandler),
@@ -251,6 +266,7 @@ void main() {
     final router = createAppRouter();
     final container = ProviderContainer(
       overrides: [
+        discoverySourcesProvider.overrideWithValue(_testDiscoverySources),
         sharedPreferencesProvider.overrideWithValue(prefs),
         musicApiProvider.overrideWithValue(fake),
         playerAudioHandlerProvider.overrideWithValue(audioHandler),
@@ -416,7 +432,10 @@ void main() {
     await _useViewport(tester, const Size(390, 844));
     final fake = _FakeDiscoveryApi();
     final container = ProviderContainer(
-      overrides: [musicApiProvider.overrideWithValue(fake)],
+      overrides: [
+        discoverySourcesProvider.overrideWithValue(_testDiscoverySources),
+        musicApiProvider.overrideWithValue(fake),
+      ],
     );
     addTearDown(container.dispose);
 
@@ -465,7 +484,10 @@ void main() {
     await _useViewport(tester, const Size(900, 760));
     final fake = _FakeDiscoveryApi();
     final container = ProviderContainer(
-      overrides: [musicApiProvider.overrideWithValue(fake)],
+      overrides: [
+        discoverySourcesProvider.overrideWithValue(_testDiscoverySources),
+        musicApiProvider.overrideWithValue(fake),
+      ],
     );
     addTearDown(container.dispose);
 
@@ -488,7 +510,10 @@ void main() {
     await _useViewport(tester, const Size(390, 844));
     final fake = _FakeDiscoveryApi(paginateFeatured: true);
     final container = ProviderContainer(
-      overrides: [musicApiProvider.overrideWithValue(fake)],
+      overrides: [
+        discoverySourcesProvider.overrideWithValue(_testDiscoverySources),
+        musicApiProvider.overrideWithValue(fake),
+      ],
     );
     addTearDown(container.dispose);
 
@@ -517,7 +542,10 @@ void main() {
       await _useViewport(tester, const Size(390, 844));
       final fake = _FakeDiscoveryApi();
       final container = ProviderContainer(
-        overrides: [musicApiProvider.overrideWithValue(fake)],
+        overrides: [
+          discoverySourcesProvider.overrideWithValue(_testDiscoverySources),
+          musicApiProvider.overrideWithValue(fake),
+        ],
       );
       addTearDown(container.dispose);
 
@@ -576,7 +604,11 @@ void main() {
   );
 
   testWidgets('discovery category FAB yields to search paging', (tester) async {
-    final container = ProviderContainer();
+    final container = ProviderContainer(
+      overrides: [
+        discoverySourcesProvider.overrideWithValue(_testDiscoverySources),
+      ],
+    );
     addTearDown(container.dispose);
     container.read(searchToolbarStateProvider.notifier).state =
         const SearchToolbarState(visible: true);
@@ -594,6 +626,7 @@ void main() {
     final fake = _FakeDiscoveryApi();
     final container = ProviderContainer(
       overrides: [
+        discoverySourcesProvider.overrideWithValue(_testDiscoverySources),
         sharedPreferencesProvider.overrideWithValue(prefs),
         musicApiProvider.overrideWithValue(fake),
       ],
@@ -629,7 +662,10 @@ void main() {
     await _useViewport(tester, const Size(390, 844));
     final fake = _FakeDiscoveryApi();
     final container = ProviderContainer(
-      overrides: [musicApiProvider.overrideWithValue(fake)],
+      overrides: [
+        discoverySourcesProvider.overrideWithValue(_testDiscoverySources),
+        musicApiProvider.overrideWithValue(fake),
+      ],
     );
     addTearDown(container.dispose);
 

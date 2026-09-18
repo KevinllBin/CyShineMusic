@@ -783,6 +783,7 @@ void main() {
     await _pumpPlayer(
       tester,
       size: const Size(1024, 600),
+      carPadModeEnabled: true,
       track: const PlayerTrack(
         id: 'wy:wide-song',
         kind: PlayerTrackKind.remote,
@@ -918,6 +919,7 @@ Future<_SeededPlayerController> _pumpPlayer(
   KaraokeLyrics lyrics = const KaraokeLyrics([]),
   Duration position = Duration.zero,
   MusicInfo? currentMusic,
+  bool carPadModeEnabled = false,
 }) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
@@ -927,6 +929,9 @@ Future<_SeededPlayerController> _pumpPlayer(
   });
 
   final preferences = await SharedPreferences.getInstance();
+  if (carPadModeEnabled) {
+    await preferences.setBool('car_pad_mode_enabled', true);
+  }
   final audioHandler = PlayerAudioHandler();
   addTearDown(() => unawaited(audioHandler.disposeHandler()));
   final initialState = PlayerState(
