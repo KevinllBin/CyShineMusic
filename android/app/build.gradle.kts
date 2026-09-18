@@ -140,8 +140,6 @@ flutter {
 }
 
 dependencies {
-    implementation("wang.harlon.quickjs:wrapper-android:2.4.0")
-
     // Compile against jaudiotagger without bundling another copy. The
     // flutter_audio_tagger plugin already packages jaudiotagger-android.jar;
     // our app channel uses the same runtime classes but avoids returning the

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/storage/settings_store.dart';
 import '../../theme/app_motion.dart';
 import '../shell/player_transition.dart';
 import 'player_controller.dart';
@@ -208,111 +209,106 @@ class _NowPlayingBodyState extends ConsumerState<_NowPlayingBody> {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide =
-            constraints.maxWidth >= 720 && constraints.maxHeight >= 460;
-        if (wide) {
-          return Padding(
-            key: const ValueKey('player-wide-layout'),
-            padding: const EdgeInsets.fromLTRB(32, 8, 32, 18),
-            child: Row(
-              children: [
-                Expanded(
-                  flex: 10,
-                  child: Column(
+    final carPadModeEnabled = ref.watch(
+      settingsProvider.select((settings) => settings.carPadModeEnabled),
+    );
+    if (carPadModeEnabled) {
+      return Padding(
+        key: const ValueKey('player-wide-layout'),
+        padding: const EdgeInsets.fromLTRB(32, 8, 32, 18),
+        child: Row(
+          children: [
+            Expanded(
+              flex: 10,
+              child: Column(
+                children: [
+                  const Expanded(
+                    child: KeyedSubtree(
+                      key: ValueKey('player-wide-album'),
+                      child: AlbumPage(wide: true),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 560),
+                    child: const TransportBar(),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 24),
+            const Expanded(
+              flex: 11,
+              child: KeyedSubtree(
+                key: ValueKey('player-wide-lyrics'),
+                child: LyricsPanel(),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Phone layouts keep the swipe gesture between album and lyrics.
+    // Horizontal padding is split 8 (here) + 16 (inside each pager page /
+    // the transport bar) instead of a flat 24: the lyrics rows carry the
+    // inner 16 themselves (_kLyricBlurBleedInset) so their blur halos are
+    // no longer sliced by the pager and viewport clips, which all sit at
+    // this Padding's inner edge. Glyph positions are identical.
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 14),
+      child: Column(
+        children: [
+          Expanded(
+            child: NotificationListener<OverscrollIndicatorNotification>(
+              key: const ValueKey('player-compact-pager-edge-guard'),
+              onNotification: (notification) {
+                if (notification.depth == 0) {
+                  notification.disallowIndicator();
+                }
+                return false;
+              },
+              child: Listener(
+                key: const ValueKey('player-compact-pager-pointer-guard'),
+                behavior: HitTestBehavior.translucent,
+                onPointerDown: _handleCompactPagerPointerDown,
+                onPointerMove: _handleCompactPagerPointerMove,
+                onPointerUp: _handleCompactPagerPointerEnd,
+                onPointerCancel: _handleCompactPagerPointerEnd,
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: _handleCompactPagerScroll,
+                  child: PageView(
+                    key: const ValueKey('player-compact-pager'),
+                    controller: _pageController,
+                    clipBehavior: Clip.hardEdge,
                     children: [
-                      const Expanded(
-                        child: KeyedSubtree(
-                          key: ValueKey('player-wide-album'),
-                          child: AlbumPage(wide: true),
+                      ClipRect(
+                        key: const ValueKey('player-compact-album-clip'),
+                        clipBehavior: Clip.hardEdge,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: AlbumPage(onOpenLyrics: _openLyricsPage),
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 560),
-                        child: const TransportBar(),
+                      ClipRect(
+                        key: const ValueKey('player-compact-lyrics-clip'),
+                        clipBehavior: Clip.hardEdge,
+                        child: LyricsPanel(
+                          edgeFadeEnabled: !_compactPagerMoving,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 24),
-                const Expanded(
-                  flex: 11,
-                  child: KeyedSubtree(
-                    key: ValueKey('player-wide-lyrics'),
-                    child: LyricsPanel(),
-                  ),
-                ),
-              ],
+              ),
             ),
-          );
-        }
-
-        // Phone layouts keep the swipe gesture between album and lyrics.
-        // Horizontal padding is split 8 (here) + 16 (inside each pager page /
-        // the transport bar) instead of a flat 24: the lyrics rows carry the
-        // inner 16 themselves (_kLyricBlurBleedInset) so their blur halos are
-        // no longer sliced by the pager and viewport clips, which all sit at
-        // this Padding's inner edge. Glyph positions are identical.
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(8, 4, 8, 14),
-          child: Column(
-            children: [
-              Expanded(
-                child: NotificationListener<OverscrollIndicatorNotification>(
-                  key: const ValueKey('player-compact-pager-edge-guard'),
-                  onNotification: (notification) {
-                    if (notification.depth == 0) {
-                      notification.disallowIndicator();
-                    }
-                    return false;
-                  },
-                  child: Listener(
-                    key: const ValueKey('player-compact-pager-pointer-guard'),
-                    behavior: HitTestBehavior.translucent,
-                    onPointerDown: _handleCompactPagerPointerDown,
-                    onPointerMove: _handleCompactPagerPointerMove,
-                    onPointerUp: _handleCompactPagerPointerEnd,
-                    onPointerCancel: _handleCompactPagerPointerEnd,
-                    child: NotificationListener<ScrollNotification>(
-                      onNotification: _handleCompactPagerScroll,
-                      child: PageView(
-                        key: const ValueKey('player-compact-pager'),
-                        controller: _pageController,
-                        clipBehavior: Clip.hardEdge,
-                        children: [
-                          ClipRect(
-                            key: const ValueKey('player-compact-album-clip'),
-                            clipBehavior: Clip.hardEdge,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                              ),
-                              child: AlbumPage(onOpenLyrics: _openLyricsPage),
-                            ),
-                          ),
-                          ClipRect(
-                            key: const ValueKey('player-compact-lyrics-clip'),
-                            clipBehavior: Clip.hardEdge,
-                            child: LyricsPanel(
-                              edgeFadeEnabled: !_compactPagerMoving,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
-                child: TransportBar(),
-              ),
-            ],
           ),
-        );
-      },
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: TransportBar(),
+          ),
+        ],
+      ),
     );
   }
 }

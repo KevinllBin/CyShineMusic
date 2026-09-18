@@ -14,13 +14,11 @@ class SourceFilterChips extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final selected = ref.watch(searchControllerProvider).source;
-    final enabled = ref.watch(
-      settingsProvider.select((settings) => settings.enabledSearchSources),
-    );
+    final settings = ref.watch(settingsProvider);
     final sources = [
       MusicSource.all,
-      for (final source in kManageableSearchSources)
-        if (enabled.contains(source)) source,
+      for (final source in settings.discoverySourceOrder)
+        if (settings.enabledSearchSources.contains(source)) source,
     ];
     final selectedIndex = sources.indexOf(selected);
     final reduceMotion = MediaQuery.disableAnimationsOf(context);

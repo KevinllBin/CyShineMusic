@@ -47,6 +47,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/release-apks/
 
 # Sogou IME on Windows writes cache into a literal %SystemDrive% folder
 /%SystemDrive%/

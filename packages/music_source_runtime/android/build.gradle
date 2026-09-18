@@ -1,0 +1,26 @@
+plugins {
+    id 'com.android.library'
+}
+
+group = 'com.cyshine.music_source_runtime'
+version = '0.1.0'
+
+android {
+    namespace = 'com.cyshine.music_source_runtime'
+    compileSdk = 35
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    defaultConfig {
+        minSdk = 24
+    }
+}
+
+dependencies {
+    implementation 'wang.harlon.quickjs:wrapper-android:2.4.0'
+}
+
+

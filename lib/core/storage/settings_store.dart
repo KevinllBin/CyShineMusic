@@ -19,10 +19,12 @@ const String _kThemeSeedKey = 'theme_seed_argb';
 const String _kColorStyleKey = 'theme_color_style';
 const String _kUseDynamicColorKey = 'use_dynamic_color';
 const String _kFlowingLightEnabledKey = 'flowing_light_enabled';
+const String _kCarPadModeEnabledKey = 'car_pad_mode_enabled';
 const String _kUseNativeNavigationKey = 'use_native_navigation';
 const String _kNavigationModeKey = 'navigation_mode';
 const String _kNetworkAdapterModeKey = 'network_adapter_mode';
 const String _kEnabledSearchSourcesKey = 'enabled_search_source_codes';
+const String _kDiscoverySourceOrderKey = 'discovery_source_order';
 const String _kOnlinePlaybackQualityKey = 'online_playback_quality';
 const String _kBatchDownloadQualityKey = 'batch_download_quality';
 const String _kShowMiniLyricsKey = 'show_mini_lyrics';
@@ -62,9 +64,11 @@ class AppSettings {
     required this.colorStyle,
     required this.useDynamicColor,
     required this.flowingLightEnabled,
+    required this.carPadModeEnabled,
     required this.navigationMode,
     required this.networkAdapterMode,
     required this.enabledSearchSources,
+    required this.discoverySourceOrder,
     required this.onlinePlaybackQuality,
     required this.batchDownloadQuality,
     required this.showMiniLyrics,
@@ -85,10 +89,15 @@ class AppSettings {
   /// Whether the player backdrop animates its extracted colors. Off falls back
   /// to the static blurred-artwork backdrop.
   final bool flowingLightEnabled;
+
+  /// Uses the split album-and-lyrics player layout on car displays and pads.
+  /// This is deliberately manual so ordinary large screens retain phone UI.
+  final bool carPadModeEnabled;
   final AppNavigationMode navigationMode;
   bool get useNativeNavigation => navigationMode == AppNavigationMode.native;
   final NetworkAdapterMode networkAdapterMode;
   final Set<MusicSource> enabledSearchSources;
+  final List<MusicSource> discoverySourceOrder;
   final OnlinePlaybackQuality onlinePlaybackQuality;
   final OnlinePlaybackQuality batchDownloadQuality;
   final bool showMiniLyrics;
@@ -109,10 +118,12 @@ class AppSettings {
     AppColorStyle? colorStyle,
     bool? useDynamicColor,
     bool? flowingLightEnabled,
+    bool? carPadModeEnabled,
     AppNavigationMode? navigationMode,
     bool? useNativeNavigation,
     NetworkAdapterMode? networkAdapterMode,
     Set<MusicSource>? enabledSearchSources,
+    List<MusicSource>? discoverySourceOrder,
     OnlinePlaybackQuality? onlinePlaybackQuality,
     OnlinePlaybackQuality? batchDownloadQuality,
     bool? showMiniLyrics,
@@ -129,6 +140,7 @@ class AppSettings {
     colorStyle: colorStyle ?? this.colorStyle,
     useDynamicColor: useDynamicColor ?? this.useDynamicColor,
     flowingLightEnabled: flowingLightEnabled ?? this.flowingLightEnabled,
+    carPadModeEnabled: carPadModeEnabled ?? this.carPadModeEnabled,
     navigationMode: navigationMode ??
         (useNativeNavigation != null
             ? (useNativeNavigation
@@ -137,6 +149,7 @@ class AppSettings {
             : this.navigationMode),
     networkAdapterMode: networkAdapterMode ?? this.networkAdapterMode,
     enabledSearchSources: enabledSearchSources ?? this.enabledSearchSources,
+    discoverySourceOrder: discoverySourceOrder ?? this.discoverySourceOrder,
     onlinePlaybackQuality: onlinePlaybackQuality ?? this.onlinePlaybackQuality,
     batchDownloadQuality: batchDownloadQuality ?? this.batchDownloadQuality,
     showMiniLyrics: showMiniLyrics ?? this.showMiniLyrics,
@@ -157,9 +170,11 @@ class AppSettings {
     colorStyle: AppColorStyle.fallback,
     useDynamicColor: false,
     flowingLightEnabled: true,
+    carPadModeEnabled: false,
     navigationMode: AppNavigationMode.singleCapsule,
     networkAdapterMode: NetworkAdapterMode.system,
     enabledSearchSources: kDefaultEnabledSearchSources,
+    discoverySourceOrder: kDefaultDiscoverySourceOrder,
     onlinePlaybackQuality: OnlinePlaybackQuality.highest,
     batchDownloadQuality: OnlinePlaybackQuality.highest,
     showMiniLyrics: true,
@@ -197,10 +212,14 @@ class SettingsNotifier extends Notifier<AppSettings> {
       colorStyle: AppColorStyle.fromCode(_prefs.getString(_kColorStyleKey)),
       useDynamicColor: _prefs.getBool(_kUseDynamicColorKey) ?? false,
       flowingLightEnabled: _prefs.getBool(_kFlowingLightEnabledKey) ?? true,
+      carPadModeEnabled: _prefs.getBool(_kCarPadModeEnabledKey) ?? false,
       navigationMode: _decodeNavigationMode(_prefs),
       networkAdapterMode: NetworkAdapterPreference.current,
       enabledSearchSources: decodeEnabledSearchSources(
         _prefs.getStringList(_kEnabledSearchSourcesKey),
+      ),
+      discoverySourceOrder: decodeDiscoverySourceOrder(
+        _prefs.getStringList(_kDiscoverySourceOrderKey),
       ),
       onlinePlaybackQuality: OnlinePlaybackQuality.fromCode(
         _prefs.getString(_kOnlinePlaybackQualityKey),
@@ -269,6 +288,11 @@ class SettingsNotifier extends Notifier<AppSettings> {
   Future<void> setFlowingLightEnabled(bool value) async {
     await _prefs.setBool(_kFlowingLightEnabledKey, value);
     state = state.copyWith(flowingLightEnabled: value);
+  }
+
+  Future<void> setCarPadModeEnabled(bool value) async {
+    await _prefs.setBool(_kCarPadModeEnabledKey, value);
+    state = state.copyWith(carPadModeEnabled: value);
   }
 
   Future<void> setNavigationMode(AppNavigationMode mode) async {
@@ -379,6 +403,15 @@ class SettingsNotifier extends Notifier<AppSettings> {
     return true;
   }
 
+  Future<void> setDiscoverySourceOrder(Iterable<MusicSource> sources) async {
+    final order = normalizeDiscoverySourceOrder(sources);
+    await _prefs.setStringList(
+      _kDiscoverySourceOrderKey,
+      order.map((source) => source.code).toList(growable: false),
+    );
+    state = state.copyWith(discoverySourceOrder: order);
+  }
+
   Future<void> setOnlinePlaybackQuality(OnlinePlaybackQuality quality) async {
     await _prefs.setString(_kOnlinePlaybackQualityKey, quality.code);
     state = state.copyWith(onlinePlaybackQuality: quality);
@@ -470,4 +503,35 @@ Set<MusicSource> decodeEnabledSearchSources(List<String>? codes) {
     for (final source in kManageableSearchSources)
       if (decoded.contains(source)) source,
   });
+}
+
+const List<MusicSource> kDefaultDiscoverySourceOrder = <MusicSource>[
+  MusicSource.wy,
+  MusicSource.tx,
+  MusicSource.kw,
+  MusicSource.kg,
+  MusicSource.mg,
+];
+
+List<MusicSource> decodeDiscoverySourceOrder(List<String>? codes) {
+  if (codes == null) return kDefaultDiscoverySourceOrder;
+  return normalizeDiscoverySourceOrder(
+    codes.map(MusicSource.tryFromCode).nonNulls,
+  );
+}
+
+List<MusicSource> normalizeDiscoverySourceOrder(
+  Iterable<MusicSource> sources,
+) {
+  final order = <MusicSource>[];
+  for (final source in sources) {
+    if (kDefaultDiscoverySourceOrder.contains(source) &&
+        !order.contains(source)) {
+      order.add(source);
+    }
+  }
+  for (final source in kDefaultDiscoverySourceOrder) {
+    if (!order.contains(source)) order.add(source);
+  }
+  return List<MusicSource>.unmodifiable(order);
 }

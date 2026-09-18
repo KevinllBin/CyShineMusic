@@ -21,7 +21,6 @@ import android.view.ViewGroup
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
-import com.cyshine.music.source.MusicSourceRuntimeBridge
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -41,7 +40,6 @@ class MainActivity : AudioServiceActivity() {
     private val nativeTaggerChannel = "cy_shine_music/native_tagger"
     private val appTaskChannel = "cy_shine_music/app_task"
     private val storageBrowserChannel = "cy_shine_music/storage_browser"
-    private var musicSourceRuntimeBridge: MusicSourceRuntimeBridge? = null
     private var displayListener: DisplayManager.DisplayListener? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -67,16 +65,11 @@ class MainActivity : AudioServiceActivity() {
 
     override fun onDestroy() {
         unregisterDisplayListener()
-        musicSourceRuntimeBridge?.close()
-        musicSourceRuntimeBridge = null
         super.onDestroy()
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        musicSourceRuntimeBridge?.close()
-        musicSourceRuntimeBridge =
-            MusicSourceRuntimeBridge(applicationContext, flutterEngine.dartExecutor.binaryMessenger)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, mediaScanChannel)
             .setMethodCallHandler { call, result ->
                 when (call.method) {

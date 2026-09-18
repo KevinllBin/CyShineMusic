@@ -8,19 +8,16 @@ import '../../core/models/online_collection_kind.dart';
 import '../../core/models/playlist_category.dart';
 import '../../core/models/playlist_info.dart';
 import '../../core/models/playlist_summary.dart';
+import '../../core/storage/settings_store.dart';
 import '../../core/ui/cover_image_source.dart';
 
 const int discoveryPlaylistArtworkSize = 640;
 const int discoveryPlaylistPageSize = 30;
 const int onlinePlaylistDetailInitialTrackLimit = 40;
 const int onlinePlaylistDetailTrackPageSize = 40;
-const List<MusicSource> kDiscoverySources = <MusicSource>[
-  MusicSource.kw,
-  MusicSource.kg,
-  MusicSource.tx,
-  MusicSource.wy,
-  MusicSource.mg,
-];
+final discoverySourcesProvider = Provider<List<MusicSource>>(
+  (ref) => ref.watch(settingsProvider).discoverySourceOrder,
+);
 
 typedef OnlinePlaylistIdentity = ({
   MusicSource source,
@@ -42,7 +39,7 @@ String onlinePlaylistArtworkHeroTag(
 }
 
 final selectedDiscoverySourceProvider = StateProvider<MusicSource>(
-  (ref) => MusicSource.kw,
+  (ref) => ref.watch(discoverySourcesProvider).first,
 );
 
 final selectedDiscoveryCategoryProvider =

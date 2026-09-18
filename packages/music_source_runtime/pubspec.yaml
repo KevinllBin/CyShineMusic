@@ -1,0 +1,21 @@
+name: music_source_runtime
+description: Native QuickJS runtime bridge for CyShineMusic sources.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.4
+  flutter: '>=3.41.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.cyshine.music_source_runtime
+        pluginClass: MusicSourceRuntimePlugin
+
+

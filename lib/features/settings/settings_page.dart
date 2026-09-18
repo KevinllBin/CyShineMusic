@@ -17,6 +17,7 @@ import '../../core/storage/settings_store.dart';
 import '../../core/sync/webdav_sync_controller.dart';
 import '../../core/ui/app_toast.dart';
 import '../../theme/dynamic_color_status.dart';
+import '../discovery/discovery_controller.dart';
 import '../equalizer/equalizer_store.dart';
 import '../player/sleep_timer_controller.dart';
 import '../player/widgets/player_sleep_timer_sheet.dart';
@@ -26,6 +27,7 @@ import '../songs/local_song_scan_cache.dart';
 import '../update/app_update_prompt.dart';
 import 'widgets/color_picker_sheet.dart';
 import 'widgets/color_style_row.dart';
+import 'widgets/discovery_source_order_sheet.dart';
 import 'widgets/settings_action.dart';
 import 'widgets/settings_menu.dart';
 import 'widgets/storage_folder_picker_sheet.dart';
@@ -114,6 +116,18 @@ class SettingsPage extends ConsumerWidget {
                                         _setNetworkAdapter(context, ref, mode),
                                   ),
                               ],
+                            ),
+                            SettingsAction(
+                              key: const ValueKey('discovery-source-order'),
+                              icon: Icons.explore_outlined,
+                              title: '发现页平台顺序',
+                              subtitle: settings.discoverySourceOrder
+                                  .map((source) => source.label)
+                                  .join('、'),
+                              trailing: Icons.chevron_right_rounded,
+                              onTap: () => unawaited(
+                                _showDiscoverySourceOrderSheet(context, ref),
+                              ),
                             ),
                           ],
                         ),
@@ -445,6 +459,19 @@ class SettingsPage extends ConsumerWidget {
                             ),
                             const SizedBox(height: 4),
                             SettingsSwitchAction(
+                              key: const ValueKey('car-pad-mode-setting'),
+                              icon: Icons.directions_car_filled_rounded,
+                              title: '车机/Pad 模式',
+                              subtitle: settings.carPadModeEnabled
+                                  ? '播放页使用左右分栏宽屏布局'
+                                  : '关闭，播放页保持手机布局',
+                              value: settings.carPadModeEnabled,
+                              onChanged: (value) => ref
+                                  .read(settingsProvider.notifier)
+                                  .setCarPadModeEnabled(value),
+                            ),
+                            const SizedBox(height: 4),
+                            SettingsSwitchAction(
                               key: const ValueKey('flowing-light-setting'),
                               icon: Icons.blur_on_rounded,
                               title: '动态流光',
@@ -717,6 +744,30 @@ class SettingsPage extends ConsumerWidget {
         context,
         title: title,
         initialPath: initialPath,
+      );
+    } finally {
+      if (toolbar.mounted) toolbar.state = wasToolbarVisible;
+    }
+  }
+
+  Future<void> _showDiscoverySourceOrderSheet(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final toolbar = ref.read(shellToolbarVisibleProvider.notifier);
+    final wasToolbarVisible = ref.read(shellToolbarVisibleProvider);
+    toolbar.state = false;
+    try {
+      await showDiscoverySourceOrderSheet(
+        context,
+        order: ref.read(settingsProvider).discoverySourceOrder,
+        onChanged: (order) async {
+          await ref.read(settingsProvider.notifier).setDiscoverySourceOrder(
+                order,
+              );
+          ref.read(selectedDiscoverySourceProvider.notifier).state =
+              order.first;
+        },
       );
     } finally {
       if (toolbar.mounted) toolbar.state = wasToolbarVisible;

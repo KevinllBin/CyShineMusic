@@ -38,6 +38,8 @@ dependencies:
   audio_session: ^0.2.4
   bass_player:
     path: packages/bass_player
+  music_source_runtime:
+    path: packages/music_source_runtime
   toastification: ^3.2.0
   package_info_plus: ^9.0.1
   pub_semver: ^2.2.0

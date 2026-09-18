@@ -58,6 +58,7 @@ class MusicSdkAggregator {
     required String keyword,
     required MusicSource source,
     Iterable<MusicSource>? enabledSources,
+    Iterable<MusicSource>? sourceOrder,
     int page = 1,
     int limit = 30,
   }) async {
@@ -66,7 +67,7 @@ class MusicSdkAggregator {
       return SearchResult(list: const [], page: page, source: source);
     }
 
-    final targets = _enabledSources(enabledSources);
+    final targets = _enabledSources(enabledSources, sourceOrder: sourceOrder);
     if (source != MusicSource.all) {
       if (!targets.contains(source)) {
         return SearchResult(
@@ -113,12 +114,13 @@ class MusicSdkAggregator {
     required String keyword,
     required MusicSource source,
     Iterable<MusicSource>? enabledSources,
+    Iterable<MusicSource>? sourceOrder,
     int limit = 10,
   }) async {
     final trimmed = keyword.trim();
     if (trimmed.isEmpty) return const [];
 
-    final enabled = _enabledSources(enabledSources);
+    final enabled = _enabledSources(enabledSources, sourceOrder: sourceOrder);
     final targets = source == MusicSource.all
         ? enabled
         : (enabled.contains(source) ? [source] : const <MusicSource>[]);
@@ -155,12 +157,26 @@ class MusicSdkAggregator {
     return merged;
   }
 
-  static List<MusicSource> _enabledSources(Iterable<MusicSource>? sources) {
+  static List<MusicSource> _enabledSources(
+    Iterable<MusicSource>? sources, {
+    Iterable<MusicSource>? sourceOrder,
+  }) {
     final requested = sources ?? kDefaultEnabledSearchSources;
-    return [
-      for (final source in kManageableSearchSources)
-        if (requested.contains(source)) source,
-    ];
+    final order = sourceOrder ?? kManageableSearchSources;
+    final enabled = <MusicSource>[];
+    for (final source in order) {
+      if (kManageableSearchSources.contains(source) &&
+          requested.contains(source) &&
+          !enabled.contains(source)) {
+        enabled.add(source);
+      }
+    }
+    for (final source in kManageableSearchSources) {
+      if (requested.contains(source) && !enabled.contains(source)) {
+        enabled.add(source);
+      }
+    }
+    return enabled;
   }
 
   static Future<LyricInfo> getLyric(MusicInfo info) {

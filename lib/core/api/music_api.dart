@@ -17,11 +17,14 @@ import '../storage/settings_store.dart';
 class MusicApi {
   MusicApi({
     Iterable<MusicSource> enabledSearchSources = kDefaultEnabledSearchSources,
+    Iterable<MusicSource> searchSourceOrder = kDefaultDiscoverySourceOrder,
   }) : _enabledSearchSources = Set<MusicSource>.unmodifiable(
          enabledSearchSources,
-       );
+       ),
+       _searchSourceOrder = List<MusicSource>.unmodifiable(searchSourceOrder);
 
   final Set<MusicSource> _enabledSearchSources;
+  final List<MusicSource> _searchSourceOrder;
 
   // Local: hits each music platform directly. There is no CancelToken here —
   // the aggregator and 5 platform SDKs don't thread it through to SdkHttp, so
@@ -37,6 +40,7 @@ class MusicApi {
       keyword: keyword,
       source: source,
       enabledSources: _enabledSearchSources,
+      sourceOrder: _searchSourceOrder,
       page: page,
       limit: limit,
     );
@@ -60,6 +64,7 @@ class MusicApi {
       keyword: keyword,
       source: source,
       enabledSources: _enabledSearchSources,
+      sourceOrder: _searchSourceOrder,
       limit: limit,
     );
   }
@@ -137,7 +142,13 @@ final musicApiProvider = Provider<MusicApi>((ref) {
   final enabledSearchSources = ref.watch(
     settingsProvider.select((settings) => settings.enabledSearchSources),
   );
-  return MusicApi(enabledSearchSources: enabledSearchSources);
+  final searchSourceOrder = ref.watch(
+    settingsProvider.select((settings) => settings.discoverySourceOrder),
+  );
+  return MusicApi(
+    enabledSearchSources: enabledSearchSources,
+    searchSourceOrder: searchSourceOrder,
+  );
 });
 
 String describeDioError(Object error) {

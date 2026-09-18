@@ -132,6 +132,20 @@ class SearchController extends Notifier<SearchState> {
       if (state.source == source) return;
       state = state.copyWith(source: source);
     });
+    ref.listen<List<MusicSource>>(
+      settingsProvider.select((settings) => settings.discoverySourceOrder),
+      (previous, next) {
+        _activeRequest = Object();
+        _responseCache.removeWhere(
+          (query, _) => query.source == MusicSource.all,
+        );
+        if (state.isSearchActive &&
+            state.source == MusicSource.all &&
+            state.keyword.trim().isNotEmpty) {
+          unawaited(search(keyword: state.keyword, source: MusicSource.all));
+        }
+      },
+    );
     return SearchState(source: _defaultSearchSource());
   }
 

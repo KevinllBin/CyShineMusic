@@ -33,8 +33,9 @@ class _DiscoveryContentState extends ConsumerState<DiscoveryContent> {
   void initState() {
     super.initState();
     final source = ref.read(selectedDiscoverySourceProvider);
+    final sources = ref.read(discoverySourcesProvider);
     _pageController = PageController(
-      initialPage: math.max(0, kDiscoverySources.indexOf(source)),
+      initialPage: math.max(0, sources.indexOf(source)),
     );
   }
 
@@ -44,15 +45,14 @@ class _DiscoveryContentState extends ConsumerState<DiscoveryContent> {
     super.dispose();
   }
 
-  void _handlePageChanged(int index) {
+  void _handlePageChanged(int index, List<MusicSource> sources) {
     _syncingFromPager = true;
-    ref.read(selectedDiscoverySourceProvider.notifier).state =
-        kDiscoverySources[index];
+    ref.read(selectedDiscoverySourceProvider.notifier).state = sources[index];
     _syncingFromPager = false;
   }
 
-  void _animateToSource(MusicSource source) {
-    final index = kDiscoverySources.indexOf(source);
+  void _animateToSource(MusicSource source, List<MusicSource> sources) {
+    final index = sources.indexOf(source);
     if (index < 0 || !_pageController.hasClients) return;
     final current =
         _pageController.page?.round() ?? _pageController.initialPage;
@@ -68,8 +68,12 @@ class _DiscoveryContentState extends ConsumerState<DiscoveryContent> {
     }
   }
 
-  Widget _buildSourcePage(BuildContext context, int index) {
-    final source = kDiscoverySources[index];
+  Widget _buildSourcePage(
+    BuildContext context,
+    int index,
+    List<MusicSource> sources,
+  ) {
+    final source = sources[index];
     return Consumer(
       builder: (context, ref, _) {
         final categoryId = ref.watch(selectedDiscoveryCategoryProvider(source));
@@ -102,23 +106,28 @@ class _DiscoveryContentState extends ConsumerState<DiscoveryContent> {
 
   @override
   Widget build(BuildContext context) {
+    final sources = ref.watch(discoverySourcesProvider);
     // 点击音源标签等外部写入 provider 时，让 pager 跟着动画过去。
     ref.listen<MusicSource>(selectedDiscoverySourceProvider, (previous, next) {
       if (_syncingFromPager || previous == next) return;
-      _animateToSource(next);
+      _animateToSource(next, ref.read(discoverySourcesProvider));
     });
     return Column(
       children: [
-        DiscoverySourceSelector(pageController: _pageController),
+        DiscoverySourceSelector(
+          sources: sources,
+          pageController: _pageController,
+        ),
         const SizedBox(height: 6),
         Expanded(
           child: PageView.builder(
             key: const PageStorageKey('discovery-source-pager'),
             controller: _pageController,
             physics: const BouncingScrollPhysics(),
-            onPageChanged: _handlePageChanged,
-            itemCount: kDiscoverySources.length,
-            itemBuilder: _buildSourcePage,
+            onPageChanged: (index) => _handlePageChanged(index, sources),
+            itemCount: sources.length,
+            itemBuilder: (context, index) =>
+                _buildSourcePage(context, index, sources),
           ),
         ),
       ],
