@@ -11,6 +11,7 @@ import '../../core/models/online_collection_kind.dart';
 import '../../core/models/playlist_info.dart';
 import '../../core/models/playlist_summary.dart';
 import '../../core/services/app_logger.dart';
+import '../../core/storage/settings_store.dart';
 import '../../core/ui/app_toast.dart';
 import '../../core/ui/app_refresh_indicator.dart';
 import '../../core/ui/app_scrollbar.dart';
@@ -123,6 +124,9 @@ class _OnlinePlaylistDetailPageState
 
   @override
   Widget build(BuildContext context) {
+    final carPadModeEnabled = ref.watch(
+      settingsProvider.select((settings) => settings.carPadModeEnabled),
+    );
     final detail = ref.watch(onlinePlaylistDetailProvider(_key));
     final loaded = detail.asData?.value;
     if (loaded != null) {
@@ -136,6 +140,7 @@ class _OnlinePlaylistDetailPageState
       return _buildPlaylist(
         context,
         cached,
+        carPadModeEnabled: carPadModeEnabled,
         loadingMore: detail.isLoading,
         loadMoreError: loadMoreError,
       );
@@ -146,6 +151,7 @@ class _OnlinePlaylistDetailPageState
         source: widget.source,
         playlistId: widget.playlistId,
         kind: widget.kind,
+        carPadModeEnabled: carPadModeEnabled,
       ),
       error: (error, _) => _DetailError(
         summary: _summary,
@@ -154,9 +160,13 @@ class _OnlinePlaylistDetailPageState
         kind: widget.kind,
         message: _friendlyError(error),
         onRetry: () => ref.invalidate(onlinePlaylistDetailProvider(_key)),
+        carPadModeEnabled: carPadModeEnabled,
       ),
-      data: (playlist) =>
-          _buildPlaylist(context, _withDiscoveryArtwork(playlist)),
+      data: (playlist) => _buildPlaylist(
+        context,
+        _withDiscoveryArtwork(playlist),
+        carPadModeEnabled: carPadModeEnabled,
+      ),
     );
   }
 
@@ -181,6 +191,7 @@ class _OnlinePlaylistDetailPageState
   Widget _buildPlaylist(
     BuildContext context,
     PlaylistInfo playlist, {
+    required bool carPadModeEnabled,
     bool loadingMore = false,
     String? loadMoreError,
   }) {
@@ -194,7 +205,10 @@ class _OnlinePlaylistDetailPageState
       playlist.coverUrl,
       size: _summary == null ? 1200 : discoveryPlaylistArtworkSize,
     );
-    final wide = playlistDetailUsesWideLayout(context);
+    final wide = playlistDetailUsesWideLayout(
+      context,
+      carPadModeEnabled: carPadModeEnabled,
+    );
     final metadata = [
       playlist.source.label,
       if (playlist.creator?.trim().isNotEmpty == true) playlist.creator!.trim(),
@@ -550,12 +564,14 @@ class _DetailLoading extends StatelessWidget {
     required this.source,
     required this.playlistId,
     required this.kind,
+    required this.carPadModeEnabled,
   });
 
   final PlaylistSummary? summary;
   final MusicSource source;
   final String playlistId;
   final OnlineCollectionKind kind;
+  final bool carPadModeEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -564,7 +580,10 @@ class _DetailLoading extends StatelessWidget {
       item?.coverUrl,
       size: discoveryPlaylistArtworkSize,
     );
-    final wide = playlistDetailUsesWideLayout(context);
+    final wide = playlistDetailUsesWideLayout(
+      context,
+      carPadModeEnabled: carPadModeEnabled,
+    );
     final detailLabel = kind == OnlineCollectionKind.leaderboard
         ? '榜单详情'
         : '歌单详情';
@@ -686,6 +705,7 @@ class _DetailError extends StatelessWidget {
     required this.kind,
     required this.message,
     required this.onRetry,
+    required this.carPadModeEnabled,
   });
 
   final PlaylistSummary? summary;
@@ -694,6 +714,7 @@ class _DetailError extends StatelessWidget {
   final OnlineCollectionKind kind;
   final String message;
   final VoidCallback onRetry;
+  final bool carPadModeEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -702,7 +723,10 @@ class _DetailError extends StatelessWidget {
       item?.coverUrl,
       size: discoveryPlaylistArtworkSize,
     );
-    final wide = playlistDetailUsesWideLayout(context);
+    final wide = playlistDetailUsesWideLayout(
+      context,
+      carPadModeEnabled: carPadModeEnabled,
+    );
     final detailLabel = kind == OnlineCollectionKind.leaderboard
         ? '榜单详情'
         : '歌单详情';

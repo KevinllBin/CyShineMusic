@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/models/enums.dart';
 import '../../core/models/leaderboard_info.dart';
 import '../../core/models/online_collection_kind.dart';
+import '../../core/storage/settings_store.dart';
 import '../../core/ui/app_refresh_indicator.dart';
 import '../../core/ui/container_transform.dart';
 import '../shell/widgets/shell_header.dart';
@@ -21,13 +22,23 @@ class LeaderboardsPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final boards = ref.watch(leaderboardBoardsProvider(source));
+    final carPadModeEnabled = ref.watch(
+      settingsProvider.select((settings) => settings.carPadModeEnabled),
+    );
     return Scaffold(
       body: Column(
         children: [
           // 发现区页面自绘顶栏，AppShell 对发现区路由不占顶栏空间：这样
           // 打开榜单详情时导航器高度不变，容器变换展开期间列表不会跳动。
           const ShellSectionHeader(title: '排行榜'),
-          Expanded(child: _buildBoards(context, ref, boards)),
+          Expanded(
+            child: _buildBoards(
+              context,
+              ref,
+              boards,
+              carPadModeEnabled: carPadModeEnabled,
+            ),
+          ),
         ],
       ),
     );
@@ -36,8 +47,9 @@ class LeaderboardsPage extends ConsumerWidget {
   Widget _buildBoards(
     BuildContext context,
     WidgetRef ref,
-    AsyncValue<List<LeaderboardSummary>> boards,
-  ) {
+    AsyncValue<List<LeaderboardSummary>> boards, {
+    required bool carPadModeEnabled,
+  }) {
     return boards.when(
       loading: () => const DiscoveryLoading(),
       error: (error, _) => DiscoveryError(
@@ -111,12 +123,18 @@ class LeaderboardsPage extends ConsumerWidget {
             SliverLayoutBuilder(
               builder: (context, constraints) {
                 final width = constraints.crossAxisExtent;
-                final columns = switch (width) {
-                  >= 1000 => 5,
-                  >= 720 => 4,
-                  >= 500 => 3,
-                  _ => 2,
-                };
+                final columns = carPadModeEnabled
+                    ? (width >= 1000
+                          ? 5
+                          : width >= 720
+                          ? 4
+                          : 3)
+                    : switch (width) {
+                        >= 1000 => 5,
+                        >= 720 => 4,
+                        >= 500 => 3,
+                        _ => 2,
+                      };
                 return SliverPadding(
                   padding: EdgeInsets.fromLTRB(
                     12,

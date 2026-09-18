@@ -3,13 +3,16 @@ import 'package:flutter/material.dart';
 import '../../../core/ui/container_transform.dart';
 import 'immersive_playlist_chrome.dart';
 
-/// 歌单详情页切换到左右分栏的最小宽度。与播放页的宽屏断点（720）取值
-/// 一致；不设高度门槛——分栏左列自身可滚动，横屏手机上分栏也严格优于
-/// 现状里被 clamp 到 320 高、几乎占满屏的横幅头图。
-const double kPlaylistWideLayoutBreakpoint = 720.0;
-
-bool playlistDetailUsesWideLayout(BuildContext context) {
-  return MediaQuery.sizeOf(context).width >= kPlaylistWideLayoutBreakpoint;
+/// Whether playlist and leaderboard details should use their split layout.
+///
+/// The layout is an explicit car/Pad preference. Keeping the decision here
+/// prevents each detail page from independently reintroducing a width based
+/// automatic switch.
+bool playlistDetailUsesWideLayout(
+  BuildContext context, {
+  required bool carPadModeEnabled,
+}) {
+  return carPadModeEnabled;
 }
 
 /// 宽屏分栏骨架：顶栏横跨顶部，下方 340dp 左列（歌单信息）+ 右列

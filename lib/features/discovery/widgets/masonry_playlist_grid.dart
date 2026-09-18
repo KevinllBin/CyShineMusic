@@ -1,23 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/playlist_summary.dart';
+import '../../../core/storage/settings_store.dart';
 import '../../../core/ui/container_transform.dart';
 import '../discovery_controller.dart';
 import 'discovery_helpers.dart';
 import 'discovery_playlist_cover.dart';
 import 'playlist_preview_dialog.dart';
 
-class MasonryPlaylistGrid extends StatelessWidget {
+class MasonryPlaylistGrid extends ConsumerWidget {
   const MasonryPlaylistGrid({super.key, required this.items});
 
   final List<PlaylistSummary> items;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final carPadModeEnabled = ref.watch(
+      settingsProvider.select((settings) => settings.carPadModeEnabled),
+    );
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columnCount = constraints.maxWidth >= 700 ? 3 : 2;
+        final columnCount = carPadModeEnabled || constraints.maxWidth >= 700
+            ? 3
+            : 2;
         const gap = 10.0;
         final width =
             (constraints.maxWidth - gap * (columnCount - 1)) / columnCount;

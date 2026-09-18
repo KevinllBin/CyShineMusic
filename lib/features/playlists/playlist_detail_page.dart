@@ -176,7 +176,13 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
 
     final artworkProvider = _artworkProviderFor(playlist);
     final artworkIdentity = _artworkIdentityFor(playlist);
-    final wide = playlistDetailUsesWideLayout(context);
+    final carPadModeEnabled = ref.watch(
+      settingsProvider.select((settings) => settings.carPadModeEnabled),
+    );
+    final wide = playlistDetailUsesWideLayout(
+      context,
+      carPadModeEnabled: carPadModeEnabled,
+    );
     return PlaylistArtworkTheme(
       artworkProvider: artworkProvider,
       cacheKey: 'local:${playlist.id}:$artworkIdentity',
