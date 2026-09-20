@@ -54,9 +54,13 @@ void main() {
     tester,
   ) async {
     await _useViewport(tester, const Size(390, 844));
+    final prefs = await _freshPreferences();
     final fake = _FakeDiscoveryApi(resolveCovers: true);
     final container = ProviderContainer(
-      overrides: [musicApiProvider.overrideWithValue(fake)],
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        musicApiProvider.overrideWithValue(fake),
+      ],
     );
     addTearDown(container.dispose);
 
@@ -84,10 +88,12 @@ void main() {
     tester,
   ) async {
     await _useViewport(tester, const Size(390, 844));
+    final prefs = await _freshPreferences();
     final fake = _FakeDiscoveryApi();
     final container = ProviderContainer(
       overrides: [
         discoverySourcesProvider.overrideWithValue(_testDiscoverySources),
+        sharedPreferencesProvider.overrideWithValue(prefs),
         musicApiProvider.overrideWithValue(fake),
       ],
     );
@@ -125,10 +131,12 @@ void main() {
     'discovery shows independent leaderboard previews above playlists',
     (tester) async {
       await _useViewport(tester, const Size(390, 844));
+      final prefs = await _freshPreferences();
       final fake = _FakeDiscoveryApi();
       final container = ProviderContainer(
         overrides: [
           discoverySourcesProvider.overrideWithValue(_testDiscoverySources),
+          sharedPreferencesProvider.overrideWithValue(prefs),
           musicApiProvider.overrideWithValue(fake),
         ],
       );
@@ -378,9 +386,13 @@ void main() {
     tester,
   ) async {
     await _useViewport(tester, const Size(390, 844));
+    final prefs = await _freshPreferences();
     final fake = _FakeDiscoveryApi(delayDetail: true);
     final container = ProviderContainer(
-      overrides: [musicApiProvider.overrideWithValue(fake)],
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        musicApiProvider.overrideWithValue(fake),
+      ],
     );
     addTearDown(container.dispose);
     const coverUrl = 'https://img.test/discovery-cover.jpg';
@@ -430,10 +442,12 @@ void main() {
     tester,
   ) async {
     await _useViewport(tester, const Size(390, 844));
+    final prefs = await _freshPreferences();
     final fake = _FakeDiscoveryApi();
     final container = ProviderContainer(
       overrides: [
         discoverySourcesProvider.overrideWithValue(_testDiscoverySources),
+        sharedPreferencesProvider.overrideWithValue(prefs),
         musicApiProvider.overrideWithValue(fake),
       ],
     );
@@ -482,10 +496,12 @@ void main() {
     tester,
   ) async {
     await _useViewport(tester, const Size(900, 760));
+    final prefs = await _freshPreferences();
     final fake = _FakeDiscoveryApi();
     final container = ProviderContainer(
       overrides: [
         discoverySourcesProvider.overrideWithValue(_testDiscoverySources),
+        sharedPreferencesProvider.overrideWithValue(prefs),
         musicApiProvider.overrideWithValue(fake),
       ],
     );
@@ -508,10 +524,12 @@ void main() {
     tester,
   ) async {
     await _useViewport(tester, const Size(390, 844));
+    final prefs = await _freshPreferences();
     final fake = _FakeDiscoveryApi(paginateFeatured: true);
     final container = ProviderContainer(
       overrides: [
         discoverySourcesProvider.overrideWithValue(_testDiscoverySources),
+        sharedPreferencesProvider.overrideWithValue(prefs),
         musicApiProvider.overrideWithValue(fake),
       ],
     );
@@ -540,10 +558,12 @@ void main() {
     'discovery category FAB reloads sorting and hides when singular',
     (tester) async {
       await _useViewport(tester, const Size(390, 844));
+      final prefs = await _freshPreferences();
       final fake = _FakeDiscoveryApi();
       final container = ProviderContainer(
         overrides: [
           discoverySourcesProvider.overrideWithValue(_testDiscoverySources),
+          sharedPreferencesProvider.overrideWithValue(prefs),
           musicApiProvider.overrideWithValue(fake),
         ],
       );
@@ -660,10 +680,12 @@ void main() {
     tester,
   ) async {
     await _useViewport(tester, const Size(390, 844));
+    final prefs = await _freshPreferences();
     final fake = _FakeDiscoveryApi();
     final container = ProviderContainer(
       overrides: [
         discoverySourcesProvider.overrideWithValue(_testDiscoverySources),
+        sharedPreferencesProvider.overrideWithValue(prefs),
         musicApiProvider.overrideWithValue(fake),
       ],
     );

@@ -35,7 +35,7 @@ void main() {
     tester,
   ) async {
     await _useViewport(tester, const Size(1024, 600));
-    await _pumpLocalDetail(tester, playlist: _localPlaylist());
+    await _pumpLocalDetail(tester, playlist: _localPlaylist(), carPadMode: true);
 
     expect(find.byKey(_wideLayoutKey), findsOneWidget);
     expect(find.byKey(_infoPaneKey), findsOneWidget);
@@ -126,6 +126,7 @@ void main() {
     tester,
   ) async {
     await _useViewport(tester, const Size(1024, 600));
+    SharedPreferences.setMockInitialValues({'car_pad_mode_enabled': true});
     final fake = _FakePlaylistApi(delayDetail: true);
     final container = _newContainer(
       await SharedPreferences.getInstance(),
@@ -164,6 +165,7 @@ void main() {
     tester,
   ) async {
     await _useViewport(tester, const Size(1024, 600));
+    SharedPreferences.setMockInitialValues({'car_pad_mode_enabled': true});
     final container = _newContainer(
       await SharedPreferences.getInstance(),
       musicApi: _FakePlaylistApi(),
@@ -278,9 +280,13 @@ ProviderContainer _newContainer(SharedPreferences prefs, {MusicApi? musicApi}) {
   return container;
 }
 
-Future<SharedPreferences> _seedPreferences(LocalPlaylist playlist) async {
+Future<SharedPreferences> _seedPreferences(
+  LocalPlaylist playlist, {
+  bool carPadMode = false,
+}) async {
   SharedPreferences.setMockInitialValues({
     localPlaylistsStorageKey: [jsonEncode(playlist.toJson())],
+    if (carPadMode) 'car_pad_mode_enabled': true,
   });
   return SharedPreferences.getInstance();
 }
@@ -288,8 +294,11 @@ Future<SharedPreferences> _seedPreferences(LocalPlaylist playlist) async {
 Future<ProviderContainer> _pumpLocalDetail(
   WidgetTester tester, {
   required LocalPlaylist playlist,
+  bool carPadMode = false,
 }) async {
-  final container = _newContainer(await _seedPreferences(playlist));
+  final container = _newContainer(
+    await _seedPreferences(playlist, carPadMode: carPadMode),
+  );
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
