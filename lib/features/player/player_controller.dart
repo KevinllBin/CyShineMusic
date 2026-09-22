@@ -124,7 +124,12 @@ class PlayerController extends StateNotifier<PlayerState>
     } else {
       _pendingRestoredSession = restored;
       _hydrateRestoredSession(restored);
-      unawaited(_restorePersistedSession(restored));
+      unawaited(
+        _restorePersistedSession(
+          restored,
+          autoPlay: _ref.read(settingsProvider).autoPlayOnStartup,
+        ),
+      );
     }
   }
 

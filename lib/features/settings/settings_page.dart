@@ -222,6 +222,21 @@ class SettingsPage extends ConsumerWidget {
                             ),
                             SettingsSwitchAction(
                               key: const ValueKey(
+                                'auto-play-on-startup-setting',
+                              ),
+                              icon: Icons.play_circle_outline_rounded,
+                              title: '启动后自动播放',
+                              subtitle: settings.autoPlayOnStartup
+                                  ? '打开 APP 后自动恢复上次播放并继续播放'
+                                  : '打开 APP 后仅恢复上次播放状态，不自动播放',
+                              value: settings.autoPlayOnStartup,
+                              onChanged: (value) => ref
+                                  .read(settingsProvider.notifier)
+                                  .setAutoPlayOnStartup(value),
+                            ),
+                            const SizedBox(height: 4),
+                            SettingsSwitchAction(
+                              key: const ValueKey(
                                 'allow-mix-with-others-setting',
                               ),
                               icon: Icons.multitrack_audio_rounded,

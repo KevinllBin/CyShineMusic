@@ -36,6 +36,7 @@ void main() {
       expect(settings.batchDownloadQuality, OnlinePlaybackQuality.highest);
       expect(settings.showMiniLyrics, isTrue);
       expect(settings.allowMixWithOthers, isFalse);
+      expect(settings.autoPlayOnStartup, isFalse);
       expect(settings.bluetoothLyricEnabled, isFalse);
       expect(settings.bluetoothFullLyricEnabled, isFalse);
       expect(settings.bluetoothLyricNoticeSeen, isFalse);
@@ -160,31 +161,46 @@ void main() {
     expect(disabled.read(settingsProvider).useNativeNavigation, isFalse);
   });
 
-  test('navigation mode persists across restarts and supports dual capsule', () async {
-    final prefs = await SharedPreferences.getInstance();
-    final container = _settingsContainer(prefs);
-    expect(AppSettings.fallback.navigationMode, AppNavigationMode.singleCapsule);
-    expect(container.read(settingsProvider).navigationMode, AppNavigationMode.singleCapsule);
+  test(
+    'navigation mode persists across restarts and supports dual capsule',
+    () async {
+      final prefs = await SharedPreferences.getInstance();
+      final container = _settingsContainer(prefs);
+      expect(
+        AppSettings.fallback.navigationMode,
+        AppNavigationMode.singleCapsule,
+      );
+      expect(
+        container.read(settingsProvider).navigationMode,
+        AppNavigationMode.singleCapsule,
+      );
 
-    await container
-        .read(settingsProvider.notifier)
-        .setNavigationMode(AppNavigationMode.dualCapsule);
-    container.dispose();
+      await container
+          .read(settingsProvider.notifier)
+          .setNavigationMode(AppNavigationMode.dualCapsule);
+      container.dispose();
 
-    final restored = _settingsContainer(prefs);
-    expect(restored.read(settingsProvider).navigationMode, AppNavigationMode.dualCapsule);
-    expect(restored.read(settingsProvider).useNativeNavigation, isFalse);
+      final restored = _settingsContainer(prefs);
+      expect(
+        restored.read(settingsProvider).navigationMode,
+        AppNavigationMode.dualCapsule,
+      );
+      expect(restored.read(settingsProvider).useNativeNavigation, isFalse);
 
-    await restored
-        .read(settingsProvider.notifier)
-        .setNavigationMode(AppNavigationMode.native);
-    restored.dispose();
+      await restored
+          .read(settingsProvider.notifier)
+          .setNavigationMode(AppNavigationMode.native);
+      restored.dispose();
 
-    final nativeMode = _settingsContainer(prefs);
-    addTearDown(nativeMode.dispose);
-    expect(nativeMode.read(settingsProvider).navigationMode, AppNavigationMode.native);
-    expect(nativeMode.read(settingsProvider).useNativeNavigation, isTrue);
-  });
+      final nativeMode = _settingsContainer(prefs);
+      addTearDown(nativeMode.dispose);
+      expect(
+        nativeMode.read(settingsProvider).navigationMode,
+        AppNavigationMode.native,
+      );
+      expect(nativeMode.read(settingsProvider).useNativeNavigation, isTrue);
+    },
+  );
 
   test('player preferences persist', () async {
     final prefs = await SharedPreferences.getInstance();
@@ -206,6 +222,19 @@ void main() {
     expect(settings.bluetoothLyricEnabled, isTrue);
     expect(settings.bluetoothFullLyricEnabled, isTrue);
     expect(settings.bluetoothLyricNoticeSeen, isTrue);
+  });
+
+  test('auto-play-on-startup preference persists across restarts', () async {
+    final prefs = await SharedPreferences.getInstance();
+    final container = _settingsContainer(prefs);
+    final notifier = container.read(settingsProvider.notifier);
+
+    await notifier.setAutoPlayOnStartup(true);
+    container.dispose();
+
+    final restored = _settingsContainer(prefs);
+    addTearDown(restored.dispose);
+    expect(restored.read(settingsProvider).autoPlayOnStartup, isTrue);
   });
 
   testWidgets('bluetooth lyric warning is shown only on first enable', (

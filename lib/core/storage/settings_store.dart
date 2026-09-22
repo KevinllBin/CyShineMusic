@@ -22,6 +22,7 @@ const String _kFlowingLightEnabledKey = 'flowing_light_enabled';
 const String _kCarPadModeEnabledKey = 'car_pad_mode_enabled';
 const String _kCarDisplayEnabledKey = 'car_display_enabled';
 const String _kCarDisplaySizeKey = 'car_display_size';
+const String _kAutoPlayOnStartupKey = 'auto_play_on_startup';
 const String _kUseNativeNavigationKey = 'use_native_navigation';
 const String _kNavigationModeKey = 'navigation_mode';
 const String _kNetworkAdapterModeKey = 'network_adapter_mode';
@@ -69,6 +70,7 @@ class AppSettings {
     required this.carPadModeEnabled,
     this.carDisplayEnabled = false,
     this.carDisplaySize = 1.0,
+    this.autoPlayOnStartup = false,
     required this.navigationMode,
     required this.networkAdapterMode,
     required this.enabledSearchSources,
@@ -102,6 +104,7 @@ class AppSettings {
   /// Deliberately excluded from appearance sync to other devices.
   final bool carDisplayEnabled;
   final double carDisplaySize;
+  final bool autoPlayOnStartup;
   final AppNavigationMode navigationMode;
   bool get useNativeNavigation => navigationMode == AppNavigationMode.native;
   final NetworkAdapterMode networkAdapterMode;
@@ -130,6 +133,7 @@ class AppSettings {
     bool? carPadModeEnabled,
     bool? carDisplayEnabled,
     double? carDisplaySize,
+    bool? autoPlayOnStartup,
     AppNavigationMode? navigationMode,
     bool? useNativeNavigation,
     NetworkAdapterMode? networkAdapterMode,
@@ -154,6 +158,7 @@ class AppSettings {
     carPadModeEnabled: carPadModeEnabled ?? this.carPadModeEnabled,
     carDisplayEnabled: carDisplayEnabled ?? this.carDisplayEnabled,
     carDisplaySize: carDisplaySize ?? this.carDisplaySize,
+    autoPlayOnStartup: autoPlayOnStartup ?? this.autoPlayOnStartup,
     navigationMode:
         navigationMode ??
         (useNativeNavigation != null
@@ -185,6 +190,7 @@ class AppSettings {
     useDynamicColor: false,
     flowingLightEnabled: true,
     carPadModeEnabled: false,
+    autoPlayOnStartup: false,
     navigationMode: AppNavigationMode.singleCapsule,
     networkAdapterMode: NetworkAdapterMode.system,
     enabledSearchSources: kDefaultEnabledSearchSources,
@@ -231,6 +237,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
       carDisplaySize: _decodeCarDisplaySize(
         _prefs.getDouble(_kCarDisplaySizeKey),
       ),
+      autoPlayOnStartup: _prefs.getBool(_kAutoPlayOnStartupKey) ?? false,
       navigationMode: _decodeNavigationMode(_prefs),
       networkAdapterMode: NetworkAdapterPreference.current,
       enabledSearchSources: decodeEnabledSearchSources(
@@ -325,6 +332,11 @@ class SettingsNotifier extends Notifier<AppSettings> {
     final size = _decodeCarDisplaySize(value);
     await _prefs.setDouble(_kCarDisplaySizeKey, size);
     state = state.copyWith(carDisplaySize: size);
+  }
+
+  Future<void> setAutoPlayOnStartup(bool value) async {
+    await _prefs.setBool(_kAutoPlayOnStartupKey, value);
+    state = state.copyWith(autoPlayOnStartup: value);
   }
 
   Future<void> setNavigationMode(AppNavigationMode mode) async {

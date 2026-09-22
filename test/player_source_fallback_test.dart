@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
@@ -20,6 +21,8 @@ import 'package:cy_shine_music/core/storage/settings_store.dart';
 import 'package:cy_shine_music/features/player/player_audio_handler.dart';
 import 'package:cy_shine_music/features/player/player_controller.dart';
 import 'package:cy_shine_music/features/downloads/download_history_entry.dart';
+import 'package:cy_shine_music/features/player/player_session_snapshot.dart';
+import 'package:cy_shine_music/features/player/player_session_store.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -138,6 +141,36 @@ void main() {
     expect(harness.audio.failTransitionCount, 1);
     expect(errors, hasLength(1));
   });
+
+  test(
+    'auto-play-on-startup resumes the persisted track automatically',
+    () async {
+      final snapshot = PlayerSessionSnapshot(
+        track: PersistedPlayerTrack(
+          id: 'kw:song-1:remote',
+          kindCode: PersistedPlayerTrack.remoteKindCode,
+          title: 'Test Song',
+          artist: 'Test Singer',
+          album: 'Test Album',
+          sourceLabel: MusicSource.kw.label,
+          qualityLabel: Quality.k128.code,
+        ),
+        music: _music(),
+        qualityCode: Quality.k128.code,
+      );
+      SharedPreferences.setMockInitialValues({
+        'auto_play_on_startup': true,
+        playerSessionSnapshotStorageKey: jsonEncode(snapshot.toJson()),
+      });
+
+      final harness = await _Harness.create(loadFailures: 0);
+      addTearDown(harness.dispose);
+
+      await _waitUntil(() => harness.audio.playCount == 1);
+      expect(harness.audio.playing, isTrue);
+      expect(harness.container.read(playerControllerProvider).track, isNotNull);
+    },
+  );
 
   test('a playback error retries only sources not already attempted', () async {
     final harness = await _Harness.create(loadFailures: 0);
