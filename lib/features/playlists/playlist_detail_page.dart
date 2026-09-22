@@ -13,6 +13,7 @@ import '../../core/services/download_service.dart';
 import '../../core/storage/settings_store.dart';
 import '../../core/ui/app_scrollbar.dart';
 import '../../core/ui/app_toast.dart';
+import '../../core/ui/car_display_layout.dart';
 import '../downloads/download_history_store.dart';
 import '../downloads/download_progress.dart';
 import '../music_sources/music_source_action_guard.dart';
@@ -176,9 +177,11 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
 
     final artworkProvider = _artworkProviderFor(playlist);
     final artworkIdentity = _artworkIdentityFor(playlist);
-    final carPadModeEnabled = ref.watch(
-      settingsProvider.select((settings) => settings.carPadModeEnabled),
-    );
+    final carPadModeEnabled =
+        ref.watch(
+          settingsProvider.select((settings) => settings.carPadModeEnabled),
+        ) ||
+        CarDisplayLayout.wideOf(context);
     final wide = playlistDetailUsesWideLayout(
       context,
       carPadModeEnabled: carPadModeEnabled,
@@ -364,7 +367,10 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
           sliver: SliverToBoxAdapter(
             child: Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 900),
+                constraints: CarDisplayLayout.contentConstraints(
+                  context,
+                  maxWidth: 900,
+                ),
                 child: SongsSearchBar(
                   controller: _searchController,
                   focusNode: _searchFocusNode,
@@ -383,7 +389,10 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
           sliver: SliverToBoxAdapter(
             child: Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 900),
+                constraints: CarDisplayLayout.contentConstraints(
+                  context,
+                  maxWidth: 900,
+                ),
                 child: _PlaylistTracksSummary(
                   count: filtered.length,
                   totalCount: resolved.length,
@@ -426,7 +435,10 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
               itemCount: filtered.length,
               separatorBuilder: (_, _) => Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 900),
+                  constraints: CarDisplayLayout.contentConstraints(
+                    context,
+                    maxWidth: 900,
+                  ),
                   child: const SongListDivider(),
                 ),
               ),
@@ -434,7 +446,10 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
                 final item = filtered[index];
                 return Center(
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 900),
+                    constraints: CarDisplayLayout.contentConstraints(
+                      context,
+                      maxWidth: 900,
+                    ),
                     child: PlaylistTrackTile(
                       playlistId: playlist.id,
                       index: index,

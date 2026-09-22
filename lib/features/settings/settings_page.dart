@@ -16,6 +16,7 @@ import '../../core/services/permission_service.dart';
 import '../../core/storage/settings_store.dart';
 import '../../core/sync/webdav_sync_controller.dart';
 import '../../core/ui/app_toast.dart';
+import '../../core/ui/car_display_layout.dart';
 import '../../theme/dynamic_color_status.dart';
 import '../discovery/discovery_controller.dart';
 import '../equalizer/equalizer_store.dart';
@@ -68,7 +69,10 @@ class SettingsPage extends ConsumerWidget {
               sliver: SliverToBoxAdapter(
                 child: Center(
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 640),
+                    constraints: CarDisplayLayout.contentConstraints(
+                      context,
+                      maxWidth: 640,
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -472,6 +476,46 @@ class SettingsPage extends ConsumerWidget {
                             ),
                             const SizedBox(height: 4),
                             SettingsSwitchAction(
+                              key: const ValueKey('car-display-setting'),
+                              icon: Icons.display_settings_rounded,
+                              title: '车机显示适配',
+                              subtitle: settings.carDisplayEnabled
+                                  ? '已开启：全局放大、内容铺开、横屏分栏，仅此设备生效'
+                                  : '适合车机上文字按钮偏小、页面两侧留白过多的情况',
+                              value: settings.carDisplayEnabled,
+                              onChanged: (value) => ref
+                                  .read(settingsProvider.notifier)
+                                  .setCarDisplayEnabled(value),
+                            ),
+                            if (settings.carDisplayEnabled)
+                              SettingsMenuAction(
+                                menuId: 'car-display-size-menu',
+                                icon: Icons.format_size_rounded,
+                                title: '车机界面大小',
+                                subtitle: switch (settings.carDisplaySize) {
+                                  < 1 => '紧凑 · 显示更多内容',
+                                  > 1.1 => '更大 · 更易看清和点击',
+                                  _ => '标准 · 按当前窗口调整',
+                                },
+                                options: [
+                                  for (final option in {
+                                    0.85: '紧凑',
+                                    1.0: '标准',
+                                    1.25: '更大',
+                                  }.entries)
+                                    SettingsMenuOption(
+                                      id: option.key.toString(),
+                                      label: option.value,
+                                      selected:
+                                          settings.carDisplaySize == option.key,
+                                      onSelected: () => ref
+                                          .read(settingsProvider.notifier)
+                                          .setCarDisplaySize(option.key),
+                                    ),
+                                ],
+                              ),
+                            const SizedBox(height: 4),
+                            SettingsSwitchAction(
                               key: const ValueKey('flowing-light-setting'),
                               icon: Icons.blur_on_rounded,
                               title: '动态流光',
@@ -762,9 +806,9 @@ class SettingsPage extends ConsumerWidget {
         context,
         order: ref.read(settingsProvider).discoverySourceOrder,
         onChanged: (order) async {
-          await ref.read(settingsProvider.notifier).setDiscoverySourceOrder(
-                order,
-              );
+          await ref
+              .read(settingsProvider.notifier)
+              .setDiscoverySourceOrder(order);
           ref.read(selectedDiscoverySourceProvider.notifier).state =
               order.first;
         },

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/ui/car_display_layout.dart';
 import '../../core/storage/settings_store.dart';
 import '../../theme/app_motion.dart';
 import '../shell/player_transition.dart';
@@ -209,9 +210,11 @@ class _NowPlayingBodyState extends ConsumerState<_NowPlayingBody> {
 
   @override
   Widget build(BuildContext context) {
-    final carPadModeEnabled = ref.watch(
-      settingsProvider.select((settings) => settings.carPadModeEnabled),
-    );
+    final carPadModeEnabled =
+        ref.watch(
+          settingsProvider.select((settings) => settings.carPadModeEnabled),
+        ) ||
+        CarDisplayLayout.wideOf(context);
     if (carPadModeEnabled) {
       return Padding(
         key: const ValueKey('player-wide-layout'),

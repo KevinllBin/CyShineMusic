@@ -16,6 +16,7 @@ import '../../core/ui/app_toast.dart';
 import '../../core/ui/app_refresh_indicator.dart';
 import '../../core/ui/app_scrollbar.dart';
 import '../../core/ui/cover_placeholder.dart';
+import '../../core/ui/car_display_layout.dart';
 import '../downloads/download_history_store.dart';
 import '../downloads/download_progress.dart';
 import '../music_sources/music_source_action_guard.dart';
@@ -124,9 +125,11 @@ class _OnlinePlaylistDetailPageState
 
   @override
   Widget build(BuildContext context) {
-    final carPadModeEnabled = ref.watch(
-      settingsProvider.select((settings) => settings.carPadModeEnabled),
-    );
+    final carPadModeEnabled =
+        ref.watch(
+          settingsProvider.select((settings) => settings.carPadModeEnabled),
+        ) ||
+        CarDisplayLayout.wideOf(context);
     final detail = ref.watch(onlinePlaylistDetailProvider(_key));
     final loaded = detail.asData?.value;
     if (loaded != null) {
@@ -283,7 +286,8 @@ class _OnlinePlaylistDetailPageState
                 ),
                 sliver: SliverList.separated(
                   itemCount: playlist.tracks.length,
-                  separatorBuilder: (_, _) => _trackListDivider(scheme),
+                  separatorBuilder: (_, _) =>
+                      _trackListDivider(context, scheme),
                   itemBuilder: (context, index) {
                     _requestMoreTracksIfNeeded(playlist, index);
                     final music = playlist.tracks[index];
@@ -293,7 +297,10 @@ class _OnlinePlaylistDetailPageState
                     }).firstOrNull;
                     return Center(
                       child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 900),
+                        constraints: CarDisplayLayout.contentConstraints(
+                          context,
+                          maxWidth: 900,
+                        ),
                         child: _OnlinePlaylistTrackTile(
                           music: music,
                           onPlay: entry == null
@@ -613,7 +620,7 @@ class _DetailLoading extends StatelessWidget {
             ),
             sliver: SliverList.separated(
               itemCount: wide ? 8 : 5,
-              separatorBuilder: (_, _) => _trackListDivider(scheme),
+              separatorBuilder: (_, _) => _trackListDivider(context, scheme),
               itemBuilder: (_, _) => const _DetailTrackSkeleton(),
             ),
           );
@@ -845,7 +852,10 @@ class _PlaylistTracksHeading extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 900),
+          constraints: CarDisplayLayout.contentConstraints(
+            context,
+            maxWidth: 900,
+          ),
           child: SizedBox(
             height: 24,
             child: Align(
@@ -905,7 +915,10 @@ class _LoadMoreTracksError extends StatelessWidget {
       ),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 900),
+          constraints: CarDisplayLayout.contentConstraints(
+            context,
+            maxWidth: 900,
+          ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -941,7 +954,10 @@ class _DetailTrackSkeleton extends StatelessWidget {
     // 封面 44），loading → data 切换不跳动。
     return Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900),
+        constraints: CarDisplayLayout.contentConstraints(
+          context,
+          maxWidth: 900,
+        ),
         child: SizedBox(
           key: const ValueKey('detail-track-skeleton'),
           height: 62,
@@ -996,10 +1012,10 @@ class _DetailTrackSkeleton extends StatelessWidget {
   }
 }
 
-Widget _trackListDivider(ColorScheme scheme) {
+Widget _trackListDivider(BuildContext context, ColorScheme scheme) {
   return Center(
     child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 900),
+      constraints: CarDisplayLayout.contentConstraints(context, maxWidth: 900),
       child: Divider(
         height: 1,
         indent: 56,

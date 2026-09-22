@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/playlist_summary.dart';
 import '../../../core/storage/settings_store.dart';
 import '../../../core/ui/container_transform.dart';
+import '../../../core/ui/car_display_layout.dart';
 import '../discovery_controller.dart';
 import 'discovery_helpers.dart';
 import 'discovery_playlist_cover.dart';
@@ -22,7 +23,9 @@ class MasonryPlaylistGrid extends ConsumerWidget {
     );
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columnCount = carPadModeEnabled || constraints.maxWidth >= 700
+        final columnCount = CarDisplayLayout.enabledOf(context)
+            ? (constraints.maxWidth / 240).floor().clamp(2, 6)
+            : carPadModeEnabled || constraints.maxWidth >= 700
             ? 3
             : 2;
         const gap = 10.0;

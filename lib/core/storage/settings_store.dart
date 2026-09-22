@@ -20,6 +20,8 @@ const String _kColorStyleKey = 'theme_color_style';
 const String _kUseDynamicColorKey = 'use_dynamic_color';
 const String _kFlowingLightEnabledKey = 'flowing_light_enabled';
 const String _kCarPadModeEnabledKey = 'car_pad_mode_enabled';
+const String _kCarDisplayEnabledKey = 'car_display_enabled';
+const String _kCarDisplaySizeKey = 'car_display_size';
 const String _kUseNativeNavigationKey = 'use_native_navigation';
 const String _kNavigationModeKey = 'navigation_mode';
 const String _kNetworkAdapterModeKey = 'network_adapter_mode';
@@ -65,6 +67,8 @@ class AppSettings {
     required this.useDynamicColor,
     required this.flowingLightEnabled,
     required this.carPadModeEnabled,
+    this.carDisplayEnabled = false,
+    this.carDisplaySize = 1.0,
     required this.navigationMode,
     required this.networkAdapterMode,
     required this.enabledSearchSources,
@@ -93,6 +97,11 @@ class AppSettings {
   /// Uses the split album-and-lyrics player layout on car displays and pads.
   /// This is deliberately manual so ordinary large screens retain phone UI.
   final bool carPadModeEnabled;
+
+  /// Device-local car adaptation, independent of the existing Pad preference.
+  /// Deliberately excluded from appearance sync to other devices.
+  final bool carDisplayEnabled;
+  final double carDisplaySize;
   final AppNavigationMode navigationMode;
   bool get useNativeNavigation => navigationMode == AppNavigationMode.native;
   final NetworkAdapterMode networkAdapterMode;
@@ -119,6 +128,8 @@ class AppSettings {
     bool? useDynamicColor,
     bool? flowingLightEnabled,
     bool? carPadModeEnabled,
+    bool? carDisplayEnabled,
+    double? carDisplaySize,
     AppNavigationMode? navigationMode,
     bool? useNativeNavigation,
     NetworkAdapterMode? networkAdapterMode,
@@ -141,11 +152,14 @@ class AppSettings {
     useDynamicColor: useDynamicColor ?? this.useDynamicColor,
     flowingLightEnabled: flowingLightEnabled ?? this.flowingLightEnabled,
     carPadModeEnabled: carPadModeEnabled ?? this.carPadModeEnabled,
-    navigationMode: navigationMode ??
+    carDisplayEnabled: carDisplayEnabled ?? this.carDisplayEnabled,
+    carDisplaySize: carDisplaySize ?? this.carDisplaySize,
+    navigationMode:
+        navigationMode ??
         (useNativeNavigation != null
             ? (useNativeNavigation
-                ? AppNavigationMode.native
-                : AppNavigationMode.singleCapsule)
+                  ? AppNavigationMode.native
+                  : AppNavigationMode.singleCapsule)
             : this.navigationMode),
     networkAdapterMode: networkAdapterMode ?? this.networkAdapterMode,
     enabledSearchSources: enabledSearchSources ?? this.enabledSearchSources,
@@ -213,6 +227,10 @@ class SettingsNotifier extends Notifier<AppSettings> {
       useDynamicColor: _prefs.getBool(_kUseDynamicColorKey) ?? false,
       flowingLightEnabled: _prefs.getBool(_kFlowingLightEnabledKey) ?? true,
       carPadModeEnabled: _prefs.getBool(_kCarPadModeEnabledKey) ?? false,
+      carDisplayEnabled: _prefs.getBool(_kCarDisplayEnabledKey) ?? false,
+      carDisplaySize: _decodeCarDisplaySize(
+        _prefs.getDouble(_kCarDisplaySizeKey),
+      ),
       navigationMode: _decodeNavigationMode(_prefs),
       networkAdapterMode: NetworkAdapterPreference.current,
       enabledSearchSources: decodeEnabledSearchSources(
@@ -293,6 +311,20 @@ class SettingsNotifier extends Notifier<AppSettings> {
   Future<void> setCarPadModeEnabled(bool value) async {
     await _prefs.setBool(_kCarPadModeEnabledKey, value);
     state = state.copyWith(carPadModeEnabled: value);
+  }
+
+  static double _decodeCarDisplaySize(double? value) =>
+      value != null && value.isFinite ? value.clamp(0.85, 1.25) : 1.0;
+
+  Future<void> setCarDisplayEnabled(bool value) async {
+    await _prefs.setBool(_kCarDisplayEnabledKey, value);
+    state = state.copyWith(carDisplayEnabled: value);
+  }
+
+  Future<void> setCarDisplaySize(double value) async {
+    final size = _decodeCarDisplaySize(value);
+    await _prefs.setDouble(_kCarDisplaySizeKey, size);
+    state = state.copyWith(carDisplaySize: size);
   }
 
   Future<void> setNavigationMode(AppNavigationMode mode) async {
@@ -520,9 +552,7 @@ List<MusicSource> decodeDiscoverySourceOrder(List<String>? codes) {
   );
 }
 
-List<MusicSource> normalizeDiscoverySourceOrder(
-  Iterable<MusicSource> sources,
-) {
+List<MusicSource> normalizeDiscoverySourceOrder(Iterable<MusicSource> sources) {
   final order = <MusicSource>[];
   for (final source in sources) {
     if (kDefaultDiscoverySourceOrder.contains(source) &&

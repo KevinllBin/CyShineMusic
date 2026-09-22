@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/sync/webdav_config_store.dart';
 import '../../core/sync/webdav_sync_controller.dart';
 import '../../core/ui/app_toast.dart';
+import '../../core/ui/car_display_layout.dart';
 import '../shell/shell_bottom_area.dart';
 import 'widgets/settings_action.dart';
 
@@ -75,7 +76,10 @@ class _WebDavSyncPageState extends ConsumerState<WebDavSyncPage> {
             sliver: SliverToBoxAdapter(
               child: Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 640),
+                  constraints: CarDisplayLayout.contentConstraints(
+                    context,
+                    maxWidth: 640,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [

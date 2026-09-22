@@ -9,6 +9,7 @@ import '../../../core/models/leaderboard_info.dart';
 import '../../../core/models/music_info.dart';
 import '../../../core/models/online_collection_kind.dart';
 import '../../../core/ui/container_transform.dart';
+import '../../../core/ui/car_display_layout.dart';
 import '../discovery_controller.dart';
 import 'leaderboard_artwork.dart';
 
@@ -57,10 +58,16 @@ class LeaderboardSpotlight extends ConsumerWidget {
               final featured = items.take(4).toList(growable: false);
               return LayoutBuilder(
                 builder: (context, constraints) {
-                  final cardWidth = math.min(
-                    336.0,
-                    math.max(286.0, constraints.maxWidth - 28),
-                  );
+                  final visibleCards = (constraints.maxWidth / 300)
+                      .floor()
+                      .clamp(1, 4);
+                  final cardWidth = CarDisplayLayout.enabledOf(context)
+                      ? (constraints.maxWidth - 4 - 10 * (visibleCards - 1)) /
+                            visibleCards
+                      : math.min(
+                          336.0,
+                          math.max(286.0, constraints.maxWidth - 28),
+                        );
                   return ListView.separated(
                     key: PageStorageKey('leaderboard-spotlight-${source.code}'),
                     scrollDirection: Axis.horizontal,

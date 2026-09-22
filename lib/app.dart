@@ -15,6 +15,7 @@ import 'core/services/permission_service.dart';
 import 'core/storage/settings_store.dart';
 import 'core/sync/webdav_sync_controller.dart';
 import 'core/ui/app_toast.dart';
+import 'core/ui/car_display_layout.dart';
 import 'features/downloads/download_history_store.dart';
 import 'core/music_sources/music_source_controller.dart';
 import 'features/player/player_controller.dart';
@@ -222,10 +223,14 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
               darkTheme: darkTheme,
               routerConfig: appRouter,
               builder: (context, child) {
-                return AppToastOverlay(
-                  child: StartupGate(
-                    onReady: _onStartupReady,
-                    child: child ?? const SizedBox.shrink(),
+                return CarDisplayViewport(
+                  enabled: settings.carDisplayEnabled,
+                  sizeFactor: settings.carDisplaySize,
+                  child: AppToastOverlay(
+                    child: StartupGate(
+                      onReady: _onStartupReady,
+                      child: child ?? const SizedBox.shrink(),
+                    ),
                   ),
                 );
               },

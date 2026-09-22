@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/ui/app_toast.dart';
+import '../../core/ui/car_display_layout.dart';
 import '../settings/widgets/settings_action.dart';
 import '../shell/shell_toolbar_visibility.dart';
 import '../shell/shell_bottom_area.dart';
@@ -55,7 +56,10 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
           sliver: SliverToBoxAdapter(
             child: Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 720),
+                constraints: CarDisplayLayout.contentConstraints(
+                  context,
+                  maxWidth: 720,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -117,7 +121,9 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
                             color: scheme.surfaceContainerLowest,
                             borderRadius: BorderRadius.circular(24),
                             border: Border.all(
-                              color: scheme.outlineVariant.withValues(alpha: 0.35),
+                              color: scheme.outlineVariant.withValues(
+                                alpha: 0.35,
+                              ),
                             ),
                           ),
                           clipBehavior: Clip.antiAlias,
@@ -194,7 +200,9 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
                             color: scheme.surfaceContainerLowest,
                             borderRadius: BorderRadius.circular(24),
                             border: Border.all(
-                              color: scheme.outlineVariant.withValues(alpha: 0.35),
+                              color: scheme.outlineVariant.withValues(
+                                alpha: 0.35,
+                              ),
                             ),
                           ),
                           clipBehavior: Clip.antiAlias,
@@ -230,7 +238,8 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
                                             ),
                                             const SizedBox(height: 12),
                                             FilledButton.tonalIcon(
-                                              onPressed: () => _addBand(settings),
+                                              onPressed: () =>
+                                                  _addBand(settings),
                                               icon: const Icon(
                                                 Icons.add_rounded,
                                                 size: 16,
@@ -271,17 +280,26 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
                           children: [
                             FilledButton.tonalIcon(
                               onPressed: _importSpeq,
-                              icon: const Icon(Icons.file_open_rounded, size: 18),
+                              icon: const Icon(
+                                Icons.file_open_rounded,
+                                size: 18,
+                              ),
                               label: const Text('导入 .speq'),
                             ),
                             FilledButton.tonalIcon(
                               onPressed: () => _exportSpeq(settings),
-                              icon: const Icon(Icons.save_alt_rounded, size: 18),
+                              icon: const Icon(
+                                Icons.save_alt_rounded,
+                                size: 18,
+                              ),
                               label: const Text('导出 .speq'),
                             ),
                             OutlinedButton.icon(
                               onPressed: _reset,
-                              icon: const Icon(Icons.restart_alt_rounded, size: 18),
+                              icon: const Icon(
+                                Icons.restart_alt_rounded,
+                                size: 18,
+                              ),
                               label: const Text('恢复默认'),
                             ),
                           ],
@@ -402,8 +420,7 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
                               ),
                             ),
                             IconButton(
-                              onPressed: () =>
-                                  Navigator.of(sheetContext).pop(),
+                              onPressed: () => Navigator.of(sheetContext).pop(),
                               icon: const Icon(Icons.close_rounded),
                               tooltip: '关闭',
                             ),
@@ -430,9 +447,7 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
                               ),
                             ),
                             subtitle: Text(
-                              enabled
-                                  ? '该频段正在参与音频滤波处理'
-                                  : '该频段已停用旁通（不影响声音）',
+                              enabled ? '该频段正在参与音频滤波处理' : '该频段已停用旁通（不影响声音）',
                               style: TextStyle(
                                 color: enabled
                                     ? scheme.primary
@@ -451,9 +466,8 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
                           decoration: InputDecoration(
                             labelText: '滤波器类型',
                             filled: true,
-                            fillColor: scheme.surfaceContainerHighest.withValues(
-                              alpha: 0.35,
-                            ),
+                            fillColor: scheme.surfaceContainerHighest
+                                .withValues(alpha: 0.35),
                             contentPadding: const EdgeInsets.symmetric(
                               horizontal: 16,
                               vertical: 12,
@@ -559,9 +573,9 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
                               foregroundColor: scheme.error,
                               minimumSize: const Size.fromHeight(42),
                             ),
-                            onPressed: () => Navigator.of(sheetContext).pop(
-                              const _BandEditorDeleteResult(),
-                            ),
+                            onPressed: () => Navigator.of(
+                              sheetContext,
+                            ).pop(const _BandEditorDeleteResult()),
                             icon: const Icon(
                               Icons.delete_outline_rounded,
                               size: 19,
@@ -760,7 +774,9 @@ class _GainSlider extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: isNonZero ? scheme.primary : scheme.onSurfaceVariant,
+                      color: isNonZero
+                          ? scheme.primary
+                          : scheme.onSurfaceVariant,
                       fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
@@ -816,8 +832,8 @@ class _BandSlider extends StatelessWidget {
                 !band.enabled
                     ? '停用'
                     : band.filter.usesGain
-                        ? _dbLabel(band.gainDb)
-                        : band.filter.label,
+                    ? _dbLabel(band.gainDb)
+                    : band.filter.label,
                 style: TextStyle(
                   color: band.enabled
                       ? scheme.onPrimaryContainer
@@ -1158,10 +1174,7 @@ class _EqualizerCurvePainter extends CustomPainter {
         RRect.fromRectAndRadius(rect, const Radius.circular(12)),
         Paint()..color = scheme.surfaceContainerHigh.withValues(alpha: 0.8),
       );
-      textPainter.paint(
-        canvas,
-        Offset(rect.left + 12, rect.top + 6),
-      );
+      textPainter.paint(canvas, Offset(rect.left + 12, rect.top + 6));
     }
   }
 

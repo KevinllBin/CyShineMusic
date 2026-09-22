@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/models/enums.dart';
 import '../../core/ui/app_scrollbar.dart';
 import '../../core/ui/app_toast.dart';
+import '../../core/ui/car_display_layout.dart';
 import '../../theme/app_motion.dart';
 import '../shell/shell_bottom_area.dart';
 import 'lx_playlist_import.dart';
@@ -54,7 +55,10 @@ class _PlaylistManagementPageState
               sliver: SliverToBoxAdapter(
                 child: Center(
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 760),
+                    constraints: CarDisplayLayout.contentConstraints(
+                      context,
+                      maxWidth: 760,
+                    ),
                     child: _ManagementActions(
                       count: playlists.length,
                       onCreate: () => _createPlaylist(context, ref),
@@ -87,7 +91,10 @@ class _PlaylistManagementPageState
                     final playlist = playlists[index];
                     return Center(
                       child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 760),
+                        constraints: CarDisplayLayout.contentConstraints(
+                          context,
+                          maxWidth: 760,
+                        ),
                         child: _PlaylistManagementTile(
                           playlist: playlist,
                           onOpen: () => context.go(

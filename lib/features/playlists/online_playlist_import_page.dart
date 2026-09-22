@@ -7,6 +7,7 @@ import '../../core/models/enums.dart';
 import '../../core/models/music_info.dart';
 import '../../core/models/playlist_info.dart';
 import '../../core/ui/app_toast.dart';
+import '../../core/ui/car_display_layout.dart';
 import '../shell/shell_bottom_area.dart';
 import '../downloads/download_progress.dart';
 import '../music_sources/music_source_action_guard.dart';
@@ -80,7 +81,10 @@ class _OnlinePlaylistImportPageState
             sliver: SliverToBoxAdapter(
               child: Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 760),
+                  constraints: CarDisplayLayout.contentConstraints(
+                    context,
+                    maxWidth: 760,
+                  ),
                   child: _ImportForm(
                     controller: _inputController,
                     source: _source,
@@ -122,7 +126,10 @@ class _OnlinePlaylistImportPageState
               sliver: SliverToBoxAdapter(
                 child: Center(
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 760),
+                    constraints: CarDisplayLayout.contentConstraints(
+                      context,
+                      maxWidth: 760,
+                    ),
                     child: _ParsedPlaylistHeader(
                       playlist: _playlist!,
                       saving: _saving,
@@ -146,7 +153,10 @@ class _OnlinePlaylistImportPageState
                   final music = _playlist!.tracks[index];
                   return Center(
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 760),
+                      constraints: CarDisplayLayout.contentConstraints(
+                        context,
+                        maxWidth: 760,
+                      ),
                       child: _OnlineTrackTile(
                         music: music,
                         onDownload: () =>

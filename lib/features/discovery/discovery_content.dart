@@ -7,6 +7,7 @@ import '../../core/api/music_api.dart';
 import '../../core/models/enums.dart';
 import '../../core/models/playlist_summary.dart';
 import '../../core/ui/app_refresh_indicator.dart';
+import '../../core/ui/car_display_layout.dart';
 import '../../theme/app_motion.dart';
 import '../shell/shell_bottom_area.dart';
 import 'discovery_controller.dart';
@@ -263,7 +264,10 @@ class _DiscoveryListState extends State<_DiscoveryList> {
     return [
       Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 960),
+          constraints: CarDisplayLayout.contentConstraints(
+            context,
+            maxWidth: 960,
+          ),
           child: MasonryPlaylistGrid(items: _items),
         ),
       ),
@@ -305,14 +309,20 @@ class _DiscoveryListState extends State<_DiscoveryList> {
         children: [
           Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 960),
+              constraints: CarDisplayLayout.contentConstraints(
+                context,
+                maxWidth: 960,
+              ),
               child: LeaderboardSpotlight(source: widget.source),
             ),
           ),
           const SizedBox(height: 20),
           Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 960),
+              constraints: CarDisplayLayout.contentConstraints(
+                context,
+                maxWidth: 960,
+              ),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Padding(
