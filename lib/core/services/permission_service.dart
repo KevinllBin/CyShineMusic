@@ -5,32 +5,37 @@ import 'package:permission_handler/permission_handler.dart';
 class PermissionService {
   const PermissionService._();
 
-  // Non-prompting check: returns true if either MANAGE_EXTERNAL_STORAGE or
-  // legacy WRITE_EXTERNAL_STORAGE is already granted. Use this on startup to
-  // decide whether to show the onboarding dialog — we never want to fire the
-  // system request as a side-effect of opening the app.
+  // Non-prompting check used on startup for the onboarding dialog.
   static Future<bool> hasExternalStorageWrite() async {
     if (!Platform.isAndroid) return true;
-    if (await Permission.manageExternalStorage.isGranted) return true;
-    if (await Permission.storage.isGranted) return true;
-    return false;
+
+    // MANAGE_EXTERNAL_STORAGE is restricted below Android 11. There, the
+    // storage group checks both READ and WRITE in legacy storage mode.
+    final manage = await Permission.manageExternalStorage.status;
+    if (!manage.isRestricted) return manage.isGranted;
+    return Permission.storage.isGranted;
   }
 
   // Returns true once we have permission to write into a user-chosen public
   // directory (e.g. /storage/emulated/0/Music). Strategy:
   //   1. On non-Android, no-op.
-  //   2. Try MANAGE_EXTERNAL_STORAGE first (Android 11+).
-  //   3. Fall back to WRITE_EXTERNAL_STORAGE (Android 10 and below, with
-  //      requestLegacyExternalStorage in manifest).
-  // If both are denied, callers should fall back to the app-private dir.
+  //   2. Request MANAGE_EXTERNAL_STORAGE on Android 11+.
+  //   3. Request READ and WRITE on Android 10 and below, with
+  //      requestLegacyExternalStorage in the manifest for Android 10.
+  // If denied, callers should fall back to the app-private dir.
   static Future<bool> ensureExternalStorageWrite() async {
     if (!Platform.isAndroid) return true;
 
-    final manage = await Permission.manageExternalStorage.request();
-    if (manage.isGranted) return true;
+    final manage = await Permission.manageExternalStorage.status;
+    if (!manage.isRestricted) {
+      if (manage.isGranted) return true;
+      return (await Permission.manageExternalStorage.request()).isGranted;
+    }
 
-    final legacy = await Permission.storage.request();
-    return legacy.isGranted;
+    await Permission.storage.request();
+    // The request callback can report the READ result for the storage group.
+    // Recheck to ensure WRITE was granted as well.
+    return Permission.storage.isGranted;
   }
 
   static Future<bool> ensureExternalStorageRead() async {

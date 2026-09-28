@@ -120,7 +120,7 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
             title: const Text('需要存储权限'),
             content: const Text(
               '为了把下载好的音乐保存到「音乐」目录，'
-              '需要授予「所有文件访问」权限。\n\n',
+              '需要授予存储访问权限。\n\n',
             ),
             actions: [
               TextButton(

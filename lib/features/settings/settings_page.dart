@@ -698,6 +698,18 @@ class SettingsPage extends ConsumerWidget {
         initialPath: ref.read(settingsProvider).downloadDir,
       );
     }
+    if (Platform.isAndroid &&
+        path != null &&
+        path.isNotEmpty &&
+        (path == Platform.pathSeparator || !await Directory(path).exists())) {
+      if (!context.mounted) return;
+      path = await _showStorageFolderPicker(
+        context,
+        ref,
+        title: '选择下载目录',
+        initialPath: ref.read(settingsProvider).downloadDir,
+      );
+    }
     if (!context.mounted) return;
     if (path == null || path.isEmpty) return;
 
@@ -752,6 +764,18 @@ class SettingsPage extends ConsumerWidget {
         initialPath: ref.read(settingsProvider).localMusicDir,
       );
     }
+    if (Platform.isAndroid &&
+        path != null &&
+        path.isNotEmpty &&
+        (path == Platform.pathSeparator || !await Directory(path).exists())) {
+      if (!context.mounted) return;
+      path = await _showStorageFolderPicker(
+        context,
+        ref,
+        title: '选择扫描文件夹',
+        initialPath: ref.read(settingsProvider).localMusicDir,
+      );
+    }
     if (!context.mounted || path == null || path.isEmpty) return;
 
     await _applyLocalMusicDir(context, ref, path);
@@ -795,6 +819,16 @@ class SettingsPage extends ConsumerWidget {
     required String initialPath,
   }) async {
     FocusManager.instance.primaryFocus?.unfocus();
+    var browsePath = initialPath;
+    while (!await Directory(browsePath).exists()) {
+      final parent = Directory(browsePath).parent.path;
+      if (parent == browsePath) {
+        browsePath = '';
+        break;
+      }
+      browsePath = parent;
+    }
+    if (!context.mounted) return null;
     final toolbar = ref.read(shellToolbarVisibleProvider.notifier);
     final wasToolbarVisible = ref.read(shellToolbarVisibleProvider);
     toolbar.state = false;
@@ -802,7 +836,7 @@ class SettingsPage extends ConsumerWidget {
       return await showStorageFolderPickerSheet(
         context,
         title: title,
-        initialPath: initialPath,
+        initialPath: browsePath.isEmpty ? null : browsePath,
       );
     } finally {
       if (toolbar.mounted) toolbar.state = wasToolbarVisible;
@@ -839,7 +873,7 @@ class SettingsPage extends ConsumerWidget {
   ) async {
     try {
       final dir = Directory(path);
-      if (!dir.existsSync()) await dir.create(recursive: true);
+      if (!await dir.exists()) throw FileSystemException('目录不存在', path);
       final probe = File('${dir.path}${Platform.pathSeparator}.cyshine_probe');
       await probe.writeAsString('ok');
       await probe.delete();

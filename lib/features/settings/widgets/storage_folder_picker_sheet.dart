@@ -234,7 +234,7 @@ class _StorageFolderPickerSheetState extends State<StorageFolderPickerSheet> {
       return _PickerMessage(
         icon: Icons.folder_open_outlined,
         title: _currentPath == null ? '没有可浏览的存储位置' : '没有子文件夹',
-        subtitle: _currentPath == null ? '请确认已授予所有文件访问权限' : _currentPath!,
+        subtitle: _currentPath == null ? '请确认已授予存储访问权限' : _currentPath!,
         action: TextButton.icon(
           onPressed: _load,
           icon: const Icon(Icons.refresh_rounded),
