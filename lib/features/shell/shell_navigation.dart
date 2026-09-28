@@ -50,10 +50,13 @@ void navigateToShellTab(
 ) {
   _dismissTransientRoutes(context);
   final targetIndex = toolbarIndexFor(path);
-  final target = toolbarIndexFor(location) == targetIndex
-      ? path
-      : (ref.read(tabLocationMemoryProvider)[targetIndex] ?? path);
-  if (target != routeLocation) context.go(target);
+  final switchesTab = toolbarIndexFor(location) != targetIndex;
+  final target = switchesTab
+      ? (ref.read(tabLocationMemoryProvider)[targetIndex] ?? path)
+      : path;
+  if (target != routeLocation) {
+    context.go(target, extra: switchesTab ? const ShellTabSwitch() : null);
+  }
 }
 
 void _dismissTransientRoutes(BuildContext context) {

@@ -32,6 +32,13 @@ bool isSongsLibraryLocation(String location) {
   return location == '/songs' || location == '/songs/search';
 }
 
+/// 跨 tab 切换时随 `context.go` 传入的路由 extra。目标 tab 记住的可能是
+/// 发现区详情页，这时它是被「切回」而不是被打开，页面应直接出现、不播放
+/// 进场动画（tab 本身的切换由 AppShell 过渡）。
+class ShellTabSwitch {
+  const ShellTabSwitch();
+}
+
 String normalizedPlayerReturnLocation(String primary, String fallback) {
   if (isPlayerReturnLocation(primary)) return primary;
   if (isPlayerReturnLocation(fallback)) return fallback;

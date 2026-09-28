@@ -11,6 +11,7 @@ import 'core/models/leaderboard_info.dart';
 import 'core/models/online_collection_kind.dart';
 import 'core/models/playlist_summary.dart';
 import 'core/ui/container_transform.dart';
+import 'core/ui/skippable_exit_transition.dart';
 import 'features/playlists/online_playlist_import_page.dart';
 import 'features/playlists/playlist_detail_page.dart';
 import 'features/playlists/playlist_management_page.dart';
@@ -89,6 +90,7 @@ GoRouter createAppRouter({
               return _fadeThroughPage(
                 context,
                 key: state.pageKey,
+                extra: state.extra,
                 child: ShellPageStorage(
                   child: LeaderboardsPage(
                     source: source == null || source == MusicSource.all
@@ -237,7 +239,8 @@ class _PlayerRouteBackdrop extends StatelessWidget {
 
 /// 发现页卡片 → 歌单/榜单详情：页面从被点击的卡片矩形展开（M3 container
 /// transform），封面 Hero 沿同一条曲线飞到头图；返回时原路收回。起点随
-/// extra 传入，没有起点（深链、预览弹窗）时退化为整页淡入。
+/// extra 传入，没有起点（深链、预览弹窗）时退化为整页淡入；从别的 tab
+/// 切回（[ShellTabSwitch]）时直接出现。
 ///
 /// 路由时长同时驱动页面容器与封面 Hero，两者共用 [AppMotion.long] /
 /// [AppMotion.medium]。
@@ -251,44 +254,65 @@ CustomTransitionPage<void> _containerTransformPage(
   final origin = extra is ContainerTransformExtra ? extra.origin : null;
   return CustomTransitionPage<void>(
     key: key,
-    transitionDuration: reduceMotion ? Duration.zero : AppMotion.long,
+    transitionDuration: reduceMotion || extra is ShellTabSwitch
+        ? Duration.zero
+        : AppMotion.long,
     reverseTransitionDuration: reduceMotion ? Duration.zero : AppMotion.medium,
-    transitionsBuilder: (_, animation, _, child) =>
-        ContainerTransformTransition(
-          animation: animation,
-          origin: origin,
-          child: child,
-        ),
+    transitionsBuilder: (_, animation, _, child) => SkippableExitTransition(
+      animation: animation,
+      skipExit: _leavesDiscovery,
+      child: ContainerTransformTransition(
+        animation: animation,
+        origin: origin,
+        child: child,
+      ),
+    ),
     child: child,
   );
 }
 
-/// 发现页「查看全部」→ 排行榜列表：整页淡入并轻微上浮，返回时淡出。
+/// 发现页「查看全部」→ 排行榜列表：整页淡入并轻微上浮，返回时淡出；从别的
+/// tab 切回（[ShellTabSwitch]）时直接出现。
 /// AppShell 对发现区各路由之间不做切换动画，这里的过渡是唯一的。
 CustomTransitionPage<void> _fadeThroughPage(
   BuildContext context, {
   required LocalKey key,
+  required Object? extra,
   required Widget child,
 }) {
   final reduceMotion = MediaQuery.disableAnimationsOf(context);
   return CustomTransitionPage<void>(
     key: key,
-    transitionDuration: reduceMotion ? Duration.zero : AppMotion.medium,
+    transitionDuration: reduceMotion || extra is ShellTabSwitch
+        ? Duration.zero
+        : AppMotion.medium,
     reverseTransitionDuration: reduceMotion ? Duration.zero : AppMotion.short,
     transitionsBuilder: (_, animation, _, child) {
       final eased = animation.drive(CurveTween(curve: AppMotion.emphasized));
-      return FadeTransition(
-        opacity: eased,
-        child: SlideTransition(
-          position: eased.drive(
-            Tween<Offset>(begin: const Offset(0, 0.03), end: Offset.zero),
+      return SkippableExitTransition(
+        animation: animation,
+        skipExit: _leavesDiscovery,
+        child: FadeTransition(
+          opacity: eased,
+          child: SlideTransition(
+            position: eased.drive(
+              Tween<Offset>(begin: const Offset(0, 0.03), end: Offset.zero),
+            ),
+            child: child,
           ),
-          child: child,
         ),
       );
     },
     child: child,
   );
+}
+
+/// 发现区页面退场时，新位置已不在发现区（切到了别的 tab）：这是整体替换
+/// 而不是返回，直接隐藏，不播放收回动画——新 tab 由 AppShell 自己过渡。
+/// 系统返回键 pop 时 GoRouter 尚未更新位置，仍在发现区，照常收回。
+bool _leavesDiscovery(BuildContext context) {
+  final location = GoRouter.of(context).routerDelegate.currentConfiguration;
+  return !isDiscoveryLocation(location.uri.path);
 }
 
 /// 路由 extra 既可能是裸的业务对象，也可能包在 [ContainerTransformExtra] 里。
