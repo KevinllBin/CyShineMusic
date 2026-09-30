@@ -70,7 +70,6 @@ final _artworkAccentProvider = FutureProvider.autoDispose<Color?>((ref) async {
     },
   );
   ref.onDispose(() {
-    stream.removeListener(listener);
     // Release a pending request when a newer cover supersedes it.
     if (!result.isCompleted) result.complete(null);
   });

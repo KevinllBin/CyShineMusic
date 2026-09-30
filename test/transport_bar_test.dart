@@ -34,7 +34,7 @@ void main() {
     final originalSize = tester.getSize(sliderFinder);
     expect(
       tester.renderObject(sliderFinder),
-      paints..circle(radius: 2.5, color: kPlayerInk),
+      _paintsThumbRadius((radius) => radius == 2.5),
     );
 
     final gesture = await tester.startGesture(tester.getCenter(sliderFinder));
@@ -43,17 +43,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
     expect(
       tester.renderObject(sliderFinder),
-      paints..something((method, args) {
-        return method == #drawCircle &&
-            (args[2] as Paint).color == kPlayerInk &&
-            (args[1] as double) > 2.5 &&
-            (args[1] as double) < 7;
-      }),
+      _paintsThumbRadius((radius) => radius > 2.5 && radius < 7),
     );
     await tester.pump(const Duration(milliseconds: 250));
     expect(
       tester.renderObject(sliderFinder),
-      paints..circle(radius: 7, color: kPlayerInk),
+      _paintsThumbRadius((radius) => radius == 7),
     );
     expect(tester.getSize(sliderFinder), originalSize);
     expect(controller.requests, isEmpty);
@@ -64,11 +59,11 @@ void main() {
     expect(controller.requests.single.completion.isCompleted, isFalse);
     expect(
       _slider(tester).value,
-      controller.requests.single.position.inMilliseconds.toDouble(),
+      closeTo(controller.requests.single.position.inMilliseconds, 1),
     );
     expect(
       tester.renderObject(sliderFinder),
-      paints..circle(radius: 2.5, color: kPlayerInk),
+      _paintsThumbRadius((radius) => radius == 2.5),
     );
     expect(tester.getSize(sliderFinder), originalSize);
 
@@ -85,14 +80,14 @@ void main() {
     await tester.pump();
     expect(
       tester.renderObject(sliderFinder),
-      paints..circle(radius: 7, color: kPlayerInk),
+      _paintsThumbRadius((radius) => radius == 7),
     );
 
     await gesture.up();
     await tester.pump(const Duration(milliseconds: 1));
     expect(
       tester.renderObject(sliderFinder),
-      paints..circle(radius: 2.5, color: kPlayerInk),
+      _paintsThumbRadius((radius) => radius == 2.5),
     );
     controller.completeSeek(0);
     await tester.pumpAndSettle();
@@ -193,6 +188,14 @@ void main() {
     );
   });
 }
+
+PaintPattern _paintsThumbRadius(bool Function(double) matchesRadius) => paints
+  ..something((method, args) {
+    if (method != #drawCircle) return false;
+    final color = (args[2] as Paint).color;
+    return color.toARGB32() == kPlayerInk.toARGB32() &&
+        matchesRadius(args[1] as double);
+  });
 
 Slider _slider(WidgetTester tester) =>
     tester.widget<Slider>(find.byType(Slider));

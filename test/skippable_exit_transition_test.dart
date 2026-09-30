@@ -45,6 +45,7 @@ void main() {
     controller.forward();
     await tester.pump();
     expect(find.text('detail'), findsOneWidget);
+    await tester.pumpAndSettle();
   });
 
   testWidgets('regular back keeps the exit visible', (tester) async {

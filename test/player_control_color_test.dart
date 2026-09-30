@@ -30,6 +30,7 @@ void main() {
 
     next.complete(_pixels(Colors.blue));
     await tester.pump();
+    await tester.pump();
     expect(harness.color, oldColor);
     await tester.pump(const Duration(milliseconds: 100));
     final middleColor = harness.color;
