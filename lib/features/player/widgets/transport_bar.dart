@@ -6,6 +6,8 @@ import '../../../theme/app_motion.dart';
 import '../player_controller.dart';
 import 'playback_queue_sheet.dart';
 import 'player_palette.dart';
+import 'player_control_color.dart';
+import 'player_slider_thumb_shape.dart';
 
 class TransportBar extends ConsumerStatefulWidget {
   const TransportBar({super.key});
@@ -15,10 +17,10 @@ class TransportBar extends ConsumerStatefulWidget {
 }
 
 class _TransportBarState extends ConsumerState<TransportBar> {
-  /// Non-null while the user is dragging the slider; the thumb tracks the
-  /// finger instead of the position stream, and the seek is committed once
-  /// on release instead of on every drag frame.
+  /// 拖动和等待 seek 时保留目标进度，松手只提交一次。
   double? _dragMs;
+  Object? _interactionToken;
+  String? _trackId;
 
   @override
   Widget build(BuildContext context) {
@@ -32,6 +34,7 @@ class _TransportBarState extends ConsumerState<TransportBar> {
           buffering: s.buffering,
           ended: s.processingState == PlayerProcessingState.completed,
           hasTrack: s.track != null,
+          trackId: s.track?.id,
           playbackMode: s.playbackMode,
           queueCount: s.queue.isEmpty
               ? (s.track == null ? 0 : 1)
@@ -39,6 +42,11 @@ class _TransportBarState extends ConsumerState<TransportBar> {
         ),
       ),
     );
+    if (_trackId != vm.trackId) {
+      _trackId = vm.trackId;
+      _dragMs = null;
+      _interactionToken = null;
+    }
     final controller = ref.read(playerControllerProvider.notifier);
     final maxMs = math.max(1, vm.duration.inMilliseconds);
     final shownMs = (_dragMs ?? vm.position.inMilliseconds.toDouble()).clamp(
@@ -46,96 +54,145 @@ class _TransportBarState extends ConsumerState<TransportBar> {
       maxMs.toDouble(),
     );
     final canControl = vm.hasTrack && !vm.loading;
-    final ink = playerInk(context);
-    final controlColor = canControl ? ink : ink.withValues(alpha: 0.22);
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(0, 0, 0, 2),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 3,
-              activeTrackColor: ink,
-              inactiveTrackColor: ink.withValues(alpha: 0.22),
-              thumbColor: ink,
-              overlayColor: ink.withValues(alpha: 0.10),
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-            ),
-            child: Slider(
-              value: shownMs,
-              max: maxMs.toDouble(),
-              onChanged: canControl
-                  ? (value) => setState(() => _dragMs = value)
-                  : null,
-              onChangeEnd: canControl
-                  ? (value) async {
-                      await controller.seek(
-                        Duration(milliseconds: value.round()),
-                      );
-                      if (mounted) setState(() => _dragMs = null);
-                    }
-                  : null,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Row(
-              children: [
-                Text(
-                  _formatDuration(Duration(milliseconds: shownMs.round())),
-                  style: _timeStyle(context),
-                ),
-                const Spacer(),
-                Text(_formatDuration(vm.duration), style: _timeStyle(context)),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return PlayerControlColor(
+      builder: (context, ink) {
+        final controlColor = canControl ? ink : ink.withValues(alpha: 0.22);
+        final indicatorTextColor =
+            ThemeData.estimateBrightnessForColor(ink) == Brightness.dark
+            ? Colors.white
+            : Colors.black;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(0, 0, 0, 2),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              _PlaybackModeButton(
-                mode: vm.playbackMode,
-                enabled: vm.hasTrack,
-                onPressed: controller.cyclePlaybackMode,
-              ),
-              IconButton(
-                tooltip: '上一首',
-                onPressed: canControl ? controller.playPrevious : null,
-                icon: Icon(
-                  Icons.skip_previous_rounded,
-                  color: controlColor,
-                  size: 38,
+              SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 4,
+                  trackShape: const RoundedRectSliderTrackShape(),
+                  activeTrackColor: ink,
+                  inactiveTrackColor: ink.withValues(alpha: 0.22),
+                  thumbColor: ink,
+                  overlayColor: ink.withValues(alpha: 0.10),
+                  thumbShape: PlayerSliderThumbShape(
+                    disableAnimations: MediaQuery.disableAnimationsOf(context),
+                  ),
+                  overlayShape: const RoundSliderOverlayShape(
+                    overlayRadius: 14,
+                  ),
+                  showValueIndicator: ShowValueIndicator.onDrag,
+                  valueIndicatorShape:
+                      const RoundedRectSliderValueIndicatorShape(),
+                  valueIndicatorColor: ink,
+                  valueIndicatorTextStyle: TextStyle(
+                    color: indicatorTextColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                child: Slider(
+                  key: ValueKey(vm.trackId),
+                  value: shownMs,
+                  max: maxMs.toDouble(),
+                  label: _formatDuration(
+                    Duration(milliseconds: shownMs.round()),
+                  ),
+                  semanticFormatterCallback: (value) =>
+                      _formatDuration(Duration(milliseconds: value.round())),
+                  onChangeStart: canControl
+                      ? (value) => setState(() {
+                          _interactionToken = Object();
+                          _dragMs = value;
+                        })
+                      : null,
+                  onChanged: canControl
+                      ? (value) => setState(() => _dragMs = value)
+                      : null,
+                  onChangeEnd: canControl
+                      ? (value) async {
+                          final token = _interactionToken;
+                          try {
+                            await controller.seek(
+                              Duration(milliseconds: value.round()),
+                            );
+                          } finally {
+                            // 旧 seek 结束不能清掉换曲或后一次拖动的状态。
+                            if (mounted &&
+                                identical(_interactionToken, token)) {
+                              setState(() {
+                                _dragMs = null;
+                                _interactionToken = null;
+                              });
+                            }
+                          }
+                        }
+                      : null,
                 ),
               ),
-              _PlayButton(
-                playing: vm.playing,
-                showSpinner: vm.loading || vm.buffering,
-                ended: vm.ended,
-                canControl: canControl,
-                controller: controller,
-              ),
-              IconButton(
-                tooltip: '下一首',
-                onPressed: canControl ? controller.playNext : null,
-                icon: Icon(
-                  Icons.skip_next_rounded,
-                  color: controlColor,
-                  size: 38,
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Row(
+                  children: [
+                    Text(
+                      _formatDuration(Duration(milliseconds: shownMs.round())),
+                      style: _timeStyle(context),
+                    ),
+                    const Spacer(),
+                    Text(
+                      _formatDuration(vm.duration),
+                      style: _timeStyle(context),
+                    ),
+                  ],
                 ),
               ),
-              PlaybackQueueButton(
-                count: vm.queueCount,
-                enabled: vm.hasTrack,
-                onPressed: () => showPlaybackQueueSheet(context),
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _PlaybackModeButton(
+                    color: ink,
+                    mode: vm.playbackMode,
+                    enabled: vm.hasTrack,
+                    onPressed: controller.cyclePlaybackMode,
+                  ),
+                  IconButton(
+                    tooltip: '上一首',
+                    onPressed: canControl ? controller.playPrevious : null,
+                    icon: Icon(
+                      Icons.skip_previous_rounded,
+                      color: controlColor,
+                      size: 38,
+                    ),
+                  ),
+                  _PlayButton(
+                    color: ink,
+                    playing: vm.playing,
+                    showSpinner: vm.loading || vm.buffering,
+                    ended: vm.ended,
+                    canControl: canControl,
+                    controller: controller,
+                  ),
+                  IconButton(
+                    tooltip: '下一首',
+                    onPressed: canControl ? controller.playNext : null,
+                    icon: Icon(
+                      Icons.skip_next_rounded,
+                      color: controlColor,
+                      size: 38,
+                    ),
+                  ),
+                  PlaybackQueueButton(
+                    color: ink,
+                    count: vm.queueCount,
+                    enabled: vm.hasTrack,
+                    onPressed: () => showPlaybackQueueSheet(context),
+                  ),
+                ],
               ),
             ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -158,18 +215,20 @@ class _TransportBarState extends ConsumerState<TransportBar> {
 
 class _PlaybackModeButton extends StatelessWidget {
   const _PlaybackModeButton({
+    required this.color,
     required this.mode,
     required this.enabled,
     required this.onPressed,
   });
 
   final PlayerPlaybackMode mode;
+  final Color color;
   final bool enabled;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    final color = enabled ? playerInk(context) : playerMuted(context);
+    final iconColor = enabled ? color : playerMuted(context);
     return IconButton(
       tooltip: mode.label,
       onPressed: enabled ? onPressed : null,
@@ -193,7 +252,7 @@ class _PlaybackModeButton extends StatelessWidget {
         child: Icon(
           _playbackModeIcon(mode),
           key: ValueKey(mode),
-          color: color,
+          color: iconColor,
           size: 25,
         ),
       ),
@@ -211,6 +270,7 @@ IconData _playbackModeIcon(PlayerPlaybackMode mode) {
 
 class _PlayButton extends StatelessWidget {
   const _PlayButton({
+    required this.color,
     required this.playing,
     required this.showSpinner,
     required this.ended,
@@ -219,6 +279,7 @@ class _PlayButton extends StatelessWidget {
   });
 
   final bool playing;
+  final Color color;
   final bool showSpinner;
   final bool ended;
   final bool canControl;
@@ -243,7 +304,7 @@ class _PlayButton extends StatelessWidget {
                     dimension: 22,
                     child: CircularProgressIndicator(
                       strokeWidth: 2.6,
-                      color: playerInk(context),
+                      color: color,
                     ),
                   )
                 : Icon(
@@ -253,9 +314,7 @@ class _PlayButton extends StatelessWidget {
                         ? Icons.pause_rounded
                         : Icons.play_arrow_rounded,
                     size: 56,
-                    color: canControl
-                        ? playerInk(context)
-                        : playerInk(context).withValues(alpha: 0.22),
+                    color: canControl ? color : color.withValues(alpha: 0.22),
                   ),
           ),
         ),

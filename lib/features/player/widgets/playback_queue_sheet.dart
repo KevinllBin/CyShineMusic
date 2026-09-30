@@ -21,18 +21,22 @@ const _queueListTopPadding = 12.0;
 class PlaybackQueueButton extends StatelessWidget {
   const PlaybackQueueButton({
     super.key,
+    this.color,
     required this.count,
     required this.enabled,
     required this.onPressed,
   });
 
   final int count;
+  final Color? color;
   final bool enabled;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    final color = enabled ? playerInk(context) : playerMuted(context);
+    final color = enabled
+        ? (this.color ?? playerInk(context))
+        : playerMuted(context);
     return IconButton(
       tooltip: count > 0 ? '播放列表，共 $count 首' : '播放列表',
       onPressed: enabled ? onPressed : null,
@@ -58,7 +62,7 @@ class PlaybackQueueButton extends StatelessWidget {
                     ),
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     decoration: BoxDecoration(
-                      color: playerInk(context),
+                      color: color,
                       borderRadius: BorderRadius.circular(999),
                       border: Border.all(
                         color: playerSurface(context).withValues(alpha: 0.92),
