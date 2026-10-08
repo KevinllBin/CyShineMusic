@@ -7,6 +7,7 @@ Future<String?> showStorageFolderPickerSheet(
   BuildContext context, {
   String title = '选择文件夹',
   String? initialPath,
+  Set<String>? fileExtensions,
   StorageBrowserService service = const StorageBrowserService(),
 }) {
   return showModalBottomSheet<String>(
@@ -20,6 +21,7 @@ Future<String?> showStorageFolderPickerSheet(
     builder: (context) => StorageFolderPickerSheet(
       title: title,
       initialPath: initialPath,
+      fileExtensions: fileExtensions,
       service: service,
     ),
   );
@@ -31,10 +33,14 @@ class StorageFolderPickerSheet extends StatefulWidget {
     required this.title,
     required this.service,
     this.initialPath,
+    this.fileExtensions,
   });
 
   final String title;
   final String? initialPath;
+
+  /// Null selects folders; otherwise tapping a matching file returns its path.
+  final Set<String>? fileExtensions;
   final StorageBrowserService service;
 
   @override
@@ -48,6 +54,7 @@ class _StorageFolderPickerSheetState extends State<StorageFolderPickerSheet> {
   List<StorageBrowserEntry> _entries = const [];
   bool _loading = true;
   String? _error;
+  int _loadGeneration = 0;
 
   @override
   void initState() {
@@ -59,6 +66,7 @@ class _StorageFolderPickerSheetState extends State<StorageFolderPickerSheet> {
   }
 
   Future<void> _load() async {
+    final generation = ++_loadGeneration;
     setState(() {
       _loading = true;
       _error = null;
@@ -67,14 +75,17 @@ class _StorageFolderPickerSheetState extends State<StorageFolderPickerSheet> {
       final path = _currentPath;
       final entries = path == null
           ? await widget.service.listRoots()
-          : await widget.service.listChildren(path);
-      if (!mounted) return;
+          : await widget.service.listChildren(
+              path,
+              fileExtensions: widget.fileExtensions,
+            );
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _entries = entries;
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _entries = const [];
         _loading = false;
@@ -84,10 +95,14 @@ class _StorageFolderPickerSheetState extends State<StorageFolderPickerSheet> {
   }
 
   void _open(StorageBrowserEntry entry) {
-    if (!entry.isDirectory || !entry.canRead) {
+    if (!entry.canRead) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('该文件夹不可读取')));
+      ).showSnackBar(const SnackBar(content: Text('无法读取此项目')));
+      return;
+    }
+    if (!entry.isDirectory) {
+      if (widget.fileExtensions != null) Navigator.of(context).pop(entry.path);
       return;
     }
     _history.add(_currentPath);
@@ -109,104 +124,116 @@ class _StorageFolderPickerSheetState extends State<StorageFolderPickerSheet> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final currentPath = _currentPath;
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: FractionallySizedBox(
-        heightFactor: 0.88,
-        child: Material(
-          color: scheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            children: [
-              const SizedBox(height: 10),
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: scheme.onSurfaceVariant.withValues(alpha: 0.34),
-                  borderRadius: BorderRadius.circular(99),
+    return PopScope<String>(
+      canPop: currentPath == null,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _back();
+      },
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: FractionallySizedBox(
+          heightFactor: 0.88,
+          child: Material(
+            color: scheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                const SizedBox(height: 10),
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.34),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(18, 14, 12, 8),
-                child: Row(
-                  children: [
-                    IconButton(
-                      tooltip: currentPath == null ? '关闭' : '返回上一级',
-                      onPressed: currentPath == null && _history.isEmpty
-                          ? () => Navigator.of(context).pop()
-                          : _back,
-                      icon: Icon(
-                        currentPath == null && _history.isEmpty
-                            ? Icons.close_rounded
-                            : Icons.arrow_back_rounded,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            widget.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            currentPath ?? '存储位置',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: scheme.outline,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      tooltip: '刷新',
-                      onPressed: _loading ? null : _load,
-                      icon: const Icon(Icons.refresh_rounded),
-                    ),
-                  ],
-                ),
-              ),
-              Divider(height: 1, color: scheme.outlineVariant),
-              Expanded(child: _buildBody(context)),
-              Divider(height: 1, color: scheme.outlineVariant),
-              SafeArea(
-                top: false,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 14, 12, 8),
                   child: Row(
                     children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          child: const Text('取消'),
+                      IconButton(
+                        tooltip: currentPath == null ? '关闭' : '返回上一级',
+                        onPressed: currentPath == null && _history.isEmpty
+                            ? () => Navigator.of(context).pop()
+                            : _back,
+                        icon: Icon(
+                          currentPath == null && _history.isEmpty
+                              ? Icons.close_rounded
+                              : Icons.arrow_back_rounded,
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 4),
                       Expanded(
-                        child: FilledButton.icon(
-                          onPressed: currentPath == null || _loading
-                              ? null
-                              : () => Navigator.of(context).pop(currentPath),
-                          icon: const Icon(Icons.check_rounded),
-                          label: const Text('选择此文件夹'),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              currentPath ?? '存储位置',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: scheme.outline,
+                              ),
+                            ),
+                          ],
                         ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: '刷新',
+                        onPressed: _loading ? null : _load,
+                        icon: const Icon(Icons.refresh_rounded),
                       ),
                     ],
                   ),
                 ),
-              ),
-            ],
+                Divider(height: 1, color: scheme.outlineVariant),
+                Expanded(child: _buildBody(context)),
+                Divider(height: 1, color: scheme.outlineVariant),
+                SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: const Text('取消'),
+                          ),
+                        ),
+                        if (widget.fileExtensions == null) ...[
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed:
+                                  currentPath == null ||
+                                      _loading ||
+                                      _error != null
+                                  ? null
+                                  : () =>
+                                        Navigator.of(context).pop(currentPath),
+                              icon: const Icon(Icons.check_rounded),
+                              label: const Text('选择此文件夹'),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -233,7 +260,11 @@ class _StorageFolderPickerSheetState extends State<StorageFolderPickerSheet> {
     if (_entries.isEmpty) {
       return _PickerMessage(
         icon: Icons.folder_open_outlined,
-        title: _currentPath == null ? '没有可浏览的存储位置' : '没有子文件夹',
+        title: _currentPath == null
+            ? '没有可浏览的存储位置'
+            : widget.fileExtensions == null
+            ? '没有子文件夹'
+            : '没有可导入的脚本或子文件夹',
         subtitle: _currentPath == null ? '请确认已授予存储访问权限' : _currentPath!,
         action: TextButton.icon(
           onPressed: _load,
@@ -270,12 +301,20 @@ class _StorageEntryTile extends StatelessWidget {
     return ListTile(
       enabled: entry.canRead,
       leading: Icon(
-        entry.isRoot ? Icons.storage_rounded : Icons.folder_rounded,
+        entry.isRoot
+            ? Icons.storage_rounded
+            : entry.isDirectory
+            ? Icons.folder_rounded
+            : Icons.javascript_rounded,
         color: entry.canRead ? scheme.primary : scheme.outline,
       ),
       title: Text(entry.name, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis),
-      trailing: const Icon(Icons.chevron_right_rounded),
+      trailing: Icon(
+        entry.isDirectory
+            ? Icons.chevron_right_rounded
+            : Icons.file_open_outlined,
+      ),
       onTap: onTap,
     );
   }
@@ -324,29 +363,31 @@ class _PickerMessage extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 38, color: scheme.outline),
-            const SizedBox(height: 16),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: scheme.outline),
-            ),
-            const SizedBox(height: 14),
-            action,
-          ],
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 38, color: scheme.outline),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: scheme.outline),
+              ),
+              const SizedBox(height: 14),
+              action,
+            ],
+          ),
         ),
       ),
     );

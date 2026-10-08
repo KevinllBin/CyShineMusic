@@ -40,6 +40,7 @@ val requestedAbis = (project.findProperty("target-platform") as? String)
     ?.toSet()
     ?.takeIf { it.isNotEmpty() }
     ?: setOf("arm64-v8a")
+val splitPerAbi = project.findProperty("split-per-abi") == "true"
 
 val signingPropertiesFile = rootProject.file("signing/$appChannel.properties")
 val signingProperties = Properties().apply {
@@ -98,9 +99,13 @@ android {
 
     buildTypes {
         release {
-            ndk {
-                abiFilters.clear()
-                abiFilters += requestedAbis
+            // ABI splits already select the packaged architectures. AGP rejects
+            // combining them with an NDK abiFilters selection, even for debug.
+            if (!splitPerAbi) {
+                ndk {
+                    abiFilters.clear()
+                    abiFilters += requestedAbis
+                }
             }
             if (releaseSigningReady) {
                 signingConfig = signingConfigs.getByName("channelRelease")

@@ -14,6 +14,8 @@ export 'base_url.dart';
 
 const String _kDownloadDirKey = 'download_dir';
 const String _kLocalMusicDirKey = 'local_music_dir';
+const String _kUseBuiltInSourceFilePickerKey =
+    'use_built_in_source_file_picker';
 const String _kThemeModeKey = 'theme_mode';
 const String _kThemeSeedKey = 'theme_seed_argb';
 const String _kColorStyleKey = 'theme_color_style';
@@ -62,6 +64,7 @@ class AppSettings {
   const AppSettings({
     required this.downloadDir,
     required this.localMusicDir,
+    this.useBuiltInSourceFilePicker = false,
     required this.themeMode,
     required this.themeSeed,
     required this.colorStyle,
@@ -87,6 +90,7 @@ class AppSettings {
 
   final String downloadDir;
   final String localMusicDir;
+  final bool useBuiltInSourceFilePicker;
   final ThemeMode themeMode;
   final Color themeSeed;
   final AppColorStyle colorStyle;
@@ -125,6 +129,7 @@ class AppSettings {
   AppSettings copyWith({
     String? downloadDir,
     String? localMusicDir,
+    bool? useBuiltInSourceFilePicker,
     ThemeMode? themeMode,
     Color? themeSeed,
     AppColorStyle? colorStyle,
@@ -150,6 +155,8 @@ class AppSettings {
   }) => AppSettings(
     downloadDir: downloadDir ?? this.downloadDir,
     localMusicDir: localMusicDir ?? this.localMusicDir,
+    useBuiltInSourceFilePicker:
+        useBuiltInSourceFilePicker ?? this.useBuiltInSourceFilePicker,
     themeMode: themeMode ?? this.themeMode,
     themeSeed: themeSeed ?? this.themeSeed,
     colorStyle: colorStyle ?? this.colorStyle,
@@ -225,6 +232,8 @@ class SettingsNotifier extends Notifier<AppSettings> {
     return AppSettings(
       downloadDir: downloadDir,
       localMusicDir: _prefs.getString(_kLocalMusicDirKey) ?? downloadDir,
+      useBuiltInSourceFilePicker:
+          _prefs.getBool(_kUseBuiltInSourceFilePickerKey) ?? false,
       themeMode: _decodeThemeMode(_prefs.getString(_kThemeModeKey)),
       themeSeed: Color(
         _prefs.getInt(_kThemeSeedKey) ?? SeedPalette.defaultSeed.toARGB32(),
@@ -288,6 +297,11 @@ class SettingsNotifier extends Notifier<AppSettings> {
   Future<void> setLocalMusicDir(String value) async {
     await _prefs.setString(_kLocalMusicDirKey, value);
     state = state.copyWith(localMusicDir: value);
+  }
+
+  Future<void> setUseBuiltInSourceFilePicker(bool value) async {
+    await _prefs.setBool(_kUseBuiltInSourceFilePickerKey, value);
+    state = state.copyWith(useBuiltInSourceFilePicker: value);
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {

@@ -93,6 +93,16 @@ class SettingsPage extends ConsumerWidget {
                               trailing: Symbols.chevron_right,
                               onTap: () => context.go('/settings/sources'),
                             ),
+                            SettingsSwitchAction(
+                              key: const ValueKey('source-file-picker-setting'),
+                              icon: Icons.snippet_folder_outlined,
+                              title: '音源内置文件选择器',
+                              subtitle: '系统无法选择 JS 时开启，支持内部存储和 U 盘',
+                              value: settings.useBuiltInSourceFilePicker,
+                              onChanged: (value) => ref
+                                  .read(settingsProvider.notifier)
+                                  .setUseBuiltInSourceFilePicker(value),
+                            ),
                             SettingsAction(
                               key: const ValueKey('webdav-sync-setting'),
                               icon: Icons.cloud_sync_outlined,

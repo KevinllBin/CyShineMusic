@@ -9,9 +9,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api/api_client.dart';
 import '../../core/music_sources/music_source_controller.dart';
 import '../../core/music_sources/music_source_models.dart';
+import '../../core/music_sources/music_source_metadata_parser.dart';
+import '../../core/services/permission_service.dart';
+import '../../core/services/storage_browser_service.dart';
+import '../../core/storage/settings_store.dart';
 import '../../core/ui/app_toast.dart';
 import '../../core/ui/car_display_layout.dart';
 import '../shell/shell_bottom_area.dart';
+import '../shell/shell_toolbar_visibility.dart';
+import '../settings/widgets/storage_folder_picker_sheet.dart';
 import 'music_source_import_dialog.dart';
 import 'widgets/music_source_card.dart';
 
@@ -126,23 +132,95 @@ class _MusicSourcePageState extends ConsumerState<MusicSourcePage> {
   }
 
   Future<void> _importFile() async {
-    if (!await confirmThirdPartySourceRisk(context)) return;
-    final result = await FilePicker.platform.pickFiles(
-      dialogTitle: '选择音源脚本',
-      type: FileType.custom,
-      allowedExtensions: const ['js'],
-      withData: true,
-    );
-    if (result == null || !mounted) return;
-    final picked = result.files.single;
+    if (_importing) return;
+    setState(() => _importing = true);
     try {
-      final script = picked.bytes != null
-          ? utf8.decode(picked.bytes!)
-          : await File(picked.path!).readAsString();
-      await _import(script, picked.path ?? picked.name);
+      if (!await confirmThirdPartySourceRisk(context) || !mounted) return;
+      final settings = ref.read(settingsProvider);
+      final browser = ref.read(storageBrowserServiceProvider);
+      if (settings.useBuiltInSourceFilePicker && browser.isSupported) {
+        if (!await PermissionService.ensureScriptFileRead()) {
+          if (!mounted) return;
+          await showDialog<void>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('需要存储访问权限'),
+              content: const Text(
+                '内置文件选择器需要存储权限才能读取 JS 脚本。'
+                '请在系统设置中允许文件访问，然后重新导入。',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    Navigator.of(context).pop();
+                    await PermissionService.openSystemAppSettings();
+                  },
+                  child: const Text('打开设置'),
+                ),
+              ],
+            ),
+          );
+          return;
+        }
+        if (!mounted) return;
+        final toolbar = ref.read(shellToolbarVisibleProvider.notifier);
+        final wasToolbarVisible = ref.read(shellToolbarVisibleProvider);
+        toolbar.state = false;
+        String? path;
+        try {
+          path = await showStorageFolderPickerSheet(
+            context,
+            title: '选择音源脚本（.js）',
+            fileExtensions: const {'js'},
+            service: browser,
+          );
+        } finally {
+          if (toolbar.mounted) toolbar.state = wasToolbarVisible;
+        }
+        if (path == null || !mounted) return;
+        final script = await _readScriptFile(path);
+        if (!mounted) return;
+        await _import(script, path, alreadyBusy: true);
+      } else {
+        final result = await FilePicker.platform.pickFiles(
+          dialogTitle: '选择音源脚本',
+          type: FileType.custom,
+          allowedExtensions: const ['js'],
+          withData: true,
+        );
+        if (result == null || !mounted) return;
+        final picked = result.files.single;
+        if (picked.size > kMaxMusicSourceScriptBytes) {
+          throw const FormatException('音源脚本不能超过 2 MB');
+        }
+        final bytes = picked.bytes;
+        final path = picked.path;
+        if (bytes == null && path == null) {
+          throw const FileSystemException('无法读取所选脚本，请尝试开启音源内置文件选择器');
+        }
+        final script = bytes != null
+            ? utf8.decode(bytes)
+            : await _readScriptFile(path!);
+        if (!mounted) return;
+        await _import(script, path ?? picked.name, alreadyBusy: true);
+      }
     } catch (error) {
       _showError(error);
+    } finally {
+      if (mounted) setState(() => _importing = false);
     }
+  }
+
+  Future<String> _readScriptFile(String path) async {
+    final file = File(path);
+    if (await file.length() > kMaxMusicSourceScriptBytes) {
+      throw const FormatException('音源脚本不能超过 2 MB');
+    }
+    return file.readAsString();
   }
 
   Future<void> _importUrl() async {

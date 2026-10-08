@@ -126,15 +126,19 @@ class MainActivity : AudioServiceActivity() {
                             result.error("INVALID_ARGS", "path is required", null)
                             return@setMethodCallHandler
                         }
-                        try {
-                            result.success(
-                                listDirectoryChildren(path).map {
+                        val includeFiles = call.argument<Boolean>("includeFiles") == true
+                        Thread {
+                            try {
+                                val entries = listDirectoryChildren(path, includeFiles).map {
                                     storageEntry(file = it, isRoot = false)
-                                },
-                            )
-                        } catch (e: Throwable) {
-                            result.error("LIST_CHILDREN_FAILED", e.message, e.toString())
-                        }
+                                }
+                                runOnUiThread { result.success(entries) }
+                            } catch (e: Throwable) {
+                                runOnUiThread {
+                                    result.error("LIST_CHILDREN_FAILED", e.message, e.toString())
+                                }
+                            }
+                        }.start()
                     }
                     else -> result.notImplemented()
                 }
@@ -459,7 +463,7 @@ class MainActivity : AudioServiceActivity() {
         return if (looksLikeVolumeId) "USB 存储 $name" else null
     }
 
-    private fun listDirectoryChildren(path: String): List<File> {
+    private fun listDirectoryChildren(path: String, includeFiles: Boolean): List<File> {
         val directory = normalizedFile(File(path))
         if (!directory.exists() || !directory.isDirectory) {
             throw IllegalArgumentException("directory does not exist: $path")
@@ -468,10 +472,13 @@ class MainActivity : AudioServiceActivity() {
             ?: throw IllegalStateException("directory is not readable: $path")
         return children
             .asSequence()
-            .filter { it.isDirectory && it.canRead() && !it.name.startsWith(".") }
+            .filter {
+                (it.isDirectory || (includeFiles && it.isFile)) &&
+                    it.canRead() && !it.name.startsWith(".")
+            }
             .map { normalizedFile(it) }
             .distinctBy { it.path }
-            .sortedBy { it.name.lowercase(Locale.ROOT) }
+            .sortedWith(compareBy<File> { !it.isDirectory }.thenBy { it.name.lowercase(Locale.ROOT) })
             .toList()
     }
 

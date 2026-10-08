@@ -51,5 +51,18 @@ class PermissionService {
     return legacy.isGranted;
   }
 
+  /// JS scripts are documents: Android 13's audio permission cannot read them.
+  static Future<bool> ensureScriptFileRead() async {
+    if (!Platform.isAndroid) return true;
+
+    final manage = await Permission.manageExternalStorage.status;
+    if (!manage.isRestricted) {
+      if (manage.isGranted) return true;
+      return (await Permission.manageExternalStorage.request()).isGranted;
+    }
+    if (await Permission.storage.isGranted) return true;
+    return (await Permission.storage.request()).isGranted;
+  }
+
   static Future<void> openSystemAppSettings() => openAppSettings();
 }

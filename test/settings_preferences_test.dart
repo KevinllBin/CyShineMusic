@@ -42,6 +42,7 @@ void main() {
       expect(settings.bluetoothLyricNoticeSeen, isFalse);
       expect(settings.useNativeNavigation, isFalse);
       expect(settings.localMusicDir, settings.downloadDir);
+      expect(settings.useBuiltInSourceFilePicker, isFalse);
     },
   );
 
@@ -79,6 +80,38 @@ void main() {
     addTearDown(restored.dispose);
     expect(restored.read(settingsProvider).colorStyle, AppColorStyle.vivid);
   });
+
+  test(
+    'source file picker preference survives restart and appearance sync',
+    () async {
+      final prefs = await SharedPreferences.getInstance();
+      final container = _settingsContainer(prefs);
+      await container
+          .read(settingsProvider.notifier)
+          .setUseBuiltInSourceFilePicker(true);
+      await container.read(settingsProvider.notifier).applyAppearanceFromSync({
+        'themeMode': 'dark',
+        'themeSeedArgb': 0xFF123456,
+        'useDynamicColor': false,
+      });
+      expect(
+        container.read(settingsProvider).useBuiltInSourceFilePicker,
+        isTrue,
+      );
+      container.dispose();
+
+      final restored = _settingsContainer(prefs);
+      addTearDown(restored.dispose);
+      expect(
+        restored.read(settingsProvider).useBuiltInSourceFilePicker,
+        isTrue,
+      );
+      await restored
+          .read(settingsProvider.notifier)
+          .setUseBuiltInSourceFilePicker(false);
+      expect(prefs.getBool('use_built_in_source_file_picker'), isFalse);
+    },
+  );
 
   test('appearance sync round-trips the color style', () async {
     final prefs = await SharedPreferences.getInstance();
@@ -363,6 +396,14 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('音源管理'), findsOneWidget);
+    final pickerSetting = find.byKey(
+      const ValueKey('source-file-picker-setting'),
+    );
+    await tester.tap(
+      find.descendant(of: pickerSetting, matching: find.byType(Switch)),
+    );
+    await tester.pumpAndSettle();
+    expect(container.read(settingsProvider).useBuiltInSourceFilePicker, isTrue);
     expect(find.text('WebDAV 同步'), findsOneWidget);
     expect(find.text('允许与其他 APP 共同播放'), findsOneWidget);
     expect(find.text('批量下载音质'), findsOneWidget);

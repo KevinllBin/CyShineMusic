@@ -2,6 +2,11 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+final storageBrowserServiceProvider = Provider<StorageBrowserService>(
+  (ref) => const StorageBrowserService(),
+);
 
 @immutable
 class StorageBrowserEntry {
@@ -69,12 +74,26 @@ class StorageBrowserService {
     return _decodeEntries(raw);
   }
 
-  Future<List<StorageBrowserEntry>> listChildren(String path) async {
+  Future<List<StorageBrowserEntry>> listChildren(
+    String path, {
+    Set<String>? fileExtensions,
+  }) async {
     if (!isSupported) return const [];
     final raw = await _channel.invokeListMethod<Object?>('listChildren', {
       'path': path,
+      'includeFiles': fileExtensions != null,
     });
-    return _decodeEntries(raw);
+    final extensions = fileExtensions
+        ?.map((value) => value.toLowerCase())
+        .toSet();
+    return List.unmodifiable(
+      _decodeEntries(raw).where((entry) {
+        if (entry.isDirectory) return true;
+        final name = entry.name.toLowerCase();
+        return extensions?.any((extension) => name.endsWith('.$extension')) ??
+            false;
+      }),
+    );
   }
 
   List<StorageBrowserEntry> _decodeEntries(List<Object?>? raw) {
