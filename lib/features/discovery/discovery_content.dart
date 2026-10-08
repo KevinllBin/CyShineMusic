@@ -178,6 +178,12 @@ class _DiscoveryListState extends State<_DiscoveryList> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (TickerMode.valuesOf(context).enabled) _scheduleFillViewport();
+  }
+
+  @override
   void didUpdateWidget(covariant _DiscoveryList oldWidget) {
     super.didUpdateWidget(oldWidget);
     final oldItems = oldWidget.featured.isLoading
@@ -212,6 +218,7 @@ class _DiscoveryListState extends State<_DiscoveryList> {
 
   void _maybeLoadMore() {
     if (!mounted ||
+        !TickerMode.valuesOf(context).enabled ||
         !_scrollController.hasClients ||
         _scrollController.position.extentAfter > 600) {
       return;

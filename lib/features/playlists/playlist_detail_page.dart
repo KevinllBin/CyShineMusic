@@ -690,9 +690,17 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
     required int downloadableCount,
     required int selectedCount,
   }) {
+    if (!TickerMode.valuesOf(context).enabled ||
+        ModalRoute.of(context)?.isCurrent == false) {
+      return;
+    }
     final allSelected = visibleCount > 0 && selectedCount == visibleCount;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted ||
+          !TickerMode.valuesOf(context).enabled ||
+          ModalRoute.of(context)?.isCurrent == false) {
+        return;
+      }
       final current = ref.read(playlistDetailToolbarStateProvider);
       if (current.matchesView(
         owner: _toolbarOwner,
@@ -759,7 +767,9 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
     });
     _searchFocusNode.addListener(_handleSearchFocusChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _searchMode) _searchFocusNode.requestFocus();
+      if (mounted && _searchMode && TickerMode.valuesOf(context).enabled) {
+        _searchFocusNode.requestFocus();
+      }
     });
   }
 

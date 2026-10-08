@@ -64,6 +64,10 @@ class _OnlinePlaylistDetailPageState
   OnlinePlaylistIdentity get _identity =>
       (source: widget.source, id: widget.playlistId, kind: widget.kind);
 
+  int get _savedTrackLimit =>
+      ref.read(onlinePlaylistTrackLimitCacheProvider)[_identity] ??
+      onlinePlaylistDetailInitialTrackLimit;
+
   OnlinePlaylistKey get _key => OnlinePlaylistKey(
     source: widget.source,
     id: widget.playlistId,
@@ -81,6 +85,7 @@ class _OnlinePlaylistDetailPageState
   @override
   void initState() {
     super.initState();
+    _trackLimit = _savedTrackLimit;
     _summary =
         widget.summary ??
         ref.read(onlinePlaylistSummaryCacheProvider)[_identity];
@@ -95,7 +100,7 @@ class _OnlinePlaylistDetailPageState
         oldWidget.playlistId != widget.playlistId ||
         oldWidget.kind != widget.kind;
     if (identityChanged) {
-      _trackLimit = onlinePlaylistDetailInitialTrackLimit;
+      _trackLimit = _savedTrackLimit;
       _lastPlaylist = null;
       _summary =
           widget.summary ??
@@ -134,6 +139,8 @@ class _OnlinePlaylistDetailPageState
     final loaded = detail.asData?.value;
     if (loaded != null) {
       _lastPlaylist = _withDiscoveryArtwork(loaded);
+      // Restore the same cached range before PageStorage restores its offset.
+      ref.read(onlinePlaylistTrackLimitCacheProvider)[_identity] = _trackLimit;
     }
     final cached = _lastPlaylist;
     if (cached != null && loaded == null) {
@@ -499,13 +506,20 @@ class _OnlinePlaylistDetailPageState
   }
 
   void _loadMoreTracks(PlaylistInfo playlist) {
+    if (!TickerMode.valuesOf(context).enabled) return;
     if (playlist.tracks.length >= playlist.totalTracks) return;
     if (_trackLimit >= playlist.totalTracks) return;
     final next = _trackLimit + onlinePlaylistDetailTrackPageSize;
     final target = next > playlist.totalTracks ? playlist.totalTracks : next;
     if (target <= _trackLimit) return;
+    final identity = _identity;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _trackLimit >= target) return;
+      if (!mounted ||
+          _identity != identity ||
+          !TickerMode.valuesOf(context).enabled ||
+          _trackLimit >= target) {
+        return;
+      }
       setState(() => _trackLimit = target);
     });
   }

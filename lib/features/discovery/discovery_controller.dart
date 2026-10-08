@@ -30,6 +30,10 @@ typedef LeaderboardIdentity = ({MusicSource source, String boardId});
 final onlinePlaylistSummaryCacheProvider =
     Provider<Map<OnlinePlaylistIdentity, PlaylistSummary>>((ref) => {});
 
+// Keep the loaded range alongside the shell's saved scroll position.
+final onlinePlaylistTrackLimitCacheProvider =
+    Provider<Map<OnlinePlaylistIdentity, int>>((ref) => {});
+
 String onlinePlaylistArtworkHeroTag(
   MusicSource source,
   String playlistId, {

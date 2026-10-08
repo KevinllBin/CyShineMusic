@@ -21,7 +21,9 @@ import 'features/settings/webdav_sync_page.dart';
 import 'features/music_sources/music_source_page.dart';
 import 'features/shell/app_shell.dart';
 import 'features/shell/player_pull_scope.dart';
+import 'features/shell/shell_navigation.dart';
 import 'features/shell/shell_page_storage.dart';
+import 'features/shell/shell_page_frame.dart';
 import 'features/shell/shell_route_utils.dart';
 import 'features/songs/songs_page.dart';
 import 'theme/app_motion.dart';
@@ -37,191 +39,262 @@ GoRouter createAppRouter({
   GlobalKey<NavigatorState>? navigatorKey,
 }) {
   GoRouter.optionURLReflectsImperativeAPIs = true;
+  final tabShellKey = GlobalKey<StatefulNavigationShellState>();
   return GoRouter(
     navigatorKey: navigatorKey,
     initialLocation: initialLocation,
     routes: [
       ShellRoute(
         builder: (context, state, child) {
-          return AppShell(
-            location: state.uri.path,
-            routeLocation: state.uri.toString(),
-            playerReturnLocation: _playerReturnLocationFromExtra(state.extra),
-            playlistBackLocation: _playlistBackLocationFromUri(state.uri),
-            child: child,
+          return ShellTabNavigationScope(
+            navigationKey: tabShellKey,
+            child: AppShell(
+              location: state.uri.path,
+              routeLocation: state.uri.toString(),
+              playerReturnLocation: _playerReturnLocationFromExtra(state.extra),
+              playlistBackLocation: _playlistBackLocationFromUri(state.uri),
+              child: child,
+            ),
           );
         },
         routes: [
-          GoRoute(
-            path: '/',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: ShellPageStorage(child: SearchPage()),
-            ),
-          ),
-          GoRoute(
-            path: '/discover/playlists/:source/:id',
-            pageBuilder: (context, state) {
-              final source = MusicSource.tryFromCode(
-                state.pathParameters['source'] ?? '',
-              );
-              final id = state.pathParameters['id'] ?? '';
-              return _containerTransformPage(
-                context,
-                key: state.pageKey,
-                extra: state.extra,
-                child: ShellPageStorage(
-                  child: OnlinePlaylistDetailPage(
-                    source: source == null || source == MusicSource.all
-                        ? MusicSource.kw
-                        : source,
-                    playlistId: id,
-                    summary: _routePayload<PlaylistSummary>(state.extra),
+          StatefulShellRoute.indexedStack(
+            key: tabShellKey,
+            builder: (context, state, navigationShell) => navigationShell,
+            branches: [
+              StatefulShellBranch(
+                initialLocation: '/',
+                routes: [
+                  GoRoute(
+                    path: '/',
+                    pageBuilder: (context, state) => NoTransitionPage(
+                      child: _shellPageContent(
+                        state,
+                        child: const SearchPage(),
+                      ),
+                    ),
                   ),
-                ),
-              );
-            },
-          ),
-          GoRoute(
-            path: '/discover/leaderboards/:source',
-            pageBuilder: (context, state) {
-              final source = MusicSource.tryFromCode(
-                state.pathParameters['source'] ?? '',
-              );
-              return _fadeThroughPage(
-                context,
-                key: state.pageKey,
-                extra: state.extra,
-                child: ShellPageStorage(
-                  child: LeaderboardsPage(
-                    source: source == null || source == MusicSource.all
-                        ? MusicSource.kw
-                        : source,
-                  ),
-                ),
-              );
-            },
-          ),
-          GoRoute(
-            path: '/discover/leaderboards/:source/:id',
-            pageBuilder: (context, state) {
-              final source = MusicSource.tryFromCode(
-                state.pathParameters['source'] ?? '',
-              );
-              final resolvedSource = source == null || source == MusicSource.all
-                  ? MusicSource.kw
-                  : source;
-              final id = state.pathParameters['id'] ?? '';
-              final board = _routePayload<LeaderboardSummary>(state.extra);
-              return _containerTransformPage(
-                context,
-                key: state.pageKey,
-                extra: state.extra,
-                child: ShellPageStorage(
-                  child: OnlinePlaylistDetailPage(
-                    source: resolvedSource,
-                    playlistId: id,
-                    kind: OnlineCollectionKind.leaderboard,
-                    summary: board == null
-                        ? null
-                        : PlaylistSummary(
-                            id: board.boardId,
-                            name: board.name,
-                            source: board.source,
-                            coverUrl: board.coverUrl,
+                  GoRoute(
+                    path: '/discover/playlists/:source/:id',
+                    pageBuilder: (context, state) {
+                      final source = MusicSource.tryFromCode(
+                        state.pathParameters['source'] ?? '',
+                      );
+                      final id = state.pathParameters['id'] ?? '';
+                      return _containerTransformPage(
+                        context,
+                        key: state.pageKey,
+                        extra: state.extra,
+                        child: _shellPageContent(
+                          state,
+                          child: OnlinePlaylistDetailPage(
+                            source: source == null || source == MusicSource.all
+                                ? MusicSource.kw
+                                : source,
+                            playlistId: id,
+                            summary: _routePayload<PlaylistSummary>(
+                              state.extra,
+                            ),
                           ),
+                        ),
+                      );
+                    },
                   ),
-                ),
-              );
-            },
-          ),
-          GoRoute(
-            path: '/downloads',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: ShellPageStorage(child: DownloadHistoryPage()),
-            ),
+                  GoRoute(
+                    path: '/discover/leaderboards/:source',
+                    pageBuilder: (context, state) {
+                      final source = MusicSource.tryFromCode(
+                        state.pathParameters['source'] ?? '',
+                      );
+                      return _fadeThroughPage(
+                        context,
+                        key: state.pageKey,
+                        extra: state.extra,
+                        child: _shellPageContent(
+                          state,
+                          child: LeaderboardsPage(
+                            source: source == null || source == MusicSource.all
+                                ? MusicSource.kw
+                                : source,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  GoRoute(
+                    path: '/discover/leaderboards/:source/:id',
+                    pageBuilder: (context, state) {
+                      final source = MusicSource.tryFromCode(
+                        state.pathParameters['source'] ?? '',
+                      );
+                      final resolvedSource =
+                          source == null || source == MusicSource.all
+                          ? MusicSource.kw
+                          : source;
+                      final id = state.pathParameters['id'] ?? '';
+                      final board = _routePayload<LeaderboardSummary>(
+                        state.extra,
+                      );
+                      return _containerTransformPage(
+                        context,
+                        key: state.pageKey,
+                        extra: state.extra,
+                        child: _shellPageContent(
+                          state,
+                          child: OnlinePlaylistDetailPage(
+                            source: resolvedSource,
+                            playlistId: id,
+                            kind: OnlineCollectionKind.leaderboard,
+                            summary: board == null
+                                ? null
+                                : PlaylistSummary(
+                                    id: board.boardId,
+                                    name: board.name,
+                                    source: board.source,
+                                    coverUrl: board.coverUrl,
+                                  ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+              StatefulShellBranch(
+                initialLocation: '/songs',
+                routes: [
+                  GoRoute(
+                    path: '/downloads',
+                    pageBuilder: (context, state) => NoTransitionPage(
+                      child: _shellPageContent(
+                        state,
+                        child: const DownloadHistoryPage(),
+                      ),
+                    ),
+                  ),
+                  GoRoute(path: '/history', redirect: (_, _) => '/downloads'),
+                  GoRoute(
+                    path: '/songs',
+                    pageBuilder: (context, state) => NoTransitionPage(
+                      child: _shellPageContent(state, child: const SongsPage()),
+                    ),
+                  ),
+                  GoRoute(
+                    path: '/songs/search',
+                    pageBuilder: (context, state) => NoTransitionPage(
+                      child: _shellPageContent(
+                        state,
+                        child: const SongsPage(searchMode: true),
+                      ),
+                    ),
+                  ),
+                  GoRoute(
+                    path: '/playlists',
+                    pageBuilder: (context, state) => NoTransitionPage(
+                      child: _shellPageContent(
+                        state,
+                        child: const PlaylistManagementPage(),
+                      ),
+                    ),
+                  ),
+                  GoRoute(
+                    path: '/playlists/import',
+                    pageBuilder: (context, state) => NoTransitionPage(
+                      child: _shellPageContent(
+                        state,
+                        child: const OnlinePlaylistImportPage(),
+                      ),
+                    ),
+                  ),
+                  GoRoute(
+                    path: '/playlists/:id',
+                    pageBuilder: (context, state) => NoTransitionPage(
+                      child: _shellPageContent(
+                        state,
+                        child: PlaylistDetailPage(
+                          playlistId: state.pathParameters['id'] ?? '',
+                          returnLocation: state.uri.toString(),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              StatefulShellBranch(
+                initialLocation: '/settings',
+                routes: [
+                  GoRoute(
+                    path: '/settings',
+                    pageBuilder: (context, state) => NoTransitionPage(
+                      child: _shellPageContent(
+                        state,
+                        child: const SettingsPage(),
+                      ),
+                    ),
+                  ),
+                  GoRoute(
+                    path: '/settings/sources',
+                    pageBuilder: (context, state) => NoTransitionPage(
+                      child: _shellPageContent(
+                        state,
+                        child: const MusicSourcePage(),
+                      ),
+                    ),
+                  ),
+                  GoRoute(
+                    path: '/settings/webdav',
+                    pageBuilder: (context, state) => NoTransitionPage(
+                      child: _shellPageContent(
+                        state,
+                        child: const WebDavSyncPage(),
+                      ),
+                    ),
+                  ),
+                  GoRoute(
+                    path: '/settings/equalizer',
+                    pageBuilder: (context, state) => NoTransitionPage(
+                      child: _shellPageContent(
+                        state,
+                        child: const EqualizerPage(),
+                      ),
+                    ),
+                  ),
+                  GoRoute(
+                    path: '/debug',
+                    pageBuilder: (context, state) => NoTransitionPage(
+                      child: _shellPageContent(
+                        state,
+                        child: const DebugLogPage(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
           GoRoute(
             path: '/player',
-            // Keep the originating page mounted and painted below the shell's
-            // player layer. A push/pop preserves scroll, search and detail state.
+            // The player overlays all three retained tab navigators.
             pageBuilder: (context, state) => CustomTransitionPage<void>(
               opaque: false,
               transitionDuration: Duration.zero,
               reverseTransitionDuration: Duration.zero,
               transitionsBuilder: (_, animation, secondaryAnimation, child) =>
                   child,
-              child: _PlayerRouteBackdrop(),
-            ),
-          ),
-          GoRoute(path: '/history', redirect: (_, _) => '/downloads'),
-          GoRoute(
-            path: '/songs',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: ShellPageStorage(child: SongsPage()),
-            ),
-          ),
-          GoRoute(
-            path: '/songs/search',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: ShellPageStorage(child: SongsPage(searchMode: true)),
-            ),
-          ),
-          GoRoute(
-            path: '/playlists',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: ShellPageStorage(child: PlaylistManagementPage()),
-            ),
-          ),
-          GoRoute(
-            path: '/playlists/import',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: ShellPageStorage(child: OnlinePlaylistImportPage()),
-            ),
-          ),
-          GoRoute(
-            path: '/playlists/:id',
-            pageBuilder: (context, state) => NoTransitionPage(
-              child: ShellPageStorage(
-                child: PlaylistDetailPage(
-                  playlistId: state.pathParameters['id'] ?? '',
-                  returnLocation: state.uri.toString(),
-                ),
-              ),
-            ),
-          ),
-          GoRoute(
-            path: '/settings',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: ShellPageStorage(child: SettingsPage()),
-            ),
-          ),
-          GoRoute(
-            path: '/settings/sources',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: ShellPageStorage(child: MusicSourcePage()),
-            ),
-          ),
-          GoRoute(
-            path: '/settings/webdav',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: ShellPageStorage(child: WebDavSyncPage()),
-            ),
-          ),
-          GoRoute(
-            path: '/settings/equalizer',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: ShellPageStorage(child: EqualizerPage()),
-            ),
-          ),
-          GoRoute(
-            path: '/debug',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: ShellPageStorage(child: DebugLogPage()),
+              child: const _PlayerRouteBackdrop(),
             ),
           ),
         ],
       ),
     ],
+  );
+}
+
+Widget _shellPageContent(GoRouterState state, {required Widget child}) {
+  return ShellPageFrame(
+    location: state.matchedLocation,
+    playlistBackLocation: _playlistBackLocationFromUri(state.uri),
+    child: ShellPageStorage(child: child),
   );
 }
 

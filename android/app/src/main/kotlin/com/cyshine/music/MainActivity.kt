@@ -13,11 +13,13 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.storage.StorageManager
 import android.os.storage.StorageVolume
+import android.provider.OpenableColumns
 import android.view.Display
 import android.view.Surface
 import android.view.SurfaceView
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.MimeTypeMap
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
@@ -27,6 +29,7 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.lang.reflect.Array
 import java.util.Locale
+import java.util.UUID
 import kotlin.math.abs
 import org.jaudiotagger.audio.AudioFileIO
 import org.jaudiotagger.tag.FieldKey
@@ -40,13 +43,32 @@ class MainActivity : AudioServiceActivity() {
     private val nativeTaggerChannel = "cy_shine_music/native_tagger"
     private val appTaskChannel = "cy_shine_music/app_task"
     private val storageBrowserChannel = "cy_shine_music/storage_browser"
+    private var incomingAudioChannel: MethodChannel? = null
+    private var pendingAudioUri: Uri? = null
     private var displayListener: DisplayManager.DisplayListener? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState?.containsKey("pendingExternalAudio") == true) {
+            pendingAudioUri = savedInstanceState.getString("pendingExternalAudio")?.let(Uri::parse)
+            if (pendingAudioUri != null) incomingAudioChannel?.invokeMethod("audioAvailable", null)
+        } else {
+            handleIncomingAudioIntent(intent)
+        }
         applyEdgeToEdgeSystemBars()
         applyHighestRefreshRate()
         registerDisplayListener()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingAudioIntent(intent)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("pendingExternalAudio", pendingAudioUri?.toString())
+        super.onSaveInstanceState(outState)
     }
 
     override fun onResume() {
@@ -144,8 +166,24 @@ class MainActivity : AudioServiceActivity() {
                 }
             }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, audioIntentChannel)
+            .also { incomingAudioChannel = it }
             .setMethodCallHandler { call, result ->
                 when (call.method) {
+                    "takePendingAudio" -> {
+                        val uri = pendingAudioUri
+                        pendingAudioUri = null
+                        if (uri == null) {
+                            result.success(null)
+                            return@setMethodCallHandler
+                        }
+                        Thread {
+                            try {
+                                result.success(resolveIncomingAudio(uri))
+                            } catch (e: Exception) {
+                                result.error("READ_AUDIO_FAILED", "无法读取外部音乐文件", e.toString())
+                            }
+                        }.start()
+                    }
                     "openAudio" -> {
                         val path = call.argument<String>("path")
                         if (path.isNullOrEmpty()) {
@@ -211,6 +249,62 @@ class MainActivity : AudioServiceActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    private fun handleIncomingAudioIntent(intent: Intent) {
+        if (intent.action != Intent.ACTION_VIEW) return
+        val uri = intent.data ?: return
+        if (uri.scheme != "content" && uri.scheme != "file") return
+        pendingAudioUri = uri
+        incomingAudioChannel?.invokeMethod("audioAvailable", null)
+    }
+
+    private fun resolveIncomingAudio(uri: Uri): String {
+        if (uri.scheme == "file") {
+            val file = File(requireNotNull(uri.path))
+            require(file.isFile && file.canRead()) { "文件不存在或没有读取权限" }
+            return file.absolutePath
+        }
+
+        // Providers grant URI access, not access to a physical path. Copy while
+        // the grant is valid so the existing file player and tag reader can use it.
+        val displayName = runCatching {
+            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                if (it.moveToFirst()) it.getString(0) else null
+            }
+        }.getOrNull() ?: uri.lastPathSegment ?: "外部音乐"
+        var safeName = displayName.substringAfterLast('/').substringAfterLast('\\')
+            .replace(Regex("[\\x00-\\x1f]"), "_")
+        if (safeName.isBlank() || safeName == "." || safeName == "..") safeName = "外部音乐"
+        val namedExtension = safeName.substringAfterLast('.', "")
+            .takeIf { it.length in 1..10 && it.all(Char::isLetterOrDigit) }
+        val extension = namedExtension ?: run {
+            val mimeType = contentResolver.getType(uri)?.substringBefore(';')
+            MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)
+        }
+        // Bound UTF-8 filename length and preserve the extension used by BASS.
+        val baseName = if (namedExtension == null) safeName else safeName.substringBeforeLast('.')
+        safeName = baseName.take(60) + if (extension.isNullOrBlank()) "" else ".$extension"
+
+        val root = File(cacheDir, "external_audio")
+        val directory = File(root, UUID.randomUUID().toString())
+        check(directory.mkdirs()) { "无法创建音乐缓存" }
+        val file = File(directory, safeName)
+        try {
+            val input = contentResolver.openInputStream(uri) ?: error("无法打开音乐文件")
+            input.use { source -> file.outputStream().use { target -> source.copyTo(target) } }
+            require(file.length() > 0) { "音乐文件为空" }
+        } catch (e: Exception) {
+            directory.deleteRecursively()
+            throw e
+        }
+
+        // Keep recent files for session restoration without accumulating every
+        // file ever opened. Never overwrite the file the player is still using.
+        root.listFiles()?.filter { it.isDirectory && it != directory }
+            ?.sortedByDescending { it.lastModified() }?.drop(4)
+            ?.forEach { it.deleteRecursively() }
+        return file.absolutePath
     }
 
     private fun readAudioTags(arguments: Map<*, *>?, result: MethodChannel.Result) {

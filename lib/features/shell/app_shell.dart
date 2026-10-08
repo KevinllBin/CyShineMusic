@@ -15,6 +15,7 @@ import '../player/player_page.dart';
 import '../player/widgets/spinning_cover_art.dart';
 import '../player/player_controller.dart';
 import '../playlists/playlist_detail_toolbar_state.dart';
+import '../search/search_controller.dart';
 import '../songs/songs_toolbar_state.dart';
 import 'player_pull_scope.dart';
 import 'player_transition.dart';
@@ -27,7 +28,6 @@ import 'widgets/discovery_category_fab.dart';
 import 'widgets/dual_capsule_bottom_navigation.dart';
 import 'widgets/native_bottom_navigation.dart';
 import 'widgets/search_paging_fab.dart';
-import 'widgets/shell_header.dart';
 import 'widgets/toolbar_metrics.dart';
 import 'widgets/toolbar_capsule.dart';
 
@@ -53,7 +53,6 @@ class AppShell extends ConsumerStatefulWidget {
 
 class _AppShellState extends ConsumerState<AppShell>
     with TickerProviderStateMixin {
-  _ShellRouteMotion _routeMotion = _ShellRouteMotion.forward;
   String _playerReturnLocation = '/songs';
   late final AnimationController _toolbarRevealController;
 
@@ -74,7 +73,6 @@ class _AppShellState extends ConsumerState<AppShell>
   bool _settledExpanded = false;
   bool _dragFromPlayer = false;
   double _dragStartProgress = 0;
-  String _underlayPlaylistBack = '/';
   Timer? _returnToDesktopTimer;
   AppToastHandle? _returnToDesktopToast;
 
@@ -140,7 +138,6 @@ class _AppShellState extends ConsumerState<AppShell>
     }
     if (oldWidget.location != widget.location) {
       _resetTopLevelBack();
-      _routeMotion = _motionFor(oldWidget.location, widget.location);
       _toolbarScrollSequenceActive = false;
       _lastToolbarScrollDelta = 0;
       // Preserve the underlying toolbar's scroll position during the morph.
@@ -148,7 +145,6 @@ class _AppShellState extends ConsumerState<AppShell>
         _toolbarRevealController.value = 1;
       }
       if (widget.location == '/player') {
-        _underlayPlaylistBack = oldWidget.playlistBackLocation;
         _playerReturnLocation = normalizedPlayerReturnLocation(
           widget.playerReturnLocation,
           oldWidget.routeLocation,
@@ -468,8 +464,15 @@ class _AppShellState extends ConsumerState<AppShell>
       _toolbarRevealController.stop(canceled: false);
       return false;
     }
+    // Discovery's vertical lists sit inside the horizontal source PageView.
+    // Search results and other routes still only accept the outermost list.
+    final maxScrollDepth =
+        widget.location == '/' &&
+            !ref.read(searchControllerProvider).isSearchActive
+        ? 1
+        : 0;
     if (widget.location == '/player' ||
-        notification.depth != 0 ||
+        notification.depth > maxScrollDepth ||
         notification.metrics.axis != Axis.vertical) {
       return false;
     }
@@ -575,16 +578,7 @@ class _AppShellState extends ConsumerState<AppShell>
     });
     final baseScheme = Theme.of(context).colorScheme;
     final scheme = shellSchemeFor(contentLocation, baseScheme);
-    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
     final isPlayer = widget.location == '/player';
-    final isImmersivePlaylist = isImmersivePlaylistDetailLocation(
-      contentLocation,
-    );
-    // 发现区各页自绘顶栏（ShellSectionHeader）：导航器高度在「发现 ↔
-    // 歌单/榜单详情」之间保持不变，详情页的容器变换展开/收回时下层内容
-    // 才不会跳动。
-    final hidesShellHeader =
-        isImmersivePlaylist || isDiscoveryLocation(contentLocation);
     final toolbarTravelExtent = _bottomToolbarTravelExtent(context);
     _toolbarTravelExtent = toolbarTravelExtent;
     final navigationMode = ref.watch(
@@ -611,19 +605,20 @@ class _AppShellState extends ConsumerState<AppShell>
                 (state) => state.batchMode,
               ),
             ));
-    final nativeBottomExtent = shellControlsVisible &&
-            navigationMode == AppNavigationMode.native
+    final nativeBottomExtent =
+        shellControlsVisible && navigationMode == AppNavigationMode.native
         ? nativeBottomAreaHeight(context, showPlayer: showPlayerBar)
         : 0.0;
     // The player strip floats over content; only the navigation bar below it
     // pushes the page up.
-    final nativeFloatingExtent = shellControlsVisible &&
+    final nativeFloatingExtent =
+        shellControlsVisible &&
             navigationMode == AppNavigationMode.native &&
             showPlayerBar
         ? nativeFloatingPlayerExtent(context)
         : 0.0;
-    final dualBottomExtent = shellControlsVisible &&
-            navigationMode == AppNavigationMode.dualCapsule
+    final dualBottomExtent =
+        shellControlsVisible && navigationMode == AppNavigationMode.dualCapsule
         ? dualCapsuleBottomAreaHeight(context, showPlayer: showPlayerBar)
         : 0.0;
 
@@ -697,84 +692,20 @@ class _AppShellState extends ConsumerState<AppShell>
                     key: const ValueKey('shell-content'),
                     child: ColoredBox(
                       color: scheme.appSurface,
-                      child: Padding(
-                        // The immersive player page fills the whole screen and
-                        // handles its own bottom safe area internally.
-                        padding: EdgeInsets.only(
-                          bottom: switch (navigationMode) {
-                            AppNavigationMode.native => shellControlsVisible
-                                ? nativeBottomExtent - nativeFloatingExtent
-                                : MediaQuery.paddingOf(context).bottom,
-                            AppNavigationMode.dualCapsule =>
-                              math.max(bottomInset, 12),
-                            AppNavigationMode.singleCapsule =>
-                              math.max(bottomInset, 12),
-                          },
-                        ),
-                        child: Column(
-                          children: [
-                            if (hidesShellHeader)
-                              const SizedBox.shrink()
-                            else
-                              AnimatedSize(
-                                duration: AppMotion.short,
-                                curve: AppMotion.emphasized,
-                                alignment: Alignment.topCenter,
-                                child: ShellHeader(
-                                  location: contentLocation,
-                                  playlistBackLocation: isPlayer
-                                      ? _underlayPlaylistBack
-                                      : widget.playlistBackLocation,
-                                ),
-                              ),
-                            Expanded(
-                              child: RepaintBoundary(
-                                child: ClipRect(
-                                  child: AnimatedSwitcher(
-                                    duration:
-                                        isPlayer ||
-                                            _routeMotion ==
-                                                _ShellRouteMotion.playerExit
-                                        ? AppMotion.medium
-                                        : AppMotion.long,
-                                    switchInCurve:
-                                        AppMotion.emphasizedDecelerate,
-                                    switchOutCurve:
-                                        AppMotion.emphasizedAccelerate,
-                                    // A pushed GoRouter route can reuse GlobalKeys
-                                    // from the shell child below it. Keeping both
-                                    // route trees mounted during the transition
-                                    // would therefore trigger duplicate-key errors.
-                                    layoutBuilder: (currentChild, _) =>
-                                        currentChild ?? const SizedBox.shrink(),
-                                    transitionBuilder: _buildRouteTransition,
-                                    child: KeyedSubtree(
-                                      key: ValueKey(
-                                        _shellContentAnimationKey(
-                                          contentLocation,
-                                        ),
-                                      ),
-                                      child: Listener(
-                                        behavior: HitTestBehavior.translucent,
-                                        onPointerUp: (_) =>
-                                            _finishToolbarScrollSequence(),
-                                        onPointerCancel: (_) =>
-                                            _finishToolbarScrollSequence(),
-                                        child:
-                                            NotificationListener<
-                                              ScrollNotification
-                                            >(
-                                              onNotification:
-                                                  _handleToolbarScrollNotification,
-                                              child: widget.child,
-                                            ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
+                      // Keep the outer navigator mounted across tab changes;
+                      // its StatefulShellRoute owns the retained branch stacks.
+                      child: RepaintBoundary(
+                        child: ClipRect(
+                          child: Listener(
+                            behavior: HitTestBehavior.translucent,
+                            onPointerUp: (_) => _finishToolbarScrollSequence(),
+                            onPointerCancel: (_) =>
+                                _finishToolbarScrollSequence(),
+                            child: NotificationListener<ScrollNotification>(
+                              onNotification: _handleToolbarScrollNotification,
+                              child: widget.child,
                             ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
@@ -820,18 +751,18 @@ class _AppShellState extends ConsumerState<AppShell>
                             isPlayer: isPlayer,
                           ),
                         AppNavigationMode.native => NativeBottomNavigation(
-                            location: contentLocation,
-                            routeLocation: contentRoute,
-                            showPlayer: showPlayerBar,
-                            visible: shellControlsVisible,
-                            reveal: _toolbarRevealController,
-                          ),
+                          location: contentLocation,
+                          routeLocation: contentRoute,
+                          showPlayer: showPlayerBar,
+                          visible: shellControlsVisible,
+                          reveal: _toolbarRevealController,
+                        ),
                         AppNavigationMode.singleCapsule => BottomToolbar(
-                            location: contentLocation,
-                            routeLocation: contentRoute,
-                            reveal: _toolbarRevealController,
-                            travelExtent: toolbarTravelExtent,
-                          ),
+                          location: contentLocation,
+                          routeLocation: contentRoute,
+                          reveal: _toolbarRevealController,
+                          travelExtent: toolbarTravelExtent,
+                        ),
                       },
                     ),
                   ),
@@ -965,83 +896,12 @@ class _AppShellState extends ConsumerState<AppShell>
       ),
     );
   }
-
-  Widget _buildRouteTransition(Widget child, Animation<double> animation) {
-    if (_routeMotion == _ShellRouteMotion.playerEnter ||
-        _routeMotion == _ShellRouteMotion.playerExit) {
-      return child;
-    }
-    final incoming =
-        child.key == ValueKey(_shellContentAnimationKey(_contentLocation));
-    final offset =
-        Tween<Offset>(begin: _routeOffset(incoming), end: Offset.zero).animate(
-          CurvedAnimation(
-            parent: animation,
-            curve: incoming
-                ? AppMotion.emphasizedDecelerate
-                : AppMotion.emphasizedAccelerate,
-          ),
-        );
-    final scale = Tween<double>(
-      begin: incoming ? 0.992 : 1,
-      end: 1,
-    ).animate(CurvedAnimation(parent: animation, curve: AppMotion.emphasized));
-
-    return FadeTransition(
-      opacity: animation,
-      child: SlideTransition(
-        position: offset,
-        child: ScaleTransition(scale: scale, child: child),
-      ),
-    );
-  }
-
-  Offset _routeOffset(bool incoming) {
-    return switch (_routeMotion) {
-      _ShellRouteMotion.playerEnter =>
-        incoming ? const Offset(0, 0.055) : const Offset(0, -0.025),
-      _ShellRouteMotion.playerExit =>
-        incoming ? const Offset(0, -0.035) : const Offset(0, 0.08),
-      _ShellRouteMotion.forward =>
-        incoming ? const Offset(0.045, 0) : const Offset(-0.032, 0),
-      _ShellRouteMotion.backward =>
-        incoming ? const Offset(-0.045, 0) : const Offset(0.032, 0),
-    };
-  }
 }
-
-enum _ShellRouteMotion { forward, backward, playerEnter, playerExit }
 
 const _doubleBackExitWindow = Duration(seconds: 2);
 
 bool _isTopLevelMenuLocation(String location) {
   return location == '/' || location == '/songs' || location == '/settings';
-}
-
-_ShellRouteMotion _motionFor(String from, String to) {
-  if (to == '/player') return _ShellRouteMotion.playerEnter;
-  if (from == '/player') return _ShellRouteMotion.playerExit;
-  return _routeOrder(to) >= _routeOrder(from)
-      ? _ShellRouteMotion.forward
-      : _ShellRouteMotion.backward;
-}
-
-int _routeOrder(String location) {
-  if (isPlaylistLocation(location)) return 2;
-  if (location.startsWith('/settings')) return 4;
-  return switch (location) {
-    '/' => 0,
-    '/songs' => 1,
-    '/songs/search' => 2,
-    '/downloads' => 2,
-    '/player' => 3,
-    '/debug' => 4,
-    _ => 0,
-  };
-}
-
-String _shellContentAnimationKey(String location) {
-  return isDiscoveryLocation(location) ? '/' : location;
 }
 
 const _appTaskChannel = MethodChannel('cy_shine_music/app_task');

@@ -7,6 +7,26 @@ import 'player_pull_scope.dart';
 import 'tab_location_memory.dart';
 import 'widgets/toolbar_metrics.dart';
 
+/// Gives the shell's toolbar access to the retained tab navigators below it.
+class ShellTabNavigationScope extends InheritedWidget {
+  const ShellTabNavigationScope({
+    super.key,
+    required this.navigationKey,
+    required super.child,
+  });
+
+  final GlobalKey<StatefulNavigationShellState> navigationKey;
+
+  static StatefulNavigationShellState? maybeOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<ShellTabNavigationScope>()
+      ?.navigationKey
+      .currentState;
+
+  @override
+  bool updateShouldNotify(ShellTabNavigationScope oldWidget) =>
+      navigationKey != oldWidget.navigationKey;
+}
+
 void navigateShellTo(
   BuildContext context,
   String currentLocation,
@@ -51,6 +71,11 @@ void navigateToShellTab(
   _dismissTransientRoutes(context);
   final targetIndex = toolbarIndexFor(path);
   final switchesTab = toolbarIndexFor(location) != targetIndex;
+  final navigation = ShellTabNavigationScope.maybeOf(context);
+  if (switchesTab && navigation != null) {
+    navigation.goBranch(targetIndex == 3 ? 2 : targetIndex);
+    return;
+  }
   final target = switchesTab
       ? (ref.read(tabLocationMemoryProvider)[targetIndex] ?? path)
       : path;

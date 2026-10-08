@@ -289,13 +289,21 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   }
 
   void _syncToolbarState(SearchState state) {
+    if (!TickerMode.valuesOf(context).enabled ||
+        ModalRoute.of(context)?.isCurrent == false) {
+      return;
+    }
     final response = state.response;
     final hasResults = response != null && response.list.isNotEmpty;
     final allPage = response?.allPage ?? state.page;
     final canNext =
         hasResults && state.page < (allPage > 0 ? allPage : state.page + 1);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted ||
+          !TickerMode.valuesOf(context).enabled ||
+          ModalRoute.of(context)?.isCurrent == false) {
+        return;
+      }
       final next = SearchToolbarState(
         visible: hasResults,
         page: state.page,

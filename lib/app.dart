@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 // CorePalette is still the public Android palette returned by dynamic_color
 // 1.8.x, even though material_color_utilities marks it deprecated internally.
@@ -39,12 +40,26 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
     with WidgetsBindingObserver {
   Future<CorePalette?>? _corePaletteFuture;
   String? _lastLoggedScheme;
+  static const _audioIntentChannel = MethodChannel(
+    'cy_shine_music/audio_intent',
+  );
+  bool _externalAudioReady = false;
+  bool _handlingExternalAudio = false;
+  bool _externalAudioRequested = false;
+  bool _openedExternalAudio = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _corePaletteFuture = DynamicColorPlugin.getCorePalette();
+    if (Platform.isAndroid) {
+      _audioIntentChannel.setMethodCallHandler((call) async {
+        if (call.method != 'audioAvailable') return;
+        _externalAudioRequested = true;
+        await _openPendingExternalAudio();
+      });
+    }
     // Warm persisted library and player state behind the startup screen so
     // synchronous decoding and audio-source restoration stay off the first
     // interactive frame.
@@ -65,6 +80,7 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
 
   @override
   void dispose() {
+    if (Platform.isAndroid) _audioIntentChannel.setMethodCallHandler(null);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -76,11 +92,65 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
   }
 
   Future<void> _onStartupReady() async {
+    _externalAudioReady = true;
+    await _openPendingExternalAudio();
+    if (!mounted || _openedExternalAudio) return;
     final canCheckForUpdate = await _checkPermission();
     if (!canCheckForUpdate) return;
     final context = rootNavigatorKey.currentContext;
     if (context == null || !context.mounted) return;
     await checkForAppUpdate(context, ref);
+  }
+
+  Future<void> _openPendingExternalAudio() async {
+    if (!Platform.isAndroid ||
+        !mounted ||
+        !_externalAudioReady ||
+        _handlingExternalAudio) {
+      return;
+    }
+    _handlingExternalAudio = true;
+    try {
+      do {
+        _externalAudioRequested = false;
+        try {
+          final path = await _audioIntentChannel.invokeMethod<String>(
+            'takePendingAudio',
+          );
+          if (!mounted) return;
+          if (path == null) continue;
+          _openedExternalAudio = true;
+          // Check again after playback setup in case another file arrived while
+          // the provider was being read or the player's tags were loading.
+          _externalAudioRequested = true;
+          final player = ref.read(playerControllerProvider.notifier);
+          final playback = player.playFromFile(path);
+          final location = appRouter.routeInformationProvider.value.uri;
+          if (location.path != '/player') {
+            unawaited(
+              appRouter.push<void>('/player', extra: location.toString()),
+            );
+          }
+          await playback;
+        } on MissingPluginException {
+          // Other platforms and test engines do not install the Android entry.
+          return;
+        } catch (error) {
+          await AppLogger.write('external-audio', 'open failed: $error');
+          if (!mounted) return;
+          final context = rootNavigatorKey.currentContext;
+          if (context != null && context.mounted) {
+            showAppToast(
+              context,
+              '无法打开音乐文件，请确认文件可访问后重试',
+              type: AppToastType.error,
+            );
+          }
+        }
+      } while (mounted && _externalAudioRequested);
+    } finally {
+      _handlingExternalAudio = false;
+    }
   }
 
   Future<bool> _checkPermission() async {

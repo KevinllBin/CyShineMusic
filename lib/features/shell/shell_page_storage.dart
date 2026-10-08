@@ -3,12 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// App-lifetime [PageStorageBucket] shared by every shell route.
 ///
-/// Each `NoTransitionPage` route carries its own per-route `PageStorage`
-/// (inside `ModalRoute`), which is destroyed together with the route on every
-/// navigation — so `PageStorageKey`s alone cannot preserve scroll offsets
-/// across shell page swaps. Wrapping each route's child in [ShellPageStorage]
-/// puts this long-lived bucket *closer* to the scrollables than the per-route
-/// one, letting their offsets survive.
+/// Tab switches keep their navigators alive. A route that is actually closed
+/// or replaced still loses its own `ModalRoute` bucket; this shared bucket lets
+/// its `PageStorageKey` restore the offset if that route is opened again.
 ///
 /// The bucket lives in Riverpod (not a module-level static) so widget tests
 /// get a fresh bucket per ProviderScope.

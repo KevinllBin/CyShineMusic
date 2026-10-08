@@ -59,6 +59,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode(debugLabel: 'songs-search');
   bool? _toolbarVisibilityBeforeSearchFocus;
+  bool _tabActive = false;
   List<DownloadHistoryEntry> _visibleSongs = const [];
   Map<String, PlaylistTrack> _visiblePlaylistTracks = const {};
   final Set<String> _selectedIds = <String>{};
@@ -129,6 +130,19 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     }
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final active = TickerMode.valuesOf(context).enabled;
+    final resumes = active && !_tabActive;
+    _tabActive = active;
+    if (!resumes) return;
+    final files = _scannedFiles;
+    if (files != null && files.isNotEmpty) {
+      unawaited(_resumeCachedHydration(files, _scanGeneration));
+    }
+  }
+
   Future<void> _initializeScan() async {
     await _scanCache.ensureLoaded();
     if (!mounted) return;
@@ -172,14 +186,22 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     _searchFocusNode.addListener(_handleSearchFocusChanged);
     if (!ref.read(songsSearchAutoFocusProvider)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !widget.searchMode) return;
+        if (!mounted ||
+            !widget.searchMode ||
+            !TickerMode.valuesOf(context).enabled) {
+          return;
+        }
         final toolbar = ref.read(shellToolbarVisibleProvider.notifier);
         if (toolbar.mounted) toolbar.state = true;
       });
       return;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && widget.searchMode) _searchFocusNode.requestFocus();
+      if (mounted &&
+          widget.searchMode &&
+          TickerMode.valuesOf(context).enabled) {
+        _searchFocusNode.requestFocus();
+      }
     });
   }
 
@@ -235,7 +257,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
   }
 
   bool _isSongsRouteActive() {
-    if (!mounted) return false;
+    if (!mounted || !_tabActive) return false;
     final path = GoRouter.of(context).routeInformationProvider.value.uri.path;
     // The player now covers this live route rather than disposing it. Keep
     // metadata hydration alive so returning cannot strand a half-loaded list.
@@ -950,13 +972,21 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     required int selectedCount,
     required LocalPlaylist? activePlaylist,
   }) {
+    if (!TickerMode.valuesOf(context).enabled ||
+        ModalRoute.of(context)?.isCurrent == false) {
+      return;
+    }
     final allSelected = songCount > 0 && selectedCount == songCount;
     final canUpdatePlaylist = activePlaylist?.isOnlineImport == true;
     final updatingPlaylist =
         activePlaylist != null &&
         _updatingPlaylistIds.contains(activePlaylist.id);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted ||
+          !TickerMode.valuesOf(context).enabled ||
+          ModalRoute.of(context)?.isCurrent == false) {
+        return;
+      }
       final current = ref.read(songsToolbarStateProvider);
       if (current.matchesView(
         owner: _toolbarOwner,
