@@ -7,8 +7,7 @@ import 'package:archive/archive.dart';
 // `music.musichallSong.PlayLyricInfo` endpoint when `crypt: 1` is requested.
 //
 // The encryption ships as a closed-source native binary (`qrc_decode.node`).
-// This Dart port was recovered by reverse-engineering that binary in IDA Pro
-// (session notes 2026-05-23). It is a CUSTOM Triple-DES — close to standard
+// It is a CUSTOM Triple-DES — close to standard
 // DES but with several deliberate deviations that defeat off-the-shelf DES
 // libraries:
 //

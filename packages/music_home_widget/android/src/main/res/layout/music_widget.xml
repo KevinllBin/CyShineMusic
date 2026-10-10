@@ -1,0 +1,66 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <ImageView
+        android:id="@+id/music_widget_card"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY"
+        android:contentDescription="@string/music_widget_open" />
+
+    <!-- These proportions also define the renderer's button centers. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:importantForAccessibility="no">
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="73"
+            android:importantForAccessibility="no" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="20"
+            android:orientation="horizontal">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="5"
+                android:importantForAccessibility="no" />
+            <ImageView
+                android:id="@+id/music_widget_previous"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="30"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/music_widget_previous" />
+            <ImageView
+                android:id="@+id/music_widget_toggle"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="30"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/music_widget_play" />
+            <ImageView
+                android:id="@+id/music_widget_next"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="30"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/music_widget_next" />
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="5"
+                android:importantForAccessibility="no" />
+        </LinearLayout>
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="7"
+            android:importantForAccessibility="no" />
+    </LinearLayout>
+</FrameLayout>

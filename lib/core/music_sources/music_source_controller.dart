@@ -1,16 +1,44 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../api/api_client.dart';
 import '../models/download_capabilities.dart';
+import '../services/app_logger.dart';
 import 'music_source_metadata_parser.dart';
 import 'music_source_models.dart';
 import 'music_source_runtime.dart';
 import 'music_source_store.dart';
+import 'music_source_updates.dart';
 
 class MusicSourceController extends AsyncNotifier<MusicSourceState> {
   MusicSourceStore get _store => ref.read(musicSourceStoreProvider);
   MusicSourceRuntime get _runtime => ref.read(musicSourceRuntimeProvider);
+  bool _updating = false;
+  int _pendingChanges = 0;
+  Completer<void>? _updateCompleted;
+  bool _checkingAllUpdates = false;
+
+  void _checkUpdating() {
+    if (_updating) {
+      throw const MusicSourceRuntimeException('正在更新音源，请稍候');
+    }
+  }
+
+  Future<T> _change<T>(Future<T> Function() action) async {
+    final updateCompleted = _updateCompleted;
+    if (updateCompleted != null) await updateCompleted.future;
+    _checkUpdating();
+    _pendingChanges++;
+    try {
+      return await action();
+    } finally {
+      _pendingChanges--;
+    }
+  }
 
   @override
   Future<MusicSourceState> build() async {
@@ -19,10 +47,98 @@ class MusicSourceController extends AsyncNotifier<MusicSourceState> {
     return _store.load();
   }
 
+  Future<void> checkAllForUpdates() async {
+    if (_checkingAllUpdates) return;
+    _checkingAllUpdates = true;
+    try {
+      final records = (await future).records;
+      for (final record in records) {
+        try {
+          await checkForUpdate(record.id);
+        } catch (_) {
+          // An unreachable source must not stop checking the remaining ones.
+          // Avoid logging exception text that may contain credential URLs.
+          await AppLogger.write(
+            'music-source-update',
+            'check failed for source ${record.id}',
+          );
+        }
+      }
+    } catch (_) {
+      await AppLogger.write('music-source-update', 'source list check failed');
+    } finally {
+      _checkingAllUpdates = false;
+    }
+  }
+
+  Future<bool> checkForUpdate(String id, {bool showAgain = false}) async {
+    final updateCompleted = _updateCompleted;
+    if (updateCompleted != null) await updateCompleted.future;
+    final current = await future;
+    final record = current.records.firstWhere(
+      (item) => item.id == id,
+      orElse: () => throw const MusicSourceRuntimeException('音源不存在'),
+    );
+    final updates = ref.read(musicSourceUpdatesProvider.notifier);
+    var notice = updates.latestFor(record);
+    if (notice != null) {
+      if (showAgain) updates.showAgain(notice);
+      return true;
+    }
+    final script = await _store.readScript(id);
+    Object? checkError;
+    try {
+      await ref
+          .read(musicSourceUpdateRuntimeProvider)
+          .checkForUpdates(record, script);
+    } catch (error) {
+      checkError = error;
+    }
+    if (!_isCurrent(record)) return false;
+    notice = updates.latestFor(record);
+    if (notice != null) {
+      if (showAgain) updates.showAgain(notice);
+      return true;
+    }
+
+    final origin = Uri.tryParse(record.origin);
+    if (origin != null &&
+        (origin.scheme == 'http' || origin.scheme == 'https') &&
+        origin.host.isNotEmpty) {
+      final remoteScript = await _downloadUpdate(record.origin);
+      if (!_isCurrent(record) || remoteScript == script) return false;
+      final metadata = parseMusicSourceMetadata(remoteScript);
+      if (musicSourceId(metadata) != record.id) {
+        throw const MusicSourceRuntimeException('原导入地址返回了不同的音源，请手动导入新版');
+      }
+      final versionNote = metadata.version != record.version
+          ? '版本：${record.version.isEmpty ? '未标注' : record.version}'
+                ' → ${metadata.version.isEmpty ? '未标注' : metadata.version}'
+          : '版本号未变化，但脚本内容已发生变化。';
+      notice = MusicSourceUpdateNotice(
+        sourceId: record.id,
+        sourceKey: record.runtimeKey,
+        log: '从原导入 URL 检测到脚本更新。\n$versionNote\n\n作者未提供更新说明。',
+        updateUrl: record.origin,
+      );
+      updates.receive(notice);
+      if (showAgain) updates.showAgain(notice);
+      return true;
+    }
+    if (checkError != null) throw checkError;
+    return false;
+  }
+
+  bool _isCurrent(MusicSourceRecord record) =>
+      state.valueOrNull?.records.any(
+        (item) => item.id == record.id && item.runtimeKey == record.runtimeKey,
+      ) ??
+      false;
+
   Future<MusicSourceRecord> importScript({
     required String script,
     required String origin,
-  }) async {
+  }) => _change(() async {
     final current = await future;
     final metadata = parseMusicSourceMetadata(script);
     final id = musicSourceId(metadata);
@@ -60,9 +176,129 @@ class MusicSourceController extends AsyncNotifier<MusicSourceState> {
       await _validateInactive(record);
     }
     return state.requireValue.records.firstWhere((item) => item.id == id);
+  });
+
+  Future<bool> updateScript(MusicSourceUpdateNotice notice) async {
+    final current = await future;
+    _checkUpdating();
+    if (_pendingChanges != 0 || current.activatingId != null) {
+      throw const MusicSourceRuntimeException('音源正在处理，请稍后重试');
+    }
+    final record = current.records.firstWhere(
+      (item) => item.id == notice.sourceId,
+      orElse: () => throw const MusicSourceRuntimeException('音源已被删除'),
+    );
+    if (!notice.matches(record)) {
+      throw const MusicSourceRuntimeException('音源已发生变化，请使用新的更新通知');
+    }
+
+    _updating = true;
+    _updateCompleted = Completer<void>();
+    state = AsyncData(current.copyWith(activatingId: record.id));
+    String? previousScript;
+    var replacing = false;
+    try {
+      final script = await _downloadUpdate(notice.updateUrl);
+      final metadata = parseMusicSourceMetadata(script);
+      if (musicSourceId(metadata) != record.id) {
+        throw const MusicSourceRuntimeException(
+          '更新脚本的名称或作者与当前音源不一致，请复制更新 URL 后手动导入',
+        );
+      }
+      previousScript = await _store.readScript(record.id);
+      if (script == previousScript) return false;
+      final candidate = MusicSourceRecord(
+        id: record.id,
+        name: metadata.name,
+        description: metadata.description,
+        author: metadata.author,
+        homepage: metadata.homepage,
+        version: metadata.version,
+        origin: record.origin,
+        importedAt: record.importedAt,
+        updatedAt: DateTime.now(),
+        capabilities: record.capabilities,
+      );
+      final ready = await _validate(candidate, script);
+      final next = current.copyWith(
+        records: _replace(current.records, ready),
+        clearActivating: true,
+      );
+      // Only replace a usable script after the candidate has initialized.
+      // Restore both the script and index if committing the update fails.
+      replacing = true;
+      await _store.writeScript(record.id, script);
+      await _store.save(next);
+      state = AsyncData(next);
+      return true;
+    } catch (_) {
+      try {
+        await _runtime.disposeRuntime();
+        if (replacing && previousScript != null) {
+          await _store.writeScript(record.id, previousScript);
+          await _store.save(current);
+        }
+      } finally {
+        state = AsyncData(current);
+      }
+      rethrow;
+    } finally {
+      _updating = false;
+      final latest = state.valueOrNull;
+      if (latest?.activatingId == record.id) {
+        state = AsyncData(latest!.copyWith(clearActivating: true));
+      }
+      _updateCompleted!.complete();
+      _updateCompleted = null;
+    }
   }
 
-  Future<Map<String, dynamic>> exportForSync() async {
+  Future<String> _downloadUpdate(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        (uri.scheme != 'http' && uri.scheme != 'https') ||
+        uri.host.isEmpty) {
+      throw const MusicSourceRuntimeException('更新 URL 无效');
+    }
+    final cancelToken = CancelToken();
+    try {
+      final response = await ref
+          .read(apiClientProvider)
+          .get<ResponseBody>(
+            url,
+            cancelToken: cancelToken,
+            options: Options(
+              responseType: ResponseType.stream,
+              receiveTimeout: const Duration(seconds: 30),
+              headers: const {
+                'Accept': 'application/javascript, text/plain, */*',
+              },
+            ),
+          );
+      final body = response.data;
+      if (body == null) {
+        throw const MusicSourceRuntimeException('更新脚本为空');
+      }
+      final bytes = BytesBuilder(copy: false);
+      await for (final chunk in body.stream) {
+        if (bytes.length + chunk.length > kMaxMusicSourceScriptBytes) {
+          throw const MusicSourceRuntimeException('音源脚本不能超过 2 MB');
+        }
+        bytes.add(chunk);
+      }
+      return utf8.decode(bytes.takeBytes());
+    } on DioException catch (error) {
+      // Dio's exception text can contain the paid source's credential URL.
+      final status = error.response?.statusCode;
+      throw MusicSourceRuntimeException(
+        status == null ? '下载更新失败，请检查网络后重试' : '下载更新失败（HTTP $status）',
+      );
+    } finally {
+      cancelToken.cancel();
+    }
+  }
+
+  Future<Map<String, dynamic>> exportForSync() => _change(() async {
     final current = await future;
     final scripts = <String, String>{};
     final records = <Map<String, dynamic>>[];
@@ -77,9 +313,9 @@ class MusicSourceController extends AsyncNotifier<MusicSourceState> {
       'enabledIds': current.enabledIds,
       'scripts': scripts,
     };
-  }
+  });
 
-  Future<void> applyFromSync(Object value) async {
+  Future<void> applyFromSync(Object value) => _change(() async {
     if (value is! Map) {
       throw const MusicSourceRuntimeException('云端音源格式无效');
     }
@@ -152,9 +388,9 @@ class MusicSourceController extends AsyncNotifier<MusicSourceState> {
     await _runtime.disposeRuntime();
     await _store.replaceAll(next, scripts);
     state = AsyncData(next);
-  }
+  });
 
-  Future<void> activate(String id) async {
+  Future<void> activate(String id) => _change(() async {
     final current = await future;
     final record = current.records.firstWhere(
       (item) => item.id == id,
@@ -192,7 +428,7 @@ class MusicSourceController extends AsyncNotifier<MusicSourceState> {
       await _store.save(next);
       rethrow;
     }
-  }
+  });
 
   Future<void> _validateInactive(MusicSourceRecord record) async {
     final current = await future;
@@ -229,7 +465,7 @@ class MusicSourceController extends AsyncNotifier<MusicSourceState> {
     return record.copyWith(capabilities: capabilities, clearLastError: true);
   }
 
-  Future<void> deactivate(String id) async {
+  Future<void> deactivate(String id) => _change(() async {
     final current = await future;
     if (!current.isEnabled(id)) return;
     await _runtime.disposeRuntime();
@@ -241,9 +477,9 @@ class MusicSourceController extends AsyncNotifier<MusicSourceState> {
     );
     state = AsyncData(next);
     await _store.save(next);
-  }
+  });
 
-  Future<void> remove(String id) async {
+  Future<void> remove(String id) => _change(() async {
     final current = await future;
     if (current.isEnabled(id)) await _runtime.disposeRuntime();
     await _store.deleteScript(id);
@@ -258,7 +494,7 @@ class MusicSourceController extends AsyncNotifier<MusicSourceState> {
     );
     state = AsyncData(next);
     await _store.save(next);
-  }
+  });
 
   List<MusicSourceRecord> _replace(
     List<MusicSourceRecord> records,

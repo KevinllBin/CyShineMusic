@@ -30,6 +30,7 @@ class MusicSourcePage extends ConsumerStatefulWidget {
 
 class _MusicSourcePageState extends ConsumerState<MusicSourcePage> {
   bool _importing = false;
+  String? _checkingId;
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +59,10 @@ class _MusicSourcePageState extends ConsumerState<MusicSourcePage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     _ImportToolbar(
-                      busy: _importing,
+                      busy:
+                          _importing ||
+                          _checkingId != null ||
+                          sourceState.valueOrNull?.activatingId != null,
                       onFile: _importFile,
                       onUrl: _importUrl,
                     ),
@@ -120,10 +124,14 @@ class _MusicSourcePageState extends ConsumerState<MusicSourcePage> {
             record: value.records[index],
             enabled: value.isEnabled(value.records[index].id),
             priority: value.priorityOf(value.records[index].id),
-            busy: value.activatingId != null,
-            activating: value.activatingId == value.records[index].id,
+            busy:
+                _importing || _checkingId != null || value.activatingId != null,
+            activating:
+                value.activatingId == value.records[index].id ||
+                _checkingId == value.records[index].id,
             onToggle: (enabled) => _toggle(value.records[index], enabled),
             onDelete: () => _delete(value.records[index]),
+            onUpdate: () => _checkUpdate(value.records[index]),
           ),
           if (index != value.records.length - 1) const SizedBox(height: 10),
         ],
@@ -283,6 +291,30 @@ class _MusicSourcePageState extends ConsumerState<MusicSourcePage> {
       );
     } catch (error) {
       _showError(error);
+    }
+  }
+
+  Future<void> _checkUpdate(MusicSourceRecord record) async {
+    if (_checkingId != null || _importing) return;
+    setState(() => _checkingId = record.id);
+    final progress = showAppToast(
+      context,
+      '正在检查音源更新…',
+      duration: const Duration(seconds: 20),
+    );
+    try {
+      final available = await ref
+          .read(musicSourceControllerProvider.notifier)
+          .checkForUpdate(record.id, showAgain: true);
+      dismissAppToast(progress, showRemoveAnimation: false);
+      if (mounted && !available) {
+        showAppToast(context, '未发现可用更新');
+      }
+    } catch (error) {
+      dismissAppToast(progress, showRemoveAnimation: false);
+      _showError(error);
+    } finally {
+      if (mounted) setState(() => _checkingId = null);
     }
   }
 

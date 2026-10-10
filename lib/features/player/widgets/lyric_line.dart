@@ -12,9 +12,6 @@ import '../lyric_parser.dart';
 import 'player_palette.dart';
 
 const double _kLyricSelectionHorizontalPadding = 18;
-// The reference player keeps every row at one intrinsic text size and only
-// applies a very small paint-time focus scale. A larger 25.5/32 shrink made
-// the old and new active rows visibly "breathe" during every line advance.
 const double _kLyricInactiveScale = 0.95;
 const Duration _kLyricFocusInDuration = Duration(milliseconds: 600);
 const Duration _kLyricFocusOutDuration = Duration(milliseconds: 500);

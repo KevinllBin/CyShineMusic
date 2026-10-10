@@ -5,20 +5,6 @@ import 'package:flutter/material.dart';
 
 import 'flowing_light_spec.dart';
 
-/// The drawing half of the Salt flowing-light replica.
-///
-/// Split out of `flowing_light_background.dart` so the widget file stays about
-/// state and scheduling while this one stays about pixels. Nothing here touches
-/// the element tree, so it can be reasoned about — and its geometry checked
-/// against `hi.java` — without a `BuildContext` in sight.
-
-/// Composites one frame and rasterises it.
-///
-/// The returned image is both what gets painted this frame and what gets passed
-/// back as [history] on the next one, so callers must keep it alive until the
-/// following frame has been composed. `toImageSync` hands back an immutable
-/// image, which is why — unlike Salt, which copies its buffer into a separate
-/// history bitmap — no extra copy is needed here.
 ui.Image composeFlowingLightFrame({
   required ui.Image artwork,
   required Color baseColor,
@@ -58,9 +44,6 @@ ui.Image composeFlowingLightFrame({
   final top = -(side - height) / 2;
   final pivot = side / 2;
 
-  // Salt builds these with Android's `post*` calls, which left-multiply — the
-  // last `post` is the outermost transform. Canvas ops compose outermost-first,
-  // so each block below reads as that matrix expression reversed.
   _drawCopy(canvas, artwork, artworkPaint, () {
     canvas.translate(left, top);
     _rotateAbout(canvas, flowingLightLayer1Angle(clock), pivot, pivot);
@@ -95,9 +78,6 @@ ui.Image composeFlowingLightFrame({
   }
   canvas.restore();
 
-  // Outside the blur layer on purpose: Salt blurs first and only then blends
-  // the previous frame in, so the trail is made of already-blurred output
-  // rather than being smeared a second time.
   if (history != null) {
     canvas.drawImage(
       history,
@@ -116,12 +96,6 @@ ui.Image composeFlowingLightFrame({
   }
 }
 
-/// Paints [image] scaled to fill [size], cropped to the spec's visible window.
-///
-/// Salt does this with a `BitmapShader` and a scale matrix; `drawImageRect` is
-/// the same operation with the arithmetic already folded in. Bilinear filtering
-/// matches Salt's `Paint(7)`, and the content is blurred enough that a 20-32x
-/// upscale still reads as smooth.
 void paintFlowingLightFrame(
   Canvas canvas,
   Size size,
@@ -146,13 +120,6 @@ void paintFlowingLightFrame(
   );
 }
 
-/// Average colour of a 5x5 grid of samples, weighted by alpha.
-///
-/// Only fills the gaps the three rotating copies leave uncovered, so it never
-/// needs to be a "dominant colour" in the palette sense. Note the divisor:
-/// Salt divides by the sample count rather than by total alpha, so artwork with
-/// transparent regions genuinely does average out darker. That is reproduced
-/// here rather than corrected.
 Future<Color> sampleFlowingLightBaseColor(ui.Image source) async {
   if (source.width <= 0 || source.height <= 0) return const Color(0xFF000000);
   final data = await source.toByteData(format: ui.ImageByteFormat.rawRgba);

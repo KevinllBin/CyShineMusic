@@ -223,7 +223,14 @@ void main() {
 
       await tester.pump(const Duration(milliseconds: 600));
       await tester.pump();
-      final pageRect = tester.getRect(find.byType(OnlinePlaylistDetailPage));
+      final pageRect = tester.getRect(
+        find
+            .ancestor(
+              of: find.byType(OnlinePlaylistDetailPage),
+              matching: find.byType(Navigator),
+            )
+            .first,
+      );
       _expectRectCloseTo(
         tester.getRect(find.byKey(ContainerTransformTransition.surfaceKey)),
         pageRect,
@@ -329,6 +336,7 @@ void main() {
   testWidgets('artwork theme reuses its resolved color after remounting', (
     tester,
   ) async {
+    final prefs = await _freshPreferences();
     const probeKey = ValueKey('artwork-theme-color-probe');
     final baseScheme = ColorScheme.fromSeed(seedColor: Colors.teal);
     final artwork = MemoryImage(
@@ -340,21 +348,24 @@ void main() {
     );
 
     Widget app({required bool showArtworkTheme}) {
-      return MaterialApp(
-        theme: ThemeData(useMaterial3: true, colorScheme: baseScheme),
-        home: showArtworkTheme
-            ? PlaylistArtworkTheme(
-                artworkProvider: artwork,
-                cacheKey: 'test:resolved-artwork-remount',
-                child: Builder(
-                  builder: (context) => ColoredBox(
-                    key: probeKey,
-                    color: Theme.of(context).colorScheme.primary,
-                    child: const SizedBox.expand(),
+      return ProviderScope(
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+        child: MaterialApp(
+          theme: ThemeData(useMaterial3: true, colorScheme: baseScheme),
+          home: showArtworkTheme
+              ? PlaylistArtworkTheme(
+                  artworkProvider: artwork,
+                  cacheKey: 'test:resolved-artwork-remount',
+                  child: Builder(
+                    builder: (context) => ColoredBox(
+                      key: probeKey,
+                      color: Theme.of(context).colorScheme.primary,
+                      child: const SizedBox.expand(),
+                    ),
                   ),
-                ),
-              )
-            : const SizedBox.shrink(),
+                )
+              : const SizedBox.shrink(),
+        ),
       );
     }
 

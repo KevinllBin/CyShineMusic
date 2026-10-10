@@ -599,7 +599,7 @@ class _QueueArtwork extends StatefulWidget {
 class _QueueArtworkState extends State<_QueueArtwork> {
   // Process-wide LRU of embedded artwork reads plus inflight de-dup. Static
   // on purpose: the cache must survive sheet rebuilds and there must be
-  // exactly one copy in the app (moved here verbatim from player_page.dart).
+  // exactly one copy in the app.
   static const _maxArtworkCacheEntries = 36;
   static final Map<String, Uint8List?> _artworkCache = {};
   static final Map<String, Future<Uint8List?>> _inflightArtworkReads = {};

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app_motion.dart';
 import 'color_style.dart';
+import 'custom_theme.dart';
 
 class AppTheme {
   const AppTheme._();
@@ -28,7 +29,11 @@ class AppTheme {
     AppColorStyle style = AppColorStyle.fallback,
   ]) => _build(Brightness.dark, seed, style);
 
-  static ThemeData fromScheme(ColorScheme scheme) => _buildFromScheme(scheme);
+  static ThemeData fromScheme(
+    ColorScheme scheme, {
+    CustomThemeColors? colors,
+    AppColorStyle style = AppColorStyle.fallback,
+  }) => _buildFromScheme(scheme, colors: colors, style: style);
 
   /// 用给定风格展开种子色。设置页的风格预览也走这里，保证预览与实际一致。
   static ColorScheme schemeFor(
@@ -49,15 +54,21 @@ class AppTheme {
     return _buildFromScheme(schemeFor(seed, brightness, style));
   }
 
-  static ThemeData _buildFromScheme(ColorScheme scheme) {
-    return ThemeData(
+  static ThemeData _buildFromScheme(
+    ColorScheme base, {
+    CustomThemeColors? colors,
+    AppColorStyle style = AppColorStyle.fallback,
+  }) {
+    final scheme = colors?.applyTo(base, style) ?? base;
+    final theme = ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
+      extensions: [AppThemeBase(base)],
       // NavigationBar 会把 32dp 的指示胶囊和标签在这个高度里垂直居中，
       // 内容本身约 52dp；再往下压会被 loose 约束挤扁并溢出到背景之外。
       navigationBarTheme: const NavigationBarThemeData(height: 64),
       fontFamilyFallback: fontFallback,
-      scaffoldBackgroundColor: scheme.appSurface,
+      scaffoldBackgroundColor: colors?.background ?? base.appSurface,
       visualDensity: VisualDensity.standard,
       splashFactory: InkRipple.splashFactory,
       appBarTheme: AppBarTheme(
@@ -96,7 +107,7 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationThemeData(
         filled: true,
-        fillColor: scheme.appInputFill,
+        fillColor: colors?.container ?? base.appInputFill,
         hoverColor: scheme.onSurface.withValues(alpha: 0.04),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
@@ -175,7 +186,9 @@ class AppTheme {
       ),
       searchBarTheme: SearchBarThemeData(
         elevation: const WidgetStatePropertyAll(0),
-        backgroundColor: WidgetStatePropertyAll(scheme.appInputFill),
+        backgroundColor: WidgetStatePropertyAll(
+          colors?.container ?? base.appInputFill,
+        ),
         surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
         side: WidgetStatePropertyAll(BorderSide(color: scheme.outlineVariant)),
         shape: WidgetStatePropertyAll(
@@ -192,7 +205,43 @@ class AppTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       ),
     );
+    if (colors == null ||
+        (colors.text == null &&
+            colors.background == null &&
+            colors.container == null)) {
+      return theme;
+    }
+    return theme.copyWith(
+      textTheme: theme.textTheme.apply(
+        bodyColor: scheme.onSurface,
+        displayColor: scheme.onSurface,
+      ),
+    );
   }
+}
+
+/// Keep the original scheme so resetting a field in the editor also works
+/// when the system's dynamic colors form the base of a custom theme.
+class AppThemeBase extends ThemeExtension<AppThemeBase> {
+  const AppThemeBase(this.scheme);
+
+  final ColorScheme scheme;
+
+  @override
+  bool operator ==(Object other) =>
+      other is AppThemeBase && scheme == other.scheme;
+
+  @override
+  int get hashCode => scheme.hashCode;
+
+  @override
+  AppThemeBase copyWith({ColorScheme? scheme}) =>
+      AppThemeBase(scheme ?? this.scheme);
+
+  @override
+  AppThemeBase lerp(covariant AppThemeBase? other, double t) => other == null
+      ? this
+      : AppThemeBase(ColorScheme.lerp(scheme, other.scheme, t));
 }
 
 extension AppColorScheme on ColorScheme {

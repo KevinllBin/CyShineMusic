@@ -1088,7 +1088,6 @@ class _EqualizerCurvePainter extends CustomPainter {
       }
     }
 
-    // Gradient fill under the curve (studio EQ look)
     if (settings.enabled) {
       final fillPath = Path.from(path)
         ..lineTo(size.width, size.height)
@@ -1132,7 +1131,6 @@ class _EqualizerCurvePainter extends CustomPainter {
             ..strokeWidth = 1.5,
         );
       } else {
-        // Halo
         canvas.drawCircle(
           Offset(x, y),
           6.5,
@@ -1140,7 +1138,6 @@ class _EqualizerCurvePainter extends CustomPainter {
             ..color = scheme.primary.withValues(alpha: 0.25)
             ..style = PaintingStyle.fill,
         );
-        // Core dot
         canvas.drawCircle(
           Offset(x, y),
           3.5,
@@ -1151,7 +1148,6 @@ class _EqualizerCurvePainter extends CustomPainter {
       }
     }
 
-    // Subtle bypass badge in center when EQ is disabled
     if (!settings.enabled) {
       const hint = '均衡器已旁通';
       final textPainter = TextPainter(

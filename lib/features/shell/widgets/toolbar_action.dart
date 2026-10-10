@@ -24,7 +24,7 @@ class ToolbarSlidingIndicator extends StatelessWidget {
         width: width,
         height: height,
         decoration: BoxDecoration(
-          color: scheme.secondaryContainer,
+          color: scheme.primary,
           borderRadius: BorderRadius.circular(999),
         ),
       ),
@@ -91,7 +91,7 @@ class _ToolbarActionState extends State<ToolbarAction>
     final enabled = widget.onPressed != null;
     final selected = widget.selected;
     final foregroundColor = selected
-        ? scheme.onSecondaryContainer
+        ? scheme.onPrimary
         : scheme.onSurfaceVariant.withValues(alpha: enabled ? 1 : 0.72);
 
     final child = GestureDetector(
@@ -134,7 +134,7 @@ class _ToolbarActionState extends State<ToolbarAction>
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: selected
-                        ? scheme.onSecondaryContainer
+                        ? scheme.onPrimary
                         : scheme.onSurfaceVariant.withValues(
                             alpha: enabled ? 1 : 0.72,
                           ),

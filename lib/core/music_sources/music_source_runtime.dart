@@ -12,6 +12,7 @@ import '../models/music_url.dart';
 import '../sdk/internal/builders.dart';
 import '../services/app_logger.dart';
 import 'music_source_models.dart';
+import 'music_source_updates.dart';
 
 class MusicSourceRuntimeException implements Exception {
   const MusicSourceRuntimeException(this.message);
@@ -23,17 +24,55 @@ class MusicSourceRuntimeException implements Exception {
 }
 
 class MusicSourceRuntime {
-  MusicSourceRuntime(this._dio, {MethodChannel? channel})
-    : _channel = channel ?? const MethodChannel(_channelName) {
+  MusicSourceRuntime(
+    this._dio, {
+    MethodChannel? channel,
+    void Function(MusicSourceUpdateNotice)? onUpdate,
+  }) : _channel = channel ?? const MethodChannel(_channelName),
+       _onUpdate = onUpdate {
     _channel.setMethodCallHandler(_handleNativeEvent);
   }
 
   static const String _channelName = 'cy_shine_music/music_source_runtime';
   final Dio _dio;
   final MethodChannel _channel;
+  final void Function(MusicSourceUpdateNotice)? _onUpdate;
   final Map<String, CancelToken> _httpRequests = {};
   Future<void> _operationTail = Future<void>.value();
   String? _loadedSourceKey;
+  Completer<void>? _updateCheckIdle;
+  Timer? _updateCheckIdleTimer;
+
+  Future<void> checkForUpdates(MusicSourceRecord record, String script) {
+    return _runSerialized(() async {
+      final idle = Completer<void>();
+      _updateCheckIdle = idle;
+      try {
+        await _load(record, script);
+        _scheduleUpdateCheckIdle();
+        await idle.future.timeout(const Duration(seconds: 20));
+      } on TimeoutException {
+        throw const MusicSourceRuntimeException('音源更新检查超时，请稍后重试');
+      } finally {
+        _updateCheckIdleTimer?.cancel();
+        _updateCheckIdleTimer = null;
+        _updateCheckIdle = null;
+        await _disposeRuntime();
+      }
+    });
+  }
+
+  void _scheduleUpdateCheckIdle() {
+    final idle = _updateCheckIdle;
+    if (idle == null || idle.isCompleted) return;
+    _updateCheckIdleTimer?.cancel();
+    if (_httpRequests.isNotEmpty) return;
+    // An initialized script can still be awaiting its update HTTP response.
+    // Give its Promise callbacks time to deliver updateAlert before disposal.
+    _updateCheckIdleTimer = Timer(const Duration(milliseconds: 250), () {
+      if (_httpRequests.isEmpty && !idle.isCompleted) idle.complete();
+    });
+  }
 
   Future<Map<MusicSource, List<Quality>>> load(
     MusicSourceRecord record,
@@ -72,6 +111,7 @@ class MusicSourceRuntime {
             'author': record.author,
             'homepage': record.homepage,
             'version': record.version,
+            'sourceKey': record.runtimeKey,
             'script': script,
           })
           .timeout(const Duration(seconds: 12));
@@ -153,8 +193,7 @@ class MusicSourceRuntime {
     return result.future;
   }
 
-  String _sourceKey(MusicSourceRecord record) =>
-      '${record.id}:${record.updatedAt.microsecondsSinceEpoch}';
+  String _sourceKey(MusicSourceRecord record) => record.runtimeKey;
 
   void _cancelHttpRequests(String reason) {
     for (final token in _httpRequests.values) {
@@ -169,8 +208,14 @@ class MusicSourceRuntime {
     switch (event['type']) {
       case 'httpRequest':
         unawaited(_handleHttpRequest(event));
+        _scheduleUpdateCheckIdle();
       case 'httpCancel':
         _httpRequests.remove(event['requestId'])?.cancel('script canceled');
+        _scheduleUpdateCheckIdle();
+      case 'updateAlert':
+        final notice = MusicSourceUpdateNotice.fromEvent(event);
+        if (notice != null) _onUpdate?.call(notice);
+        _scheduleUpdateCheckIdle();
       case 'log':
         final level = event['level']?.toString() ?? 'log';
         final message = event['message']?.toString() ?? '';
@@ -240,6 +285,7 @@ class MusicSourceRuntime {
       await _respondHttp(requestId, error: error.toString());
     } finally {
       _httpRequests.remove(requestId);
+      _scheduleUpdateCheckIdle();
     }
   }
 
@@ -311,7 +357,22 @@ class MusicSourceRuntime {
 }
 
 final musicSourceRuntimeProvider = Provider<MusicSourceRuntime>((ref) {
-  final runtime = MusicSourceRuntime(ref.watch(apiClientProvider));
+  final updates = ref.read(musicSourceUpdatesProvider.notifier);
+  final runtime = MusicSourceRuntime(
+    ref.watch(apiClientProvider),
+    onUpdate: updates.receive,
+  );
+  ref.onDispose(() => unawaited(runtime.disposeRuntime()));
+  return runtime;
+});
+
+final musicSourceUpdateRuntimeProvider = Provider<MusicSourceRuntime>((ref) {
+  final updates = ref.read(musicSourceUpdatesProvider.notifier);
+  final runtime = MusicSourceRuntime(
+    ref.watch(apiClientProvider),
+    channel: const MethodChannel('cy_shine_music/music_source_update_runtime'),
+    onUpdate: updates.receive,
+  );
   ref.onDispose(() => unawaited(runtime.disposeRuntime()));
   return runtime;
 });

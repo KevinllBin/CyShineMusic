@@ -43,8 +43,14 @@ public final class MusicSourceRuntimeBridge implements MethodChannel.MethodCallH
     private MethodChannel.Result pendingLoad;
 
     public MusicSourceRuntimeBridge(Context context, BinaryMessenger messenger) {
+        this(context, messenger, CHANNEL);
+    }
+
+    public MusicSourceRuntimeBridge(
+        Context context, BinaryMessenger messenger, String channelName
+    ) {
         this.context = context.getApplicationContext();
-        this.channel = new MethodChannel(messenger, CHANNEL);
+        this.channel = new MethodChannel(messenger, channelName);
         this.channel.setMethodCallHandler(this);
     }
 
@@ -98,7 +104,7 @@ public final class MusicSourceRuntimeBridge implements MethodChannel.MethodCallH
             jsContext.evaluate(readAsset("music_source_preload.js"));
             JSONObject metadata = new JSONObject();
             for (String key : new String[]{
-                "id", "name", "description", "author", "homepage", "version"
+                "id", "name", "description", "author", "homepage", "version", "sourceKey"
             }) {
                 metadata.put(key, stringValue(arguments.get(key)));
             }
@@ -198,6 +204,9 @@ public final class MusicSourceRuntimeBridge implements MethodChannel.MethodCallH
                     break;
                 case "httpCancel":
                     sendEvent("httpCancel", payload);
+                    break;
+                case "updateAlert":
+                    sendEvent("updateAlert", payload);
                     break;
                 case "log":
                     sendEvent("log", payload);

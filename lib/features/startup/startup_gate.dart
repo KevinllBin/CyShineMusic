@@ -10,9 +10,15 @@ import 'jinrishici_client.dart';
 import 'startup_logo.dart';
 
 class StartupGate extends ConsumerStatefulWidget {
-  const StartupGate({super.key, required this.child, this.onReady});
+  const StartupGate({
+    super.key,
+    required this.child,
+    this.skipStartupScreen = false,
+    this.onReady,
+  });
 
   final Widget child;
+  final bool skipStartupScreen;
   final Future<void> Function()? onReady;
 
   @override
@@ -20,6 +26,7 @@ class StartupGate extends ConsumerStatefulWidget {
 }
 
 class _StartupGateState extends ConsumerState<StartupGate> {
+  late final bool _skipStartupScreen;
   late Future<void> _startupFuture;
   late StartupPoem _startupPoem;
   bool _notifiedReady = false;
@@ -27,6 +34,9 @@ class _StartupGateState extends ConsumerState<StartupGate> {
   @override
   void initState() {
     super.initState();
+    // Apply setting changes on the next launch without remounting the app.
+    _skipStartupScreen = widget.skipStartupScreen;
+    if (_skipStartupScreen) return;
     _startupPoem = randomFallbackStartupPoem();
     _startupFuture = _preload();
     unawaited(_loadStartupPoem());
@@ -46,20 +56,27 @@ class _StartupGateState extends ConsumerState<StartupGate> {
     }
   }
 
+  void _notifyReady() {
+    if (_notifiedReady) return;
+    _notifiedReady = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(widget.onReady?.call());
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_skipStartupScreen) {
+      _notifyReady();
+      return widget.child;
+    }
     final versionLabel = ref.watch(appVersionLabelProvider);
 
     return FutureBuilder<void>(
       future: _startupFuture,
       builder: (context, snapshot) {
         final done = snapshot.connectionState == ConnectionState.done;
-        if (done && !_notifiedReady) {
-          _notifiedReady = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) unawaited(widget.onReady?.call());
-          });
-        }
+        if (done) _notifyReady();
         return AnimatedSwitcher(
           duration: const Duration(milliseconds: 620),
           switchInCurve: AppMotion.emphasizedDecelerate,

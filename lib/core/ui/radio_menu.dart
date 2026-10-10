@@ -214,11 +214,23 @@ class _RadioMenuAnchorState extends State<RadioMenuAnchor>
 
   @override
   Widget build(BuildContext context) {
-    return widget.anchorBuilder(
+    final anchor = widget.anchorBuilder(
       context,
       _overlayEntry != null,
       _rememberTapPosition,
       _toggleMenu,
+    );
+    if (Router.maybeOf(context)?.backButtonDispatcher == null) return anchor;
+
+    // Retained tabs keep their local history in a nested navigator, while the
+    // shell handles system back above it. Close the menu before that handler.
+    return BackButtonListener(
+      onBackButtonPressed: () async {
+        if (_overlayEntry == null) return false;
+        unawaited(_closeMenu());
+        return true;
+      },
+      child: anchor,
     );
   }
 }

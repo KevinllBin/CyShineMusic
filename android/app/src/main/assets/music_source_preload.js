@@ -220,7 +220,16 @@ globalThis.music_source_setup = metadataJson => {
           return Promise.reject(error)
         }
       }
-      if (eventName === 'updateAlert') return Promise.resolve()
+      if (eventName === 'updateAlert') {
+        if (!data || typeof data.updateUrl !== 'string') return Promise.resolve()
+        callNative('updateAlert', {
+          sourceId: metadata.id,
+          sourceKey: metadata.sourceKey,
+          log: typeof data.log === 'string' ? data.log.slice(0, 16384) : '',
+          updateUrl: data.updateUrl,
+        })
+        return Promise.resolve()
+      }
       return Promise.reject(new Error('Unsupported event'))
     },
     utils: {

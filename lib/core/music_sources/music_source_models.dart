@@ -44,6 +44,8 @@ class MusicSourceRecord {
   final Map<MusicSource, List<Quality>> capabilities;
   final String? lastError;
 
+  String get runtimeKey => '$id:${updatedAt.microsecondsSinceEpoch}';
+
   bool supports(MusicSource source) => capabilities.containsKey(source);
 
   List<Quality> qualitiesFor(MusicSource source) =>

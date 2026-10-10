@@ -19,7 +19,9 @@ import 'core/ui/app_toast.dart';
 import 'core/ui/car_display_layout.dart';
 import 'features/downloads/download_history_store.dart';
 import 'core/music_sources/music_source_controller.dart';
+import 'features/music_sources/music_source_update_prompt.dart';
 import 'features/player/player_controller.dart';
+import 'features/player/music_home_widget_service.dart';
 import 'features/songs/local_song_scan_cache.dart';
 import 'features/startup/startup_gate.dart';
 import 'features/update/app_update_prompt.dart';
@@ -47,6 +49,8 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
   bool _handlingExternalAudio = false;
   bool _externalAudioRequested = false;
   bool _openedExternalAudio = false;
+  bool _sourceUpdatePromptsReady = false;
+  MusicHomeWidgetService? _homeWidgetService;
 
   @override
   void initState() {
@@ -54,21 +58,27 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
     WidgetsBinding.instance.addObserver(this);
     _corePaletteFuture = DynamicColorPlugin.getCorePalette();
     if (Platform.isAndroid) {
+      final homeWidgetService = ref.read(musicHomeWidgetProvider);
+      homeWidgetService.onOpenPlayer = _openWidgetPlayer;
+      _homeWidgetService = homeWidgetService;
       _audioIntentChannel.setMethodCallHandler((call) async {
         if (call.method != 'audioAvailable') return;
         _externalAudioRequested = true;
         await _openPendingExternalAudio();
       });
     }
-    // Warm persisted library and player state behind the startup screen so
-    // synchronous decoding and audio-source restoration stay off the first
-    // interactive frame.
+    // Warm persisted library and player state after the first frame, even when
+    // the startup screen is skipped.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(downloadHistoryProvider);
       ref.read(musicSourceControllerProvider);
+      unawaited(
+        ref.read(musicSourceControllerProvider.notifier).checkAllForUpdates(),
+      );
       ref.read(webDavSyncControllerProvider);
       ref.read(playerControllerProvider.notifier);
+      if (Platform.isAndroid) ref.read(musicHomeWidgetSyncProvider);
       final scanCache = ref.read(localSongScanCacheProvider);
       unawaited(
         scanCache.ensureScan(
@@ -80,6 +90,7 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
 
   @override
   void dispose() {
+    _homeWidgetService?.onOpenPlayer = null;
     if (Platform.isAndroid) _audioIntentChannel.setMethodCallHandler(null);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -92,14 +103,28 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
   }
 
   Future<void> _onStartupReady() async {
-    _externalAudioReady = true;
-    await _openPendingExternalAudio();
-    if (!mounted || _openedExternalAudio) return;
-    final canCheckForUpdate = await _checkPermission();
-    if (!canCheckForUpdate) return;
-    final context = rootNavigatorKey.currentContext;
-    if (context == null || !context.mounted) return;
-    await checkForAppUpdate(context, ref);
+    try {
+      _externalAudioReady = true;
+      await _openPendingExternalAudio();
+      await _openWidgetPlayer();
+      if (!mounted || _openedExternalAudio) return;
+      final canCheckForUpdate = await _checkPermission();
+      if (!canCheckForUpdate) return;
+      final context = rootNavigatorKey.currentContext;
+      if (context == null || !context.mounted) return;
+      await checkForAppUpdate(context, ref);
+    } finally {
+      if (mounted) setState(() => _sourceUpdatePromptsReady = true);
+    }
+  }
+
+  Future<void> _openWidgetPlayer() async {
+    if (!mounted || !_externalAudioReady) return;
+    if (!(_homeWidgetService?.takeOpenPlayerRequest() ?? false)) return;
+    final location = appRouter.routeInformationProvider.value.uri;
+    if (location.path != '/player') {
+      unawaited(appRouter.push<void>('/player', extra: location.toString()));
+    }
   }
 
   Future<void> _openPendingExternalAudio() async {
@@ -248,12 +273,32 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
                 settings.useDynamicColor &&
                 lightScheme != null &&
                 darkScheme != null;
-            final lightTheme = useDynamicScheme
-                ? AppTheme.fromScheme(lightScheme)
-                : AppTheme.light(settings.themeSeed, settings.colorStyle);
-            final darkTheme = useDynamicScheme
-                ? AppTheme.fromScheme(darkScheme)
-                : AppTheme.dark(settings.themeSeed, settings.colorStyle);
+            final lightTheme = AppTheme.fromScheme(
+              useDynamicScheme
+                  ? lightScheme
+                  : AppTheme.schemeFor(
+                      settings.themeSeed,
+                      Brightness.light,
+                      settings.colorStyle,
+                    ),
+              colors: settings.customTheme.enabled
+                  ? settings.customTheme.light
+                  : null,
+              style: settings.colorStyle,
+            );
+            final darkTheme = AppTheme.fromScheme(
+              useDynamicScheme
+                  ? darkScheme
+                  : AppTheme.schemeFor(
+                      settings.themeSeed,
+                      Brightness.dark,
+                      settings.colorStyle,
+                    ),
+              colors: settings.customTheme.enabled
+                  ? settings.customTheme.dark
+                  : null,
+              style: settings.colorStyle,
+            );
             final isDark = switch (themeMode) {
               ThemeMode.light => false,
               ThemeMode.dark => true,
@@ -264,6 +309,13 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
               useDynamicScheme ? (isDark ? darkScheme : lightScheme) : null,
               fromCorePalette: corePalette != null,
             );
+            final overlayIsDark = settings.customTheme.enabled
+                ? ThemeData.estimateBrightnessForColor(
+                        (isDark ? darkTheme : lightTheme)
+                            .scaffoldBackgroundColor,
+                      ) ==
+                      Brightness.dark
+                : isDark;
             SystemChrome.setSystemUIOverlayStyle(
               SystemUiOverlayStyle(
                 statusBarColor: Colors.transparent,
@@ -271,13 +323,13 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
                 systemNavigationBarDividerColor: Colors.transparent,
                 systemStatusBarContrastEnforced: false,
                 systemNavigationBarContrastEnforced: false,
-                statusBarIconBrightness: isDark
+                statusBarIconBrightness: overlayIsDark
                     ? Brightness.light
                     : Brightness.dark,
-                statusBarBrightness: isDark
+                statusBarBrightness: overlayIsDark
                     ? Brightness.dark
                     : Brightness.light,
-                systemNavigationBarIconBrightness: isDark
+                systemNavigationBarIconBrightness: overlayIsDark
                     ? Brightness.light
                     : Brightness.dark,
               ),
@@ -297,9 +349,14 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
                   enabled: settings.carDisplayEnabled,
                   sizeFactor: settings.carDisplaySize,
                   child: AppToastOverlay(
-                    child: StartupGate(
-                      onReady: _onStartupReady,
-                      child: child ?? const SizedBox.shrink(),
+                    child: MusicSourceUpdatePrompt(
+                      navigatorKey: rootNavigatorKey,
+                      ready: _sourceUpdatePromptsReady,
+                      child: StartupGate(
+                        skipStartupScreen: settings.skipStartupScreen,
+                        onReady: _onStartupReady,
+                        child: child ?? const SizedBox.shrink(),
+                      ),
                     ),
                   ),
                 );

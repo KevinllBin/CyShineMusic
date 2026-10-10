@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../api/dio_factory.dart';
 import '../models/enums.dart';
 import '../../theme/color_style.dart';
+import '../../theme/custom_theme.dart';
 import '../../theme/seed_palette.dart';
 import 'base_url.dart';
 
@@ -20,11 +22,15 @@ const String _kThemeModeKey = 'theme_mode';
 const String _kThemeSeedKey = 'theme_seed_argb';
 const String _kColorStyleKey = 'theme_color_style';
 const String _kUseDynamicColorKey = 'use_dynamic_color';
+const String _kCustomThemeKey = 'custom_theme';
+const String _kPlaylistArtworkColorsEnabledKey =
+    'playlist_artwork_colors_enabled';
 const String _kFlowingLightEnabledKey = 'flowing_light_enabled';
 const String _kCarPadModeEnabledKey = 'car_pad_mode_enabled';
 const String _kCarDisplayEnabledKey = 'car_display_enabled';
 const String _kCarDisplaySizeKey = 'car_display_size';
 const String _kAutoPlayOnStartupKey = 'auto_play_on_startup';
+const String _kSkipStartupScreenKey = 'skip_startup_screen';
 const String _kUseNativeNavigationKey = 'use_native_navigation';
 const String _kNavigationModeKey = 'navigation_mode';
 const String _kNetworkAdapterModeKey = 'network_adapter_mode';
@@ -69,11 +75,14 @@ class AppSettings {
     required this.themeSeed,
     required this.colorStyle,
     required this.useDynamicColor,
+    this.customTheme = const CustomTheme(),
+    this.playlistArtworkColorsEnabled = true,
     required this.flowingLightEnabled,
     required this.carPadModeEnabled,
     this.carDisplayEnabled = false,
     this.carDisplaySize = 1.0,
     this.autoPlayOnStartup = false,
+    this.skipStartupScreen = false,
     required this.navigationMode,
     required this.networkAdapterMode,
     required this.enabledSearchSources,
@@ -95,6 +104,8 @@ class AppSettings {
   final Color themeSeed;
   final AppColorStyle colorStyle;
   final bool useDynamicColor;
+  final CustomTheme customTheme;
+  final bool playlistArtworkColorsEnabled;
 
   /// Whether the player backdrop animates its extracted colors. Off falls back
   /// to the static blurred-artwork backdrop.
@@ -109,6 +120,7 @@ class AppSettings {
   final bool carDisplayEnabled;
   final double carDisplaySize;
   final bool autoPlayOnStartup;
+  final bool skipStartupScreen;
   final AppNavigationMode navigationMode;
   bool get useNativeNavigation => navigationMode == AppNavigationMode.native;
   final NetworkAdapterMode networkAdapterMode;
@@ -134,11 +146,14 @@ class AppSettings {
     Color? themeSeed,
     AppColorStyle? colorStyle,
     bool? useDynamicColor,
+    CustomTheme? customTheme,
+    bool? playlistArtworkColorsEnabled,
     bool? flowingLightEnabled,
     bool? carPadModeEnabled,
     bool? carDisplayEnabled,
     double? carDisplaySize,
     bool? autoPlayOnStartup,
+    bool? skipStartupScreen,
     AppNavigationMode? navigationMode,
     bool? useNativeNavigation,
     NetworkAdapterMode? networkAdapterMode,
@@ -161,11 +176,15 @@ class AppSettings {
     themeSeed: themeSeed ?? this.themeSeed,
     colorStyle: colorStyle ?? this.colorStyle,
     useDynamicColor: useDynamicColor ?? this.useDynamicColor,
+    customTheme: customTheme ?? this.customTheme,
+    playlistArtworkColorsEnabled:
+        playlistArtworkColorsEnabled ?? this.playlistArtworkColorsEnabled,
     flowingLightEnabled: flowingLightEnabled ?? this.flowingLightEnabled,
     carPadModeEnabled: carPadModeEnabled ?? this.carPadModeEnabled,
     carDisplayEnabled: carDisplayEnabled ?? this.carDisplayEnabled,
     carDisplaySize: carDisplaySize ?? this.carDisplaySize,
     autoPlayOnStartup: autoPlayOnStartup ?? this.autoPlayOnStartup,
+    skipStartupScreen: skipStartupScreen ?? this.skipStartupScreen,
     navigationMode:
         navigationMode ??
         (useNativeNavigation != null
@@ -198,6 +217,7 @@ class AppSettings {
     flowingLightEnabled: true,
     carPadModeEnabled: false,
     autoPlayOnStartup: false,
+    skipStartupScreen: false,
     navigationMode: AppNavigationMode.singleCapsule,
     networkAdapterMode: NetworkAdapterMode.system,
     enabledSearchSources: kDefaultEnabledSearchSources,
@@ -240,6 +260,9 @@ class SettingsNotifier extends Notifier<AppSettings> {
       ),
       colorStyle: AppColorStyle.fromCode(_prefs.getString(_kColorStyleKey)),
       useDynamicColor: _prefs.getBool(_kUseDynamicColorKey) ?? false,
+      customTheme: _readCustomTheme(),
+      playlistArtworkColorsEnabled:
+          _prefs.getBool(_kPlaylistArtworkColorsEnabledKey) ?? true,
       flowingLightEnabled: _prefs.getBool(_kFlowingLightEnabledKey) ?? true,
       carPadModeEnabled: _prefs.getBool(_kCarPadModeEnabledKey) ?? false,
       carDisplayEnabled: _prefs.getBool(_kCarDisplayEnabledKey) ?? false,
@@ -247,6 +270,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
         _prefs.getDouble(_kCarDisplaySizeKey),
       ),
       autoPlayOnStartup: _prefs.getBool(_kAutoPlayOnStartupKey) ?? false,
+      skipStartupScreen: _prefs.getBool(_kSkipStartupScreenKey) ?? false,
       navigationMode: _decodeNavigationMode(_prefs),
       networkAdapterMode: NetworkAdapterPreference.current,
       enabledSearchSources: decodeEnabledSearchSources(
@@ -279,6 +303,16 @@ class SettingsNotifier extends Notifier<AppSettings> {
     return (prefs.getBool(_kUseNativeNavigationKey) ?? false)
         ? AppNavigationMode.native
         : AppNavigationMode.singleCapsule;
+  }
+
+  CustomTheme _readCustomTheme() {
+    final raw = _prefs.getString(_kCustomThemeKey);
+    if (raw == null) return const CustomTheme();
+    try {
+      return CustomTheme.fromJson(jsonDecode(raw));
+    } on FormatException {
+      return const CustomTheme();
+    }
   }
 
   Future<void> setDownloadDir(String value) async {
@@ -324,6 +358,25 @@ class SettingsNotifier extends Notifier<AppSettings> {
     state = state.copyWith(useDynamicColor: value);
   }
 
+  Future<void> setCustomTheme(CustomTheme theme) async {
+    await _prefs.setString(_kCustomThemeKey, jsonEncode(theme.toJson()));
+    final firstEnabled = theme.enabled && !state.customTheme.enabled;
+    if (firstEnabled) {
+      await _prefs.setBool(_kPlaylistArtworkColorsEnabledKey, false);
+    }
+    state = state.copyWith(
+      customTheme: theme,
+      playlistArtworkColorsEnabled: firstEnabled
+          ? false
+          : state.playlistArtworkColorsEnabled,
+    );
+  }
+
+  Future<void> setPlaylistArtworkColorsEnabled(bool value) async {
+    await _prefs.setBool(_kPlaylistArtworkColorsEnabledKey, value);
+    state = state.copyWith(playlistArtworkColorsEnabled: value);
+  }
+
   Future<void> setFlowingLightEnabled(bool value) async {
     await _prefs.setBool(_kFlowingLightEnabledKey, value);
     state = state.copyWith(flowingLightEnabled: value);
@@ -353,6 +406,11 @@ class SettingsNotifier extends Notifier<AppSettings> {
     state = state.copyWith(autoPlayOnStartup: value);
   }
 
+  Future<void> setSkipStartupScreen(bool value) async {
+    await _prefs.setBool(_kSkipStartupScreenKey, value);
+    state = state.copyWith(skipStartupScreen: value);
+  }
+
   Future<void> setNavigationMode(AppNavigationMode mode) async {
     await _prefs.setString(_kNavigationModeKey, mode.code);
     await _prefs.setBool(
@@ -373,6 +431,8 @@ class SettingsNotifier extends Notifier<AppSettings> {
     'themeSeedArgb': state.themeSeed.toARGB32(),
     'colorStyle': state.colorStyle.code,
     'useDynamicColor': state.useDynamicColor,
+    'customTheme': state.customTheme.toJson(),
+    'playlistArtworkColorsEnabled': state.playlistArtworkColorsEnabled,
     'flowingLightEnabled': state.flowingLightEnabled,
   };
 
@@ -416,11 +476,27 @@ class SettingsNotifier extends Notifier<AppSettings> {
       throw const FormatException('云端流光设置无效');
     }
 
+    final syncedTheme = json.containsKey('customTheme')
+        ? CustomTheme.fromJson(json['customTheme'])
+        : null;
+    final rawPlaylistColors = json['playlistArtworkColorsEnabled'];
+    if (json.containsKey('playlistArtworkColorsEnabled') &&
+        rawPlaylistColors is! bool) {
+      throw const FormatException('云端歌单动态配色设置无效');
+    }
+    final syncedPlaylistColors =
+        rawPlaylistColors as bool? ??
+        (syncedTheme?.enabled == true && !state.customTheme.enabled
+            ? false
+            : state.playlistArtworkColorsEnabled);
+
     final next = state.copyWith(
       themeMode: _decodeThemeMode(rawMode),
       themeSeed: Color(rawSeed),
       colorStyle: syncedStyle,
       useDynamicColor: rawDynamic,
+      customTheme: syncedTheme,
+      playlistArtworkColorsEnabled: syncedPlaylistColors,
       flowingLightEnabled: syncedFlowingLight,
     );
     await _prefs.setString(_kThemeModeKey, rawMode);
@@ -432,6 +508,16 @@ class SettingsNotifier extends Notifier<AppSettings> {
       await _prefs.setBool(_kFlowingLightEnabledKey, syncedFlowingLight);
     }
     await _prefs.setBool(_kUseDynamicColorKey, rawDynamic);
+    if (syncedTheme != null) {
+      await _prefs.setString(
+        _kCustomThemeKey,
+        jsonEncode(syncedTheme.toJson()),
+      );
+    }
+    await _prefs.setBool(
+      _kPlaylistArtworkColorsEnabledKey,
+      syncedPlaylistColors,
+    );
     state = next;
   }
 

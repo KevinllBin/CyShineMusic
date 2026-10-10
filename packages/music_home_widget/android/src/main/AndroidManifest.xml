@@ -1,0 +1,19 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <service
+            android:name="com.cyshine.music_home_widget.MusicWidgetStateService"
+            android:exported="false"
+            android:process=":music_widget_state" />
+        <receiver
+            android:name="com.cyshine.music_home_widget.MusicWidgetProvider"
+            android:exported="false"
+            android:label="@string/music_widget_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/music_widget_info" />
+        </receiver>
+    </application>
+</manifest>

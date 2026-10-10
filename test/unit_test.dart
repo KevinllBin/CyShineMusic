@@ -1340,12 +1340,8 @@ void main() {
     });
   });
 
-  group('Salt flowing-light spec', () {
-    // These constants are the replica. They were read out of Salt 12.1.1's
-    // decompiled `hi.java`, and there is nothing in the rendering code that
-    // would fail visibly if one of them drifted — it would just stop looking
-    // like Salt. Hence the assertions.
-    test('composes into Salt-sized buffers on a 1080x2400 phone', () {
+  group('Flowing-light spec', () {
+    test('composes into expected buffers on a 1080x2400 phone', () {
       final spec = FlowingLightSpec.forViewport(
         physicalWidth: 1080,
         physicalHeight: 2400,
@@ -1435,7 +1431,7 @@ void main() {
       expect(identity[6], closeTo(1, 1e-9));
     });
 
-    test('holds the remaining Salt constants', () {
+    test('holds the remaining flowing-light constants', () {
       expect(kFlowingLightFrameInterval, const Duration(milliseconds: 42));
       expect(kFlowingLightArtworkFade, const Duration(milliseconds: 500));
       expect(kFlowingLightFeedbackAlpha, 64);

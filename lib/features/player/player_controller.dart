@@ -124,12 +124,11 @@ class PlayerController extends StateNotifier<PlayerState>
     } else {
       _pendingRestoredSession = restored;
       _hydrateRestoredSession(restored);
-      unawaited(
-        _restorePersistedSession(
-          restored,
-          autoPlay: _ref.read(settingsProvider).autoPlayOnStartup,
-        ),
+      _sessionRestoreFuture = _restorePersistedSession(
+        restored,
+        autoPlay: _ref.read(settingsProvider).autoPlayOnStartup,
       );
+      unawaited(_sessionRestoreFuture);
     }
   }
 
@@ -155,6 +154,7 @@ class PlayerController extends StateNotifier<PlayerState>
   Object? _requestToken;
   Object? _transportSuppressionToken;
   PlayerSessionSnapshot? _pendingRestoredSession;
+  Future<void>? _sessionRestoreFuture;
   MusicInfo? _currentMusic;
   Quality? _currentQuality;
   List<DownloadHistoryEntry> _queue = const [];
@@ -176,6 +176,12 @@ class PlayerController extends StateNotifier<PlayerState>
       BluetoothLyricMetadataCoordinator();
 
   MusicInfo? get currentMusic => _currentMusic;
+
+  /// Widget cold-start commands must wait until the saved audio source is
+  /// ready; loading it still follows the existing startup/autoplay setting.
+  Future<void> waitForSessionRestore() async {
+    await _sessionRestoreFuture;
+  }
 
   Future<void> playFromMusic(MusicInfo music, {Quality? quality}) async {
     _pendingRestoredSession = null;

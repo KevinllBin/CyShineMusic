@@ -1174,8 +1174,6 @@ class BassPlayerPlugin :
     ) : RuntimeException(message)
 
     private companion object {
-        // AudioTrack restored normal volume and timbre in the Redmi K90 A/B test.
-        // Switch to OutputBackend.AAUDIO here when testing that output path.
         val OUTPUT_BACKEND = OutputBackend.AUDIO_TRACK
         const val POSITION_UPDATE_MS = 100L
         const val MAX_EQ_BANDS = 32

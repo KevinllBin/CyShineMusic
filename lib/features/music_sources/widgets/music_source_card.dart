@@ -13,6 +13,7 @@ class MusicSourceCard extends StatelessWidget {
     required this.activating,
     required this.onToggle,
     required this.onDelete,
+    this.onUpdate,
   }) : assert(!enabled || priority != null);
 
   final MusicSourceRecord record;
@@ -22,6 +23,7 @@ class MusicSourceCard extends StatelessWidget {
   final bool activating;
   final ValueChanged<bool> onToggle;
   final VoidCallback onDelete;
+  final VoidCallback? onUpdate;
 
   @override
   Widget build(BuildContext context) {
@@ -41,8 +43,17 @@ class MusicSourceCard extends StatelessWidget {
         enabled: !busy,
         endActionPane: ActionPane(
           motion: const BehindMotion(),
-          extentRatio: 0.28,
+          extentRatio: onUpdate == null ? 0.28 : 0.52,
           children: [
+            if (onUpdate != null)
+              SlidableAction(
+                key: const ValueKey('music-source-update-action'),
+                onPressed: (_) => onUpdate!(),
+                backgroundColor: scheme.primary,
+                foregroundColor: scheme.onPrimary,
+                icon: Icons.system_update_alt_rounded,
+                label: '更新',
+              ),
             SlidableAction(
               key: const ValueKey('music-source-delete-action'),
               onPressed: (_) => onDelete(),

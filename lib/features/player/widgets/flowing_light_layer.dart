@@ -28,8 +28,7 @@ const Duration _kFadeInDuration = Duration(milliseconds: 420);
 ///
 /// `FragmentProgram.fromAsset` re-parses the shader on every call, and the
 /// player layer is rebuilt on every track change, so the program is held for
-/// the life of the process. This is the only copy in the repo — grep before
-/// adding another.
+/// the life of the process.
 ui.FragmentProgram? _flowingLightProgram;
 Future<ui.FragmentProgram>? _flowingLightProgramLoad;
 

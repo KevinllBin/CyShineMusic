@@ -1,0 +1,13 @@
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="130dp"
+    android:minHeight="130dp"
+    android:minResizeWidth="120dp"
+    android:minResizeHeight="120dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="2"
+    android:initialLayout="@layout/music_widget"
+    android:previewLayout="@layout/music_widget_preview"
+    android:description="@string/music_widget_description"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen" />

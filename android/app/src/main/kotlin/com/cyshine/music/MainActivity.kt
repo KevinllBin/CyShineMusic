@@ -92,6 +92,26 @@ class MainActivity : AudioServiceActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        val appIcons = AppIconManager(applicationContext)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "cy_shine_music/app_icon")
+            .setMethodCallHandler { call, result ->
+                try {
+                    when (call.method) {
+                        "getCurrentIcon" -> result.success(appIcons.currentIcon())
+                        "setIcon" -> {
+                            val code = call.argument<String>("icon")
+                            if (code == null) {
+                                result.error("INVALID_ARGS", "请选择应用图标", null)
+                            } else {
+                                result.success(appIcons.setIcon(code))
+                            }
+                        }
+                        else -> result.notImplemented()
+                    }
+                } catch (error: Exception) {
+                    result.error("ICON_CHANGE_FAILED", "无法更换桌面图标", error.toString())
+                }
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, mediaScanChannel)
             .setMethodCallHandler { call, result ->
                 when (call.method) {

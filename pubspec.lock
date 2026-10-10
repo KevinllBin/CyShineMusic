@@ -623,6 +623,13 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "2.0.0"
+  music_home_widget:
+    dependency: "direct main"
+    description:
+      path: "packages/music_home_widget"
+      relative: true
+    source: path
+    version: "0.1.0"
   music_source_runtime:
     dependency: "direct main"
     description:

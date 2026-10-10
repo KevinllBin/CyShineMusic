@@ -2,7 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-/// Salt 12.3's geometry is driven by distance, not by a second time curve.
 abstract final class PlayerMotion {
   static const stiffness = 438.64905;
   static const dampingRatio = 1.1;
@@ -76,8 +75,6 @@ class PlayerPhase extends Animatable<double> {
   double transform(double t) => PlayerMotion.interval(t, start, end);
 }
 
-/// Analytic overdamped spring, including release velocity and the final tail.
-/// The cutoff is supplied in progress units (Salt uses 0.01 physical pixels).
 class PlayerSpringSimulation extends Simulation {
   PlayerSpringSimulation(
     double start,

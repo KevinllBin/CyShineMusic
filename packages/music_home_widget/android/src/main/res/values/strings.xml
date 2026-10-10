@@ -1,0 +1,10 @@
+<resources>
+    <string name="music_widget_name">栖弦 · 音乐卡片</string>
+    <string name="music_widget_description">封面取色的音乐卡片，可直接播放、暂停和切换歌曲</string>
+    <string name="music_widget_previous">上一首</string>
+    <string name="music_widget_play">播放</string>
+    <string name="music_widget_pause">暂停</string>
+    <string name="music_widget_next">下一首</string>
+    <string name="music_widget_loading">正在加载</string>
+    <string name="music_widget_open">打开播放器</string>
+</resources>

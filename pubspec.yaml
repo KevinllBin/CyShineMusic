@@ -1,7 +1,7 @@
 name: cy_shine_music
 description: "栖弦 - Android music client with custom source support."
 publish_to: 'none'
-version: 1.0.7+8
+version: 1.0.8+9
 
 environment:
   sdk: ^3.11.4
@@ -40,6 +40,8 @@ dependencies:
     path: packages/bass_player
   music_source_runtime:
     path: packages/music_source_runtime
+  music_home_widget:
+    path: packages/music_home_widget
   toastification: ^3.2.0
   package_info_plus: ^9.0.1
   pub_semver: ^2.2.0
@@ -57,6 +59,7 @@ flutter:
   assets:
     - logo.png
     - logo_fg.png
+    - assets/app_icons/
   shaders:
     - shaders/flowing_light.frag
 flutter_launcher_icons:
@@ -64,7 +67,8 @@ flutter_launcher_icons:
   ios: false
   image_path: "logo.png"
   min_sdk_android: 24
-  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_background: "logo_bg.png"
   adaptive_icon_foreground: "logo_fg.png"
-  adaptive_icon_foreground_inset: 16
+  adaptive_icon_foreground_inset: 0
+  adaptive_icon_monochrome: "logo_monochrome.png"
   remove_alpha_ios: false

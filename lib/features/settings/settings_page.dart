@@ -13,6 +13,7 @@ import '../../core/api/dio_factory.dart';
 import '../../core/models/enums.dart';
 import '../../core/music_sources/music_source_controller.dart';
 import '../../core/services/permission_service.dart';
+import '../../core/services/app_icon_service.dart';
 import '../../core/storage/settings_store.dart';
 import '../../core/sync/webdav_sync_controller.dart';
 import '../../core/ui/app_toast.dart';
@@ -27,7 +28,9 @@ import '../shell/shell_bottom_area.dart';
 import '../songs/local_song_scan_cache.dart';
 import '../update/app_update_prompt.dart';
 import 'widgets/color_picker_sheet.dart';
+import 'widgets/app_icon_sheet.dart';
 import 'widgets/color_style_row.dart';
+import 'widgets/custom_theme_sheet.dart';
 import 'widgets/discovery_source_order_sheet.dart';
 import 'widgets/settings_action.dart';
 import 'widgets/settings_menu.dart';
@@ -45,9 +48,44 @@ class SettingsPage extends ConsumerWidget {
     final webDavState = ref.watch(webDavSyncControllerProvider);
     final dynamicColor = ref.watch(dynamicColorStatusProvider);
     final equalizer = ref.watch(equalizerProvider);
+    final appIcon = supportsCustomAppIcons ? ref.watch(appIconProvider) : null;
     final versionLabel = ref.watch(appVersionLabelProvider);
     final baseTheme = Theme.of(context);
     final scheme = baseTheme.colorScheme;
+
+    Widget themePresets = Column(
+      children: [
+        ThemeSeedRow(
+          value: settings.themeSeed,
+          onPick: (color) =>
+              ref.read(settingsProvider.notifier).setThemeSeed(color),
+          onCustomize: () => _pickThemeSeed(context, ref),
+        ),
+        const SizedBox(height: 18),
+        ColorStyleRow(
+          value: settings.colorStyle,
+          seed: settings.themeSeed,
+          enabled:
+              settings.customTheme.enabled ||
+              !(settings.useDynamicColor && dynamicColor.available),
+          onPick: (style) =>
+              ref.read(settingsProvider.notifier).setColorStyle(style),
+        ),
+        const SizedBox(height: 18),
+        DynamicColorRow(
+          value: settings.useDynamicColor,
+          available: dynamicColor.available,
+          onChanged: (value) =>
+              ref.read(settingsProvider.notifier).setUseDynamicColor(value),
+        ),
+      ],
+    );
+    if (settings.customTheme.enabled) {
+      themePresets = Semantics(
+        enabled: false,
+        child: ExcludeFocus(child: IgnorePointer(child: themePresets)),
+      );
+    }
 
     return Theme(
       data: baseTheme.copyWith(scaffoldBackgroundColor: scheme.surface),
@@ -438,33 +476,63 @@ class SettingsPage extends ConsumerWidget {
                         SettingsCard(
                           title: '外观',
                           children: [
-                            ThemeModeRow(value: settings.themeMode),
-                            const SizedBox(height: 18),
-                            ThemeSeedRow(
-                              value: settings.themeSeed,
-                              onPick: (color) => ref
-                                  .read(settingsProvider.notifier)
-                                  .setThemeSeed(color),
-                              onCustomize: () => _pickThemeSeed(context, ref),
-                            ),
-                            const SizedBox(height: 18),
-                            ColorStyleRow(
-                              value: settings.colorStyle,
-                              seed: settings.themeSeed,
-                              enabled:
-                                  !(settings.useDynamicColor &&
-                                      dynamicColor.available),
-                              onPick: (style) => ref
-                                  .read(settingsProvider.notifier)
-                                  .setColorStyle(style),
-                            ),
-                            const SizedBox(height: 18),
-                            DynamicColorRow(
-                              value: settings.useDynamicColor,
-                              available: dynamicColor.available,
+                            SettingsSwitchAction(
+                              key: const ValueKey(
+                                'skip-startup-screen-setting',
+                              ),
+                              icon: Icons.skip_next_rounded,
+                              title: '跳过启动页',
+                              subtitle: '下次启动生效，开启后直接进入主页',
+                              value: settings.skipStartupScreen,
                               onChanged: (value) => ref
                                   .read(settingsProvider.notifier)
-                                  .setUseDynamicColor(value),
+                                  .setSkipStartupScreen(value),
+                            ),
+                            const SizedBox(height: 4),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                              ),
+                              child: ThemeModeRow(value: settings.themeMode),
+                            ),
+                            const SizedBox(height: 18),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                              ),
+                              child: themePresets,
+                            ),
+                            SettingsAction(
+                              icon: Icons.palette_outlined,
+                              title: '自定义主题',
+                              subtitle: settings.customTheme.enabled
+                                  ? '已启用 · 分别设置浅色和深色配色'
+                                  : '独立设置强调色、背景、卡片和文字',
+                              trailing: Icons.chevron_right,
+                              onTap: () => _customizeTheme(context, ref),
+                            ),
+                            if (supportsCustomAppIcons)
+                              SettingsAction(
+                                icon: Icons.apps_rounded,
+                                title: '应用图标',
+                                subtitle: appIcon?.isLoading == true
+                                    ? '正在读取或更新图标'
+                                    : appIcon?.hasError == true
+                                    ? '读取失败 · 点击重试'
+                                    : '${appIcon?.valueOrNull?.label ?? '经典白'} · 6 款桌面图标可选',
+                                trailing: Icons.chevron_right,
+                                onTap: () => _chooseAppIcon(context, ref),
+                              ),
+                            SettingsSwitchAction(
+                              icon: Icons.auto_awesome_outlined,
+                              title: '歌单详情动态配色',
+                              subtitle: settings.playlistArtworkColorsEnabled
+                                  ? '根据歌单封面配色，会覆盖全局主题'
+                                  : '使用全局主题，不根据封面改变颜色',
+                              value: settings.playlistArtworkColorsEnabled,
+                              onChanged: (value) => ref
+                                  .read(settingsProvider.notifier)
+                                  .setPlaylistArtworkColorsEnabled(value),
                             ),
                             const SizedBox(height: 4),
                             SettingsMenuAction(
@@ -987,6 +1055,54 @@ class SettingsPage extends ConsumerWidget {
       '批量下载音质已设为 ${quality.label}',
       type: AppToastType.success,
     );
+  }
+
+  Future<void> _chooseAppIcon(BuildContext context, WidgetRef ref) async {
+    if (ref.read(appIconProvider).isLoading) return;
+    if (ref.read(appIconProvider).hasError) ref.invalidate(appIconProvider);
+    final toolbar = ref.read(shellToolbarVisibleProvider.notifier);
+    final wasToolbarVisible = ref.read(shellToolbarVisibleProvider);
+    toolbar.state = false;
+    try {
+      final current = await ref.read(appIconProvider.future);
+      if (!context.mounted) return;
+      final selected = await showAppIconSheet(context, current);
+      if (selected == null || selected == current || !context.mounted) return;
+      final changed = await ref.read(appIconProvider.notifier).select(selected);
+      if (!changed || !context.mounted) return;
+      showAppToast(
+        context,
+        '桌面图标已设为${selected.label}',
+        type: AppToastType.success,
+      );
+    } catch (_) {
+      if (context.mounted) {
+        showAppToast(context, '无法更换桌面图标，请稍后重试', type: AppToastType.error);
+      }
+    } finally {
+      if (toolbar.mounted) toolbar.state = wasToolbarVisible;
+    }
+  }
+
+  Future<void> _customizeTheme(BuildContext context, WidgetRef ref) async {
+    final settings = ref.read(settingsProvider);
+    final toolbar = ref.read(shellToolbarVisibleProvider.notifier);
+    final wasToolbarVisible = ref.read(shellToolbarVisibleProvider);
+    toolbar.state = false;
+    try {
+      final selected = await showCustomThemeSheet(
+        context,
+        settings.customTheme,
+        seed: settings.themeSeed,
+        style: settings.colorStyle,
+      );
+      if (selected == null) return;
+      await ref.read(settingsProvider.notifier).setCustomTheme(selected);
+      if (!context.mounted) return;
+      showAppToast(context, '自定义主题已更新', type: AppToastType.success);
+    } finally {
+      if (toolbar.mounted) toolbar.state = wasToolbarVisible;
+    }
   }
 
   Future<void> _pickThemeSeed(BuildContext context, WidgetRef ref) async {

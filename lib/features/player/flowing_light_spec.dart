@@ -1,50 +1,19 @@
-/// The arithmetic half of the Salt flowing-light replica.
-///
-/// Deliberately free of `dart:ui` so `test/unit_test.dart` — the repo's only
-/// locally runnable test entry — can pin these constants. Every number here was
-/// read back out of Salt 12.1.1's decompiled `hi.java`; a drift of one value is
-/// the difference between "looks like Salt" and "looks like something else", so
-/// they are asserted rather than trusted.
 library;
 
 import 'dart:math' as math;
 
-/// Salt's per-frame cadence: `postInvalidateDelayed(42L)`, i.e. ~23.8fps.
-///
-/// Not tied to the display refresh rate on purpose. The low rate is what the
-/// previous-frame feedback below is compensating for, and running faster makes
-/// the trail shorter rather than smoother.
 const Duration kFlowingLightFrameInterval = Duration(milliseconds: 42);
 
-/// Cross-fade applied when the artwork changes, matching Salt's
-/// `AlphaAnimation(1, 0)` with `PathInterpolator(0, 0, 0.3, 1)`.
 const Duration kFlowingLightArtworkFade = Duration(milliseconds: 500);
 
-/// How far the player has to be pulled open before the motion is allowed to
-/// run.
-///
-/// Salt gates on the same 95%: below it the page is still being dragged, which
-/// is exactly when the extra raster work is least affordable.
 const double kFlowingLightRevealThreshold = 0.95;
 
-/// Alpha Salt draws the previous composed frame back in with.
-///
-/// `64 / 255 = 0.251`, so each frame is `0.749 * current + 0.251 * previous`.
-/// Because the blended result is what gets stored as the next frame's history,
-/// this is a recursive low-pass filter over time — the source of the slow
-/// "flowing" quality that a plain rotation does not have.
 const int kFlowingLightFeedbackAlpha = 64;
 
-/// Saturation Salt pushes the artwork to before compositing.
 const double kFlowingLightSaturation = 2.5;
 
 /// The 4x5 colour matrix for [saturation], laid out the way `ColorFilter.matrix`
 /// wants it.
-///
-/// Derived rather than tabulated so the luminance weights stay visible: these
-/// are the ones baked into Android's `ColorMatrix.setSaturation`, and a replica
-/// that quietly used the sRGB or Rec.709 weights instead would shift every
-/// colour the backdrop produces.
 List<double> flowingLightSaturationMatrix(double saturation) {
   const luminanceRed = 0.213;
   const luminanceGreen = 0.715;
@@ -60,8 +29,6 @@ List<double> flowingLightSaturationMatrix(double saturation) {
   ];
 }
 
-/// Blur strength, expressed the way Salt expresses it: a RenderScript /
-/// `com.google.android.renderscript.Toolkit` *radius*.
 const double kFlowingLightBlurRadius = 25;
 
 /// The same blur as a Gaussian sigma, which is what `ImageFilter.blur` wants.
@@ -111,12 +78,6 @@ double _phase(Duration clock, Duration period) {
   return micros / period.inMicroseconds;
 }
 
-/// Resolution and crop geometry for one composition, derived from the viewport.
-///
-/// Salt composes into a buffer roughly `92x133` on a 1080x2400 phone and then
-/// scales that up to fill the screen. The tiny buffer is not only a performance
-/// trick: it is why a radius-25 blur reads as enormous soft fields of colour
-/// rather than a mildly defocused album cover.
 class FlowingLightSpec {
   const FlowingLightSpec({
     required this.compositionWidth,
@@ -185,10 +146,6 @@ class FlowingLightSpec {
   );
 }
 
-/// Divisor applied to the viewport to get the composition size.
-///
-/// Salt switches on `densityDpi`, which Flutter exposes only as a device pixel
-/// ratio; `densityDpi = devicePixelRatio * 160` recovers it.
 int compositionScaleFor(double devicePixelRatio) =>
     devicePixelRatio * 160 >= 420 ? 32 : 20;
 

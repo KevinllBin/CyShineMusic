@@ -1,7 +1,9 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/storage/settings_store.dart';
 import '../../../core/ui/container_transform.dart';
 import '../../../core/ui/cover_image_source.dart';
 import '../../../core/ui/cover_placeholder.dart';
@@ -20,7 +22,7 @@ ImageProvider<Object>? networkPlaylistArtworkProvider(
   );
 }
 
-class PlaylistArtworkTheme extends StatefulWidget {
+class PlaylistArtworkTheme extends ConsumerStatefulWidget {
   const PlaylistArtworkTheme({
     super.key,
     required this.artworkProvider,
@@ -38,7 +40,8 @@ class PlaylistArtworkTheme extends StatefulWidget {
   final bool immersiveStatusBar;
 
   @override
-  State<PlaylistArtworkTheme> createState() => _PlaylistArtworkThemeState();
+  ConsumerState<PlaylistArtworkTheme> createState() =>
+      _PlaylistArtworkThemeState();
 }
 
 typedef _ArtworkSchemeCacheKey = ({
@@ -47,7 +50,7 @@ typedef _ArtworkSchemeCacheKey = ({
   Brightness brightness,
 });
 
-class _PlaylistArtworkThemeState extends State<PlaylistArtworkTheme> {
+class _PlaylistArtworkThemeState extends ConsumerState<PlaylistArtworkTheme> {
   static const _schemeCacheLimit = 48;
   static final Map<_ArtworkSchemeCacheKey, ColorScheme> _resolvedSchemes = {};
   static final Map<_ArtworkSchemeCacheKey, Future<ColorScheme>>
@@ -73,6 +76,11 @@ class _PlaylistArtworkThemeState extends State<PlaylistArtworkTheme> {
   }
 
   void _resolveScheme() {
+    if (!ref.read(settingsProvider).playlistArtworkColorsEnabled) {
+      _activeRequestKey = null;
+      _scheme = null;
+      return;
+    }
     final base = Theme.of(context).colorScheme;
     final provider = widget.artworkProvider;
     if (provider == null) {
@@ -141,11 +149,27 @@ class _PlaylistArtworkThemeState extends State<PlaylistArtworkTheme> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = _scheme ?? Theme.of(context).colorScheme;
+    final enabled = ref.watch(
+      settingsProvider.select((s) => s.playlistArtworkColorsEnabled),
+    );
+    ref.listen<bool>(
+      settingsProvider.select((s) => s.playlistArtworkColorsEnabled),
+      (_, next) {
+        _activeRequestKey = null;
+        _scheme = null;
+        if (next) _resolveScheme();
+      },
+    );
+    final baseTheme = Theme.of(context);
+    final theme = enabled && _scheme != null
+        ? ThemeData.localize(AppTheme.fromScheme(_scheme!), baseTheme.textTheme)
+        : baseTheme;
+    final scheme = theme.colorScheme;
     final onDarkSurface =
-        widget.immersiveStatusBar || scheme.brightness == Brightness.dark;
+        widget.immersiveStatusBar ||
+        ThemeData.estimateBrightnessForColor(scheme.surface) == Brightness.dark;
     return AnimatedTheme(
-      data: AppTheme.fromScheme(scheme),
+      data: theme,
       duration: MediaQuery.disableAnimationsOf(context)
           ? Duration.zero
           : AppMotion.long,
@@ -162,7 +186,8 @@ class _PlaylistArtworkThemeState extends State<PlaylistArtworkTheme> {
           systemNavigationBarColor: Colors.transparent,
           systemNavigationBarDividerColor: Colors.transparent,
           systemNavigationBarIconBrightness:
-              scheme.brightness == Brightness.dark
+              ThemeData.estimateBrightnessForColor(scheme.surface) ==
+                  Brightness.dark
               ? Brightness.light
               : Brightness.dark,
         ),

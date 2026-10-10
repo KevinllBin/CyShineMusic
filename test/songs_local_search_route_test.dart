@@ -80,7 +80,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 120));
     expect(router.routeInformationProvider.value.uri.path, '/songs');
-    _expectBackwardSongsSlide(tester);
+    expect(find.byType(SongsSearchBar), findsNothing);
     expect(container.read(shellToolbarVisibleProvider), isTrue);
 
     await _pumpUi(tester);
@@ -89,7 +89,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('downloads system back animates to the songs page', (
+  testWidgets('downloads system back returns to the songs page', (
     tester,
   ) async {
     _useNarrowPhone(tester);
@@ -124,7 +124,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 120));
     expect(router.routeInformationProvider.value.uri.path, '/songs');
-    _expectBackwardSongsSlide(tester);
+    expect(find.byType(SongsPage), findsOneWidget);
 
     await _pumpUi(tester);
     expect(find.byType(SongsPage), findsOneWidget);
@@ -166,23 +166,6 @@ void main() {
       expect(container.read(shellToolbarVisibleProvider), isTrue);
       expect(tester.takeException(), isNull);
     },
-  );
-}
-
-void _expectBackwardSongsSlide(WidgetTester tester) {
-  final songsPage = find.byWidgetPredicate(
-    (widget) => widget is SongsPage && !widget.searchMode,
-  );
-  expect(songsPage, findsOneWidget);
-  final slides = tester.widgetList<SlideTransition>(
-    find.ancestor(of: songsPage, matching: find.byType(SlideTransition)),
-  );
-  expect(
-    slides.any(
-      (slide) =>
-          slide.position.value.dx < 0 && slide.position.value.dx > -0.045,
-    ),
-    isTrue,
   );
 }
 

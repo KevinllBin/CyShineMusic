@@ -45,7 +45,6 @@ enum EqualizerFilterType {
       'highshelf' => highShelf,
       'lowpass' => lowPass,
       'highpass' => highPass,
-      // Early CyShineMusic builds exposed filters that Salt does not use.
       _ => peaking,
     };
   }

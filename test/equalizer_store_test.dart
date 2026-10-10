@@ -12,7 +12,7 @@ import 'package:cy_shine_music/features/shell/shell_toolbar_visibility.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('ships Salt presets and an empty original default', () {
+  test('ships built-in presets and an empty original default', () {
     expect(equalizerPresets, hasLength(30));
     final settings = EqualizerSettings.fallback;
     expect(settings.enabled, isFalse);
@@ -71,7 +71,7 @@ void main() {
     expect(native.bands.single.enabled, isTrue);
   });
 
-  test('reads and writes Salt-compatible speq bundles', () {
+  test('reads and writes speq bundles', () {
     const settings = EqualizerSettings(
       enabled: true,
       inputGainDb: -3,

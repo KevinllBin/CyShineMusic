@@ -8,18 +8,6 @@ import 'package:flutter/scheduler.dart';
 import 'flowing_light_pipeline.dart';
 import 'flowing_light_spec.dart';
 
-/// The player's animated backdrop, replicating Salt's flowing light.
-///
-/// Composites three rotating, over-saturated copies of the artwork into a
-/// buffer of roughly `92x133`, blurs it, blends a quarter of the previous frame
-/// back in, and scales the result up to fill the viewport — about 24 times a
-/// second. See `flowing_light_spec.dart` for where each constant came from.
-///
-/// Motion is deliberately conditional: it costs a composite plus a rasterise
-/// per frame, so it only runs while the player is open, playing, and pulled
-/// most of the way up. When it is not running the last composed frame stays on
-/// screen, which is why turning the effect off still leaves a backdrop rather
-/// than a flat colour.
 class FlowingLightBackground extends StatefulWidget {
   const FlowingLightBackground({
     super.key,
@@ -63,7 +51,6 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
   );
   late final CurvedAnimation _fadeCurve = CurvedAnimation(
     parent: _fade,
-    // Salt's PathInterpolator(0, 0, 0.3, 1).
     curve: const Cubic(0, 0, 0.3, 1),
   );
 
@@ -107,8 +94,6 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     if (widget.running != oldWidget.running) _syncTicker();
   }
 
-  // ---------------------------------------------------------------- artwork
-
   void _subscribeToArtwork() {
     final stream = widget.imageProvider.resolve(
       createLocalImageConfiguration(context),
@@ -131,9 +116,6 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     stream.addListener(listener);
   }
 
-  /// Salt's `setArtwork`: freeze what is on screen, restart the rotations from
-  /// zero, drop the accumulated history so the old track's colour cannot bleed
-  /// into the new one, and cross-fade over 500ms.
   Future<void> _adoptArtwork(ui.Image image, int generation) async {
     final Color baseColor;
     try {
@@ -149,10 +131,6 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
 
     final displayed = _frames.value.current;
     final alreadyFading = _frames.value.outgoing;
-    // Whatever was most recently on screen becomes the frozen layer. A track
-    // change that lands before the new artwork's first frame has composed
-    // therefore keeps fading the older one out rather than stacking a second
-    // frozen layer on top of it, which is how Salt collapses rapid skips.
     final ui.Image? outgoing = displayed ?? alreadyFading;
     final ui.Image? superseded = displayed != null ? alreadyFading : null;
     final outgoingSpec = displayed != null
@@ -191,9 +169,6 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     _disposeLater(outgoing);
   }
 
-  // ------------------------------------------------------------- scheduling
-
-  /// The three conditions Salt requires before the rotations advance.
   bool get _motionAllowed {
     if (!widget.running || _reduceMotion) return false;
     final reveal = widget.revealProgress;
@@ -247,8 +222,6 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
       _syncTicker();
     }
   }
-
-  // ---------------------------------------------------------------- drawing
 
   void _compose() {
     final artwork = _artwork;
@@ -327,10 +300,6 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
         // widget, so nothing built here depends on it and no rebuild is owed.
         if (_spec != spec) {
           _spec = spec;
-          // Salt invalidates its history on any of these too. Beyond matching
-          // it, the feedback blend draws the previous frame 1:1, so a buffer
-          // that changed size would land misaligned; the frame stays on screen
-          // and is retired normally by the next compose.
           _history = null;
           _needsCompose = true;
           _lastCompose = null;
@@ -368,9 +337,6 @@ class _Frames {
   /// The newest composed frame.
   final ui.Image? current;
 
-  /// The last frame of the previous artwork, frozen while it fades out. Salt
-  /// keeps this as a plain shader snapshot and never regenerates it; doing the
-  /// same here is what stops a track change from running two pipelines at once.
   final ui.Image? outgoing;
 
   final FlowingLightSpec? outgoingSpec;
@@ -413,9 +379,6 @@ class _FlowingLightPainter extends CustomPainter {
       size,
       current,
       spec,
-      // Salt draws the frozen frame opaque and ramps the new one up over it,
-      // so there is never a moment where both are partly transparent and the
-      // background shows through.
       opacity: outgoing == null ? 1 : fade.value,
     );
   }

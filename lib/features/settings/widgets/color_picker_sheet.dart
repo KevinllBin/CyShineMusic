@@ -8,21 +8,39 @@ Future<Color?> showColorPickerSheet(
   BuildContext context,
   Color initial, {
   AppColorStyle style = AppColorStyle.fallback,
+  String? title,
+  Widget Function(Color)? previewBuilder,
+  bool allowAlpha = true,
 }) {
   return showModalBottomSheet<Color>(
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (ctx) => _ColorPickerSheet(initial: initial, style: style),
+    builder: (ctx) => _ColorPickerSheet(
+      initial: initial,
+      style: style,
+      title: title,
+      previewBuilder: previewBuilder,
+      allowAlpha: allowAlpha,
+    ),
   );
 }
 
 class _ColorPickerSheet extends StatefulWidget {
-  const _ColorPickerSheet({required this.initial, required this.style});
+  const _ColorPickerSheet({
+    required this.initial,
+    required this.style,
+    this.title,
+    this.previewBuilder,
+    this.allowAlpha = true,
+  });
 
   final Color initial;
   final AppColorStyle style;
+  final String? title;
+  final Widget Function(Color)? previewBuilder;
+  final bool allowAlpha;
 
   @override
   State<_ColorPickerSheet> createState() => _ColorPickerSheetState();
@@ -36,7 +54,9 @@ class _ColorPickerSheetState extends State<_ColorPickerSheet> {
   @override
   void initState() {
     super.initState();
-    _hsv = HSVColor.fromColor(widget.initial);
+    _hsv = HSVColor.fromColor(
+      widget.allowAlpha ? widget.initial : widget.initial.withValues(alpha: 1),
+    );
     _hexCtrl = TextEditingController(text: _toHex(widget.initial));
   }
 
@@ -65,7 +85,7 @@ class _ColorPickerSheetState extends State<_ColorPickerSheet> {
   void _applyHex(String value) {
     var text = value.trim();
     if (text.startsWith('#')) text = text.substring(1);
-    if (text.length != 6 && text.length != 8) return;
+    if (text.length != 6 && !(widget.allowAlpha && text.length == 8)) return;
 
     final parsed = int.tryParse(text, radix: 16);
     if (parsed == null) return;
@@ -79,123 +99,134 @@ class _ColorPickerSheetState extends State<_ColorPickerSheet> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final preview = AppTheme.schemeFor(
-      _color,
-      Theme.of(context).brightness,
-      widget.style,
-    );
+    final preview = widget.previewBuilder == null
+        ? AppTheme.schemeFor(_color, Theme.of(context).brightness, widget.style)
+        : null;
     final viewInsets = MediaQuery.viewInsetsOf(context);
 
     return Padding(
       padding: EdgeInsets.only(bottom: viewInsets.bottom),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    color: _color,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: scheme.outlineVariant),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: TextField(
-                    controller: _hexCtrl,
-                    decoration: const InputDecoration(
-                      prefixText: '#',
-                      labelText: 'HEX',
-                      border: OutlineInputBorder(),
-                      isDense: true,
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (widget.title != null) ...[
+                Text(widget.title!, style: textTheme.titleLarge),
+                const SizedBox(height: 16),
+              ],
+              Row(
+                children: [
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: _color,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: scheme.outlineVariant),
                     ),
-                    textCapitalization: TextCapitalization.characters,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[0-9a-fA-F]')),
-                      LengthLimitingTextInputFormatter(8),
-                    ],
-                    onTap: () => _editingHex = true,
-                    onEditingComplete: () => _editingHex = false,
-                    onSubmitted: (value) {
-                      _editingHex = false;
-                      _applyHex(value);
-                    },
-                    onChanged: _applyHex,
                   ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: TextField(
+                      controller: _hexCtrl,
+                      decoration: const InputDecoration(
+                        prefixText: '#',
+                        labelText: 'HEX',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      textCapitalization: TextCapitalization.characters,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(
+                          RegExp(r'[0-9a-fA-F]'),
+                        ),
+                        LengthLimitingTextInputFormatter(
+                          widget.allowAlpha ? 8 : 6,
+                        ),
+                      ],
+                      onTap: () => _editingHex = true,
+                      onEditingComplete: () => _editingHex = false,
+                      onSubmitted: (value) {
+                        _editingHex = false;
+                        _applyHex(value);
+                      },
+                      onChanged: _applyHex,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _LabeledSlider(
+                label: '色相',
+                value: _hsv.hue,
+                min: 0,
+                max: 360,
+                activeColor: HSVColor.fromAHSV(1, _hsv.hue, 1, 1).toColor(),
+                onChanged: (value) => _setHsv(_hsv.withHue(value)),
+              ),
+              _LabeledSlider(
+                label: '饱和',
+                value: _hsv.saturation,
+                min: 0,
+                max: 1,
+                activeColor: _color,
+                onChanged: (value) => _setHsv(_hsv.withSaturation(value)),
+              ),
+              _LabeledSlider(
+                label: '明度',
+                value: _hsv.value,
+                min: 0,
+                max: 1,
+                activeColor: _color,
+                onChanged: (value) => _setHsv(_hsv.withValue(value)),
+              ),
+              const SizedBox(height: 12),
+              Text('预览', style: textTheme.labelLarge),
+              const SizedBox(height: 8),
+              if (preview == null)
+                widget.previewBuilder!(_color)
+              else
+                Row(
+                  children: [
+                    _Swatch(
+                      label: 'Primary',
+                      color: preview.primary,
+                      onColor: preview.onPrimary,
+                    ),
+                    const SizedBox(width: 8),
+                    _Swatch(
+                      label: 'Secondary',
+                      color: preview.secondary,
+                      onColor: preview.onSecondary,
+                    ),
+                    const SizedBox(width: 8),
+                    _Swatch(
+                      label: 'Tertiary',
+                      color: preview.tertiary,
+                      onColor: preview.onTertiary,
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            _LabeledSlider(
-              label: '色相',
-              value: _hsv.hue,
-              min: 0,
-              max: 360,
-              activeColor: HSVColor.fromAHSV(1, _hsv.hue, 1, 1).toColor(),
-              onChanged: (value) => _setHsv(_hsv.withHue(value)),
-            ),
-            _LabeledSlider(
-              label: '饱和',
-              value: _hsv.saturation,
-              min: 0,
-              max: 1,
-              activeColor: _color,
-              onChanged: (value) => _setHsv(_hsv.withSaturation(value)),
-            ),
-            _LabeledSlider(
-              label: '明度',
-              value: _hsv.value,
-              min: 0,
-              max: 1,
-              activeColor: _color,
-              onChanged: (value) => _setHsv(_hsv.withValue(value)),
-            ),
-            const SizedBox(height: 12),
-            Text('预览', style: textTheme.labelLarge),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                _Swatch(
-                  label: 'Primary',
-                  color: preview.primary,
-                  onColor: preview.onPrimary,
-                ),
-                const SizedBox(width: 8),
-                _Swatch(
-                  label: 'Secondary',
-                  color: preview.secondary,
-                  onColor: preview.onSecondary,
-                ),
-                const SizedBox(width: 8),
-                _Swatch(
-                  label: 'Tertiary',
-                  color: preview.tertiary,
-                  onColor: preview.onTertiary,
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('取消'),
-                ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: () => Navigator.of(context).pop(_color),
-                  child: const Text('应用'),
-                ),
-              ],
-            ),
-          ],
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('取消'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(_color),
+                    child: const Text('应用'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

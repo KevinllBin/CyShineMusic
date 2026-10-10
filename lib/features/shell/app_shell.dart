@@ -10,7 +10,6 @@ import '../../core/storage/settings_store.dart';
 import '../../core/ui/app_toast.dart';
 import '../../core/ui/cover_image_source.dart';
 import '../../theme/app_motion.dart';
-import '../../theme/app_theme.dart';
 import '../player/player_page.dart';
 import '../player/widgets/spinning_cover_art.dart';
 import '../player/player_controller.dart';
@@ -576,8 +575,7 @@ class _AppShellState extends ConsumerState<AppShell>
         _coverRotation.stop(canceled: false);
       }
     });
-    final baseScheme = Theme.of(context).colorScheme;
-    final scheme = shellSchemeFor(contentLocation, baseScheme);
+    final pageBackground = Theme.of(context).scaffoldBackgroundColor;
     final isPlayer = widget.location == '/player';
     final toolbarTravelExtent = _bottomToolbarTravelExtent(context);
     _toolbarTravelExtent = toolbarTravelExtent;
@@ -680,7 +678,7 @@ class _AppShellState extends ConsumerState<AppShell>
             child: Scaffold(
               extendBody: true,
               resizeToAvoidBottomInset: true,
-              backgroundColor: scheme.appSurface,
+              backgroundColor: pageBackground,
               body: Stack(
                 key: _transition.rootKey,
                 // Every child carries an explicit key so element matching never
@@ -691,7 +689,7 @@ class _AppShellState extends ConsumerState<AppShell>
                   Positioned.fill(
                     key: const ValueKey('shell-content'),
                     child: ColoredBox(
-                      color: scheme.appSurface,
+                      color: pageBackground,
                       // Keep the outer navigator mounted across tab changes;
                       // its StatefulShellRoute owns the retained branch stacks.
                       child: RepaintBoundary(

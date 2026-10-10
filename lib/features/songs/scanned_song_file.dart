@@ -5,7 +5,7 @@ import 'local_song_scan_cache.dart';
 /// Intentionally top-level (library-scoped singletons): the songs page copies
 /// them into its per-instance caches on rebuild so tags read in a previous
 /// visit render instantly. Exactly one copy of each map must exist in the
-/// app — moved here verbatim from songs_page.dart.
+/// app.
 final Map<String, EmbeddedAudioTags?> songTagCacheSnapshot = {};
 final Map<String, DateTime> songTagModifiedAtSnapshot = {};
 
