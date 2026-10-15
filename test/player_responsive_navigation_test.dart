@@ -15,6 +15,7 @@ import 'package:cy_shine_music/features/player/player_controller.dart';
 import 'package:cy_shine_music/features/player/lyric_parser.dart';
 import 'package:cy_shine_music/features/player/player_page.dart';
 import 'package:cy_shine_music/features/player/widgets/album_cluster.dart';
+import 'package:cy_shine_music/features/player/widgets/karaoke_line_text.dart';
 import 'package:cy_shine_music/features/player/widgets/karaoke_lyrics_view.dart';
 import 'package:cy_shine_music/features/player/widgets/lyrics_panel.dart';
 import 'package:cy_shine_music/features/playlists/playlist_store.dart';
@@ -1002,13 +1003,20 @@ double _lyricFocusScale(WidgetTester tester, int startMs) {
 }
 
 double _activeWordProgress(WidgetTester tester, int lineStartMs) {
-  final progressAlign = find.descendant(
+  final lyricText = find.descendant(
     of: find.byKey(ValueKey('lyric-focus-scale-$lineStartMs')),
-    matching: find.byWidgetPredicate(
-      (widget) => widget is Align && widget.widthFactor != null,
-    ),
+    matching: find.byType(KaraokeLineText),
   );
-  return tester.widget<Align>(progressAlign).widthFactor!;
+  final lyric = tester.widget<KaraokeLineText>(lyricText);
+  expect(lyric.active, isTrue);
+  final word = lyric.line.words.single;
+  final positionMs = tester
+      .state<KaraokeLineTextState>(lyricText)
+      .debugPlaybackPositionMs;
+  return ((positionMs - word.startMs) / (word.endMs - word.startMs)).clamp(
+    0.0,
+    1.0,
+  );
 }
 
 ThemeData _theme() {

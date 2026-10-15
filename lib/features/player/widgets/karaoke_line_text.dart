@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/foundation.dart'
+    show ValueListenable, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart' show Ticker;
 
@@ -32,10 +33,10 @@ class KaraokeLineText extends StatefulWidget {
   final bool active;
 
   @override
-  State<KaraokeLineText> createState() => _KaraokeLineTextState();
+  KaraokeLineTextState createState() => KaraokeLineTextState();
 }
 
-class _KaraokeLineTextState extends State<KaraokeLineText>
+class KaraokeLineTextState extends State<KaraokeLineText>
     with TickerProviderStateMixin {
   late final Ticker _ticker;
   final _sinceAnchor = Stopwatch();
@@ -46,6 +47,10 @@ class _KaraokeLineTextState extends State<KaraokeLineText>
   late final Listenable _repaint;
   _LyricParagraph? _paragraph;
   bool _reduceMotion = false;
+
+  /// The playback time consumed by the painter, including clock interpolation.
+  @visibleForTesting
+  double get debugPlaybackPositionMs => _position.value;
 
   @override
   void initState() {
