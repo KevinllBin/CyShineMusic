@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/storage/settings_store.dart';
 import '../../../theme/app_motion.dart';
 import '../../player/player_controller.dart';
 import '../../player/widgets/spinning_cover_art.dart';
@@ -37,6 +38,9 @@ class MiniPlayerBar extends ConsumerWidget {
         ),
       ),
     );
+    final square = ref.watch(
+      settingsProvider.select((settings) => settings.squareAlbumCoverEnabled),
+    );
     final controller = ref.read(playerControllerProvider.notifier);
     final track = vm.track;
     final canControl = track != null && !vm.loading;
@@ -45,7 +49,8 @@ class MiniPlayerBar extends ConsumerWidget {
     // Shorter capsules (the secondary player in dual capsule mode) scale the
     // artwork and buttons down so they keep an even inset inside the pill.
     final compact = width < 240;
-    final coverSize = math.min(compact ? 36.0 : 44.0, height - 8);
+    final coverSlotSize = math.min(compact ? 36.0 : 44.0, height - 8);
+    final coverSize = coverSlotSize * (square ? 0.82 : 1.0);
     final buttonSize = math.min(compact ? 36.0 : 40.0, height - 6);
 
     return Row(
@@ -59,26 +64,33 @@ class MiniPlayerBar extends ConsumerWidget {
               onTap: onOpenPlayer,
               child: Row(
                 children: [
-                  PlayerCoverAnchor(
-                    expanded: false,
-                    child: SizedBox.square(
-                      dimension: coverSize,
-                      child: track == null
-                          ? _IdleCover(scheme: scheme)
-                          : SpinningCoverArt(
-                              track: track,
-                              size: coverSize,
-                              placeholder: ColoredBox(
-                                color: scheme.surfaceContainerHighest,
-                                child: Center(
-                                  child: Icon(
-                                    Icons.album_rounded,
-                                    size: 20,
-                                    color: scheme.onSurfaceVariant,
+                  SizedBox.square(
+                    dimension: coverSlotSize,
+                    child: Center(
+                      // Measure the artwork itself as the flight endpoint;
+                      // the outer slot only preserves the text's alignment.
+                      child: PlayerCoverAnchor(
+                        expanded: false,
+                        child: SizedBox.square(
+                          dimension: coverSize,
+                          child: track == null
+                              ? _IdleCover(scheme: scheme, size: coverSize)
+                              : SpinningCoverArt(
+                                  track: track,
+                                  size: coverSize,
+                                  placeholder: ColoredBox(
+                                    color: scheme.surfaceContainerHighest,
+                                    child: Center(
+                                      child: Icon(
+                                        Icons.album_rounded,
+                                        size: 20,
+                                        color: scheme.onSurfaceVariant,
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ),
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -120,16 +132,23 @@ class MiniPlayerBar extends ConsumerWidget {
   }
 }
 
-class _IdleCover extends StatelessWidget {
-  const _IdleCover({required this.scheme});
+class _IdleCover extends ConsumerWidget {
+  const _IdleCover({required this.scheme, required this.size});
 
   final ColorScheme scheme;
+  final double size;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final square = ref.watch(
+      settingsProvider.select((settings) => settings.squareAlbumCoverEnabled),
+    );
     return DecoratedBox(
       decoration: BoxDecoration(
-        shape: BoxShape.circle,
+        shape: square ? BoxShape.rectangle : BoxShape.circle,
+        borderRadius: square
+            ? BorderRadius.circular(size * kSquareCoverRadiusFactor)
+            : null,
         color: scheme.surfaceContainerHighest,
       ),
       child: Center(

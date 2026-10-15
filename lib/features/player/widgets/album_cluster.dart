@@ -36,6 +36,9 @@ class AlbumPage extends ConsumerWidget {
     final miniLyricsEnabled = ref.watch(
       settingsProvider.select((settings) => settings.showMiniLyrics),
     );
+    final square = ref.watch(
+      settingsProvider.select((settings) => settings.squareAlbumCoverEnabled),
+    );
     final track = player.track;
     final showMiniLyrics =
         !wide &&
@@ -45,15 +48,18 @@ class AlbumPage extends ConsumerWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        final coverScale = square ? 1.12 : 1.0;
+        final maxCoverSize = (wide ? 400.0 : 360.0) * coverScale;
         final coverSize = math.min(
-          wide ? 400.0 : 360.0,
+          maxCoverSize,
           math.min(
-            constraints.maxWidth * (wide ? 0.88 : 0.86),
-            constraints.maxHeight * (wide ? 0.68 : 0.62),
-          ),
+                constraints.maxWidth * (wide ? 0.88 : 0.86),
+                constraints.maxHeight * (wide ? 0.68 : 0.62),
+              ) *
+              coverScale,
         );
         final resolvedCoverSize = coverSize
-            .clamp(160.0, wide ? 400.0 : 360.0)
+            .clamp(160.0, maxCoverSize)
             .toDouble();
         final artworkKey = track == null
             ? 'album-artwork:loading'
@@ -167,19 +173,25 @@ class AlbumPage extends ConsumerWidget {
   }
 }
 
-class _LoadingAlbumArtwork extends StatelessWidget {
+class _LoadingAlbumArtwork extends ConsumerWidget {
   const _LoadingAlbumArtwork({required this.size});
 
   final double size;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final square = ref.watch(
+      settingsProvider.select((settings) => settings.squareAlbumCoverEnabled),
+    );
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.22),
-        shape: BoxShape.circle,
+        shape: square ? BoxShape.rectangle : BoxShape.circle,
+        borderRadius: square
+            ? BorderRadius.circular(size * kSquareCoverRadiusFactor)
+            : null,
       ),
       alignment: Alignment.center,
       child: CircularProgressIndicator(

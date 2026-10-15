@@ -104,7 +104,7 @@ class _AppShellState extends ConsumerState<AppShell>
       duration: const Duration(seconds: 24),
     );
     _transition = PlayerTransition(progress: _pull, rotation: _coverRotation);
-    if (ref.read(playerControllerProvider).playing) _coverRotation.repeat();
+    _syncCoverRotation();
     // Built once: the tear-offs below are stable across builds, so dependents
     // of PlayerPullScope never rebuild.
     _pullGestures = PlayerPullGestures(
@@ -117,6 +117,17 @@ class _AppShellState extends ConsumerState<AppShell>
       onClose: _dismissPlayer,
     );
     _rememberTabLocation();
+  }
+
+  void _syncCoverRotation() {
+    final rotate =
+        ref.read(playerControllerProvider).playing &&
+        !ref.read(settingsProvider).squareAlbumCoverEnabled;
+    if (rotate) {
+      if (!_coverRotation.isAnimating) _coverRotation.repeat();
+    } else {
+      _coverRotation.stop(canceled: false);
+    }
   }
 
   @override
@@ -565,16 +576,14 @@ class _AppShellState extends ConsumerState<AppShell>
       });
     }
     _transition.bottomInset = MediaQuery.viewPaddingOf(context).bottom;
-    ref.listen<bool>(playerControllerProvider.select((s) => s.playing), (
-      _,
-      playing,
-    ) {
-      if (playing) {
-        if (!_coverRotation.isAnimating) _coverRotation.repeat();
-      } else {
-        _coverRotation.stop(canceled: false);
-      }
-    });
+    ref.listen(
+      playerControllerProvider.select((s) => s.playing),
+      (_, _) => _syncCoverRotation(),
+    );
+    ref.listen(
+      settingsProvider.select((s) => s.squareAlbumCoverEnabled),
+      (_, _) => _syncCoverRotation(),
+    );
     final pageBackground = Theme.of(context).scaffoldBackgroundColor;
     final isPlayer = widget.location == '/player';
     final toolbarTravelExtent = _bottomToolbarTravelExtent(context);
@@ -849,6 +858,9 @@ class _AppShellState extends ConsumerState<AppShell>
   }
 
   Widget _buildSharedCoverLayer() {
+    final square = ref.watch(
+      settingsProvider.select((s) => s.squareAlbumCoverEnabled),
+    );
     final track = ref.watch(playerControllerProvider.select((s) => s.track));
     final scheme = Theme.of(context).colorScheme;
     // Paint above the returning capsule background. This overlay never owns
@@ -861,7 +873,9 @@ class _AppShellState extends ConsumerState<AppShell>
             animation: _transition,
             child: RepaintBoundary(
               child: RotationTransition(
-                turns: _coverRotation,
+                turns: square
+                    ? const AlwaysStoppedAnimation<double>(0)
+                    : _coverRotation,
                 child: PlayerArtworkImage(
                   url: CoverImageSource.normalizeUrl(
                     track?.coverUrl,
@@ -884,7 +898,14 @@ class _AppShellState extends ConsumerState<AppShell>
                     Positioned.fromRect(
                       key: const ValueKey('player-shared-cover'),
                       rect: flight,
-                      child: ClipOval(child: child),
+                      child: square
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(
+                                flight.width * kSquareCoverRadiusFactor,
+                              ),
+                              child: child,
+                            )
+                          : ClipOval(child: child),
                     ),
                 ],
               );

@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/storage/settings_store.dart';
 import '../../../theme/app_motion.dart';
 import '../lyric_parser.dart';
 import '../player_controller.dart';
@@ -96,6 +97,14 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
     _activeIndex = widget.lyrics.activeIndex(initial.position);
     _scheduleScrollToActive(retriesLeft: 1);
     _scheduleLineAdvance();
+    ref.listenManual(
+      settingsProvider.select((s) => (s.lyricFontWeight, s.lyricFontSize)),
+      (previous, next) {
+        _beginTranslationLayoutAnchor(
+          duration: const Duration(milliseconds: 700),
+        );
+      },
+    );
     ref.listenManual(playerControllerProvider.select((s) => s.position), (
       previous,
       next,
@@ -551,7 +560,7 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
     if (resetVelocity) _lyricScrollVelocity = 0;
   }
 
-  void _beginTranslationLayoutAnchor() {
+  void _beginTranslationLayoutAnchor({Duration duration = AppMotion.medium}) {
     _stopTranslationLayoutAnchor();
     _stopLyricScroll(resetVelocity: true);
     if (_userScrollLocked) return;
@@ -576,7 +585,7 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
     _translationLayoutTicker.start();
     _scheduleTranslationAnchorCorrection();
     _translationAnchorTimer = Timer(
-      AppMotion.medium + const Duration(milliseconds: 80),
+      duration + const Duration(milliseconds: 80),
       () => _finishTranslationLayoutAnchor(generation),
     );
   }

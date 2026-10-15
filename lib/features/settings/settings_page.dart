@@ -32,6 +32,7 @@ import 'widgets/app_icon_sheet.dart';
 import 'widgets/color_style_row.dart';
 import 'widgets/custom_theme_sheet.dart';
 import 'widgets/discovery_source_order_sheet.dart';
+import 'widgets/player_interface_settings_sheet.dart';
 import 'widgets/settings_action.dart';
 import 'widgets/settings_menu.dart';
 import 'widgets/storage_folder_picker_sheet.dart';
@@ -620,6 +621,16 @@ class SettingsPage extends ConsumerWidget {
                                   .read(settingsProvider.notifier)
                                   .setFlowingLightEnabled(value),
                             ),
+                            const SizedBox(height: 4),
+                            SettingsAction(
+                              key: const ValueKey('player-interface-setting'),
+                              icon: Icons.display_settings_rounded,
+                              title: '播放界面设置',
+                              subtitle: '歌词模糊、专辑封面与歌词字体',
+                              trailing: Icons.chevron_right_rounded,
+                              onTap: () =>
+                                  _configurePlayerInterface(context, ref),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 30),
@@ -1079,6 +1090,20 @@ class SettingsPage extends ConsumerWidget {
       if (context.mounted) {
         showAppToast(context, '无法更换桌面图标，请稍后重试', type: AppToastType.error);
       }
+    } finally {
+      if (toolbar.mounted) toolbar.state = wasToolbarVisible;
+    }
+  }
+
+  Future<void> _configurePlayerInterface(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final toolbar = ref.read(shellToolbarVisibleProvider.notifier);
+    final wasToolbarVisible = ref.read(shellToolbarVisibleProvider);
+    toolbar.state = false;
+    try {
+      await showPlayerInterfaceSettingsSheet(context);
     } finally {
       if (toolbar.mounted) toolbar.state = wasToolbarVisible;
     }

@@ -9,6 +9,7 @@ import '../../../core/ui/cover_image_source.dart';
 import '../../../theme/app_motion.dart';
 import '../flow_palette.dart';
 import '../player_controller.dart';
+import 'lyric_ink.dart';
 import 'player_palette.dart';
 
 // Share the backdrop's resized image cache entry, including local artwork.
@@ -31,10 +32,15 @@ final playerArtworkProvider = Provider<ImageProvider<Object>?>((ref) {
   );
 });
 
-final _artworkAccentProvider = FutureProvider.autoDispose<Color?>((ref) async {
+typedef _ArtworkColors = ({Color? accent, Color? lyricInk});
+const _emptyArtworkColors = (accent: null, lyricInk: null);
+
+final _artworkColorsProvider = FutureProvider.autoDispose<_ArtworkColors>((
+  ref,
+) async {
   final provider = ref.watch(playerArtworkProvider);
-  if (provider == null) return null;
-  final result = Completer<Color?>();
+  if (provider == null) return _emptyArtworkColors;
+  final result = Completer<_ArtworkColors>();
   final stream = provider.resolve(ImageConfiguration.empty);
   var sampling = false;
   final listener = ImageStreamListener(
@@ -45,33 +51,37 @@ final _artworkAccentProvider = FutureProvider.autoDispose<Color?>((ref) async {
       }
       sampling = true;
       Color? accent;
+      Color? lyricInk;
       try {
         final image = info.image;
         final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
         if (data != null) {
-          final palette = extractFlowPalette(
-            data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
-            image.width,
-            image.height,
+          final pixels = data.buffer.asUint8List(
+            data.offsetInBytes,
+            data.lengthInBytes,
           );
+          final palette = extractFlowPalette(pixels, image.width, image.height);
           if (palette != FlowPalette.fallback) {
             accent = Color(palette.accentsArgb.first);
           }
+          lyricInk = extractLyricInk(pixels);
         }
       } catch (_) {
         // Artwork failures should leave playback controls usable.
       } finally {
         info.dispose();
-        if (!result.isCompleted) result.complete(accent);
+        if (!result.isCompleted) {
+          result.complete((accent: accent, lyricInk: lyricInk));
+        }
       }
     },
     onError: (Object error, StackTrace? stackTrace) {
-      if (!result.isCompleted) result.complete(null);
+      if (!result.isCompleted) result.complete(_emptyArtworkColors);
     },
   );
   ref.onDispose(() {
     // Release a pending request when a newer cover supersedes it.
-    if (!result.isCompleted) result.complete(null);
+    if (!result.isCompleted) result.complete(_emptyArtworkColors);
   });
   stream.addListener(listener);
   try {
@@ -79,6 +89,11 @@ final _artworkAccentProvider = FutureProvider.autoDispose<Color?>((ref) async {
   } finally {
     stream.removeListener(listener);
   }
+});
+
+final playerLyricInkProvider = Provider.autoDispose<Color?>((ref) {
+  final colors = ref.watch(_artworkColorsProvider);
+  return colors.hasError ? null : colors.valueOrNull?.lyricInk;
 });
 
 /// Keeps the cover's hue while using dark ink in light mode and pale ink in
@@ -90,9 +105,11 @@ class PlayerControlColor extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final artworkAccent = ref.watch(_artworkAccentProvider);
+    final artworkColors = ref.watch(_artworkColorsProvider);
     // 新封面尚未就绪时沿用上次取色，避免换曲先闪回默认色。
-    final accent = artworkAccent.hasError ? null : artworkAccent.valueOrNull;
+    final accent = artworkColors.hasError
+        ? null
+        : artworkColors.valueOrNull?.accent;
     final fallback = playerInk(context);
     var color = fallback;
     if (accent != null) {

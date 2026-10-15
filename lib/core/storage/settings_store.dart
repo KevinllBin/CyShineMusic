@@ -26,6 +26,10 @@ const String _kCustomThemeKey = 'custom_theme';
 const String _kPlaylistArtworkColorsEnabledKey =
     'playlist_artwork_colors_enabled';
 const String _kFlowingLightEnabledKey = 'flowing_light_enabled';
+const String _kLyricViewBlurDisabledKey = 'lyric_view_blur_disabled';
+const String _kSquareAlbumCoverEnabledKey = 'square_album_cover_enabled';
+const String _kLyricFontWeightKey = 'lyric_font_weight';
+const String _kLyricFontSizeKey = 'lyric_font_size';
 const String _kCarPadModeEnabledKey = 'car_pad_mode_enabled';
 const String _kCarDisplayEnabledKey = 'car_display_enabled';
 const String _kCarDisplaySizeKey = 'car_display_size';
@@ -45,6 +49,21 @@ const String _kBluetoothFullLyricEnabledKey = 'bluetooth_full_lyric_enabled';
 const String _kBluetoothLyricNoticeSeenKey = 'bluetooth_lyric_notice_seen';
 const String _kDebugModeKey = 'debug_mode';
 const String _kLegacyBaseUrlKey = 'base_url';
+
+const kLyricFontWeightMin = 100.0;
+const kLyricFontWeightMax = 1000.0;
+const kLyricFontWeightDefault = 500.0;
+const kLyricFontSizeMin = 16.0;
+const kLyricFontSizeMax = 56.0;
+const kLyricFontSizeDefault = 32.0;
+
+double normalizeLyricFontWeight(double value) =>
+    (value.clamp(kLyricFontWeightMin, kLyricFontWeightMax) / 100)
+        .roundToDouble() *
+    100;
+
+double normalizeLyricFontSize(double value) =>
+    value.clamp(kLyricFontSizeMin, kLyricFontSizeMax).roundToDouble();
 
 enum AppNavigationMode {
   singleCapsule('single_capsule', '单胶囊', '原有悬浮菜单与播放条滑动切换'),
@@ -78,6 +97,10 @@ class AppSettings {
     this.customTheme = const CustomTheme(),
     this.playlistArtworkColorsEnabled = true,
     required this.flowingLightEnabled,
+    this.lyricViewBlurDisabled = false,
+    this.squareAlbumCoverEnabled = false,
+    this.lyricFontWeight = kLyricFontWeightDefault,
+    this.lyricFontSize = kLyricFontSizeDefault,
     required this.carPadModeEnabled,
     this.carDisplayEnabled = false,
     this.carDisplaySize = 1.0,
@@ -110,6 +133,10 @@ class AppSettings {
   /// Whether the player backdrop animates its extracted colors. Off falls back
   /// to the static blurred-artwork backdrop.
   final bool flowingLightEnabled;
+  final bool lyricViewBlurDisabled;
+  final bool squareAlbumCoverEnabled;
+  final double lyricFontWeight;
+  final double lyricFontSize;
 
   /// Uses the split album-and-lyrics player layout on car displays and pads.
   /// This is deliberately manual so ordinary large screens retain phone UI.
@@ -149,6 +176,10 @@ class AppSettings {
     CustomTheme? customTheme,
     bool? playlistArtworkColorsEnabled,
     bool? flowingLightEnabled,
+    bool? lyricViewBlurDisabled,
+    bool? squareAlbumCoverEnabled,
+    double? lyricFontWeight,
+    double? lyricFontSize,
     bool? carPadModeEnabled,
     bool? carDisplayEnabled,
     double? carDisplaySize,
@@ -180,6 +211,11 @@ class AppSettings {
     playlistArtworkColorsEnabled:
         playlistArtworkColorsEnabled ?? this.playlistArtworkColorsEnabled,
     flowingLightEnabled: flowingLightEnabled ?? this.flowingLightEnabled,
+    lyricViewBlurDisabled: lyricViewBlurDisabled ?? this.lyricViewBlurDisabled,
+    squareAlbumCoverEnabled:
+        squareAlbumCoverEnabled ?? this.squareAlbumCoverEnabled,
+    lyricFontWeight: lyricFontWeight ?? this.lyricFontWeight,
+    lyricFontSize: lyricFontSize ?? this.lyricFontSize,
     carPadModeEnabled: carPadModeEnabled ?? this.carPadModeEnabled,
     carDisplayEnabled: carDisplayEnabled ?? this.carDisplayEnabled,
     carDisplaySize: carDisplaySize ?? this.carDisplaySize,
@@ -264,6 +300,20 @@ class SettingsNotifier extends Notifier<AppSettings> {
       playlistArtworkColorsEnabled:
           _prefs.getBool(_kPlaylistArtworkColorsEnabledKey) ?? true,
       flowingLightEnabled: _prefs.getBool(_kFlowingLightEnabledKey) ?? true,
+      lyricViewBlurDisabled:
+          _prefs.getBool(_kLyricViewBlurDisabledKey) ?? false,
+      squareAlbumCoverEnabled:
+          _prefs.getBool(_kSquareAlbumCoverEnabledKey) ?? false,
+      lyricFontWeight: _validLyricFontWeight(_prefs.get(_kLyricFontWeightKey))
+          ? normalizeLyricFontWeight(
+              (_prefs.get(_kLyricFontWeightKey) as num).toDouble(),
+            )
+          : kLyricFontWeightDefault,
+      lyricFontSize: _validLyricFontSize(_prefs.get(_kLyricFontSizeKey))
+          ? normalizeLyricFontSize(
+              (_prefs.get(_kLyricFontSizeKey) as num).toDouble(),
+            )
+          : kLyricFontSizeDefault,
       carPadModeEnabled: _prefs.getBool(_kCarPadModeEnabledKey) ?? false,
       carDisplayEnabled: _prefs.getBool(_kCarDisplayEnabledKey) ?? false,
       carDisplaySize: _decodeCarDisplaySize(
@@ -382,6 +432,49 @@ class SettingsNotifier extends Notifier<AppSettings> {
     state = state.copyWith(flowingLightEnabled: value);
   }
 
+  Future<void> setLyricViewBlurDisabled(bool value) async {
+    await _prefs.setBool(_kLyricViewBlurDisabledKey, value);
+    state = state.copyWith(lyricViewBlurDisabled: value);
+  }
+
+  Future<void> setSquareAlbumCoverEnabled(bool value) async {
+    await _prefs.setBool(_kSquareAlbumCoverEnabledKey, value);
+    state = state.copyWith(squareAlbumCoverEnabled: value);
+  }
+
+  static bool _validLyricFontWeight(Object? value) =>
+      value is num &&
+      value.isFinite &&
+      value >= kLyricFontWeightMin &&
+      value <= kLyricFontWeightMax;
+
+  static bool _validLyricFontSize(Object? value) =>
+      value is num &&
+      value.isFinite &&
+      value >= kLyricFontSizeMin &&
+      value <= kLyricFontSizeMax;
+
+  Future<void> setLyricFontStyle({
+    required double weight,
+    required double size,
+  }) async {
+    if (!_validLyricFontWeight(weight) || !_validLyricFontSize(size)) {
+      throw ArgumentError('歌词字体粗细或大小超出范围');
+    }
+    final nextWeight = normalizeLyricFontWeight(weight);
+    final nextSize = normalizeLyricFontSize(size);
+    if (state.lyricFontWeight == nextWeight &&
+        state.lyricFontSize == nextSize) {
+      return;
+    }
+    await _prefs.setDouble(_kLyricFontWeightKey, nextWeight);
+    await _prefs.setDouble(_kLyricFontSizeKey, nextSize);
+    state = state.copyWith(
+      lyricFontWeight: nextWeight,
+      lyricFontSize: nextSize,
+    );
+  }
+
   Future<void> setCarPadModeEnabled(bool value) async {
     await _prefs.setBool(_kCarPadModeEnabledKey, value);
     state = state.copyWith(carPadModeEnabled: value);
@@ -434,6 +527,10 @@ class SettingsNotifier extends Notifier<AppSettings> {
     'customTheme': state.customTheme.toJson(),
     'playlistArtworkColorsEnabled': state.playlistArtworkColorsEnabled,
     'flowingLightEnabled': state.flowingLightEnabled,
+    'lyricViewBlurDisabled': state.lyricViewBlurDisabled,
+    'squareAlbumCoverEnabled': state.squareAlbumCoverEnabled,
+    'lyricFontWeight': state.lyricFontWeight,
+    'lyricFontSize': state.lyricFontSize,
   };
 
   Future<void> applyAppearanceFromSync(Object value) async {
@@ -476,9 +573,36 @@ class SettingsNotifier extends Notifier<AppSettings> {
       throw const FormatException('云端流光设置无效');
     }
 
+    final rawLyricBlurDisabled = json['lyricViewBlurDisabled'];
+    if (json.containsKey('lyricViewBlurDisabled') &&
+        rawLyricBlurDisabled is! bool) {
+      throw const FormatException('云端歌词视图模糊设置无效');
+    }
+    final rawSquareCover = json['squareAlbumCoverEnabled'];
+    if (json.containsKey('squareAlbumCoverEnabled') &&
+        rawSquareCover is! bool) {
+      throw const FormatException('云端专辑封面设置无效');
+    }
+
     final syncedTheme = json.containsKey('customTheme')
         ? CustomTheme.fromJson(json['customTheme'])
         : null;
+    final rawLyricWeight = json['lyricFontWeight'];
+    if (json.containsKey('lyricFontWeight') &&
+        !_validLyricFontWeight(rawLyricWeight)) {
+      throw const FormatException('云端歌词字体粗细无效');
+    }
+    final syncedLyricWeight = rawLyricWeight == null
+        ? null
+        : normalizeLyricFontWeight((rawLyricWeight as num).toDouble());
+    final rawLyricSize = json['lyricFontSize'];
+    if (json.containsKey('lyricFontSize') &&
+        !_validLyricFontSize(rawLyricSize)) {
+      throw const FormatException('云端歌词字体大小无效');
+    }
+    final syncedLyricSize = rawLyricSize == null
+        ? null
+        : normalizeLyricFontSize((rawLyricSize as num).toDouble());
     final rawPlaylistColors = json['playlistArtworkColorsEnabled'];
     if (json.containsKey('playlistArtworkColorsEnabled') &&
         rawPlaylistColors is! bool) {
@@ -498,6 +622,10 @@ class SettingsNotifier extends Notifier<AppSettings> {
       customTheme: syncedTheme,
       playlistArtworkColorsEnabled: syncedPlaylistColors,
       flowingLightEnabled: syncedFlowingLight,
+      lyricViewBlurDisabled: rawLyricBlurDisabled as bool?,
+      squareAlbumCoverEnabled: rawSquareCover as bool?,
+      lyricFontWeight: syncedLyricWeight,
+      lyricFontSize: syncedLyricSize,
     );
     await _prefs.setString(_kThemeModeKey, rawMode);
     await _prefs.setInt(_kThemeSeedKey, rawSeed);
@@ -506,6 +634,18 @@ class SettingsNotifier extends Notifier<AppSettings> {
     }
     if (syncedFlowingLight != null) {
       await _prefs.setBool(_kFlowingLightEnabledKey, syncedFlowingLight);
+    }
+    if (rawLyricBlurDisabled != null) {
+      await _prefs.setBool(_kLyricViewBlurDisabledKey, rawLyricBlurDisabled);
+    }
+    if (rawSquareCover != null) {
+      await _prefs.setBool(_kSquareAlbumCoverEnabledKey, rawSquareCover);
+    }
+    if (syncedLyricWeight != null) {
+      await _prefs.setDouble(_kLyricFontWeightKey, syncedLyricWeight);
+    }
+    if (syncedLyricSize != null) {
+      await _prefs.setDouble(_kLyricFontSizeKey, syncedLyricSize);
     }
     await _prefs.setBool(_kUseDynamicColorKey, rawDynamic);
     if (syncedTheme != null) {
