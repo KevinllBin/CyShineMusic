@@ -9,6 +9,7 @@ import 'player_controller.dart';
 import 'widgets/album_cluster.dart';
 import 'widgets/immersive_background.dart';
 import 'widgets/lyrics_panel.dart';
+import 'widgets/player_layout.dart';
 import 'widgets/top_chrome_row.dart';
 import 'widgets/transport_bar.dart';
 
@@ -218,7 +219,12 @@ class _NowPlayingBodyState extends ConsumerState<_NowPlayingBody> {
     if (carPadModeEnabled) {
       return Padding(
         key: const ValueKey('player-wide-layout'),
-        padding: const EdgeInsets.fromLTRB(32, 8, 32, 18),
+        padding: const EdgeInsets.fromLTRB(
+          playerWideOuterInset,
+          8,
+          playerWideOuterInset,
+          18,
+        ),
         child: Row(
           children: [
             Expanded(
@@ -233,13 +239,15 @@ class _NowPlayingBodyState extends ConsumerState<_NowPlayingBody> {
                   ),
                   const SizedBox(height: 4),
                   ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 560),
+                    constraints: const BoxConstraints(
+                      maxWidth: playerWideTransportMaxWidth,
+                    ),
                     child: const TransportBar(),
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 24),
+            const SizedBox(width: playerWideColumnGap),
             const Expanded(
               flex: 11,
               child: KeyedSubtree(
@@ -252,14 +260,16 @@ class _NowPlayingBodyState extends ConsumerState<_NowPlayingBody> {
       );
     }
 
-    // Phone layouts keep the swipe gesture between album and lyrics.
-    // Horizontal padding is split 8 (here) + 16 (inside each pager page /
-    // the transport bar) instead of a flat 24: the lyrics rows carry the
-    // inner 16 themselves (_kLyricBlurBleedInset) so their blur halos are
-    // no longer sliced by the pager and viewport clips, which all sit at
-    // this Padding's inner edge. Glyph positions are identical.
+    // Keep the lyrics' horizontal inset inside each row so their blur halos
+    // have room before reaching the pager clips. Text starts at the same
+    // position as the progress track, including the slider's own inset.
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 14),
+      padding: const EdgeInsets.fromLTRB(
+        playerCompactOuterInset,
+        4,
+        playerCompactOuterInset,
+        14,
+      ),
       child: Column(
         children: [
           Expanded(
@@ -289,7 +299,9 @@ class _NowPlayingBodyState extends ConsumerState<_NowPlayingBody> {
                         key: const ValueKey('player-compact-album-clip'),
                         clipBehavior: Clip.hardEdge,
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: playerContentInset,
+                          ),
                           child: AlbumPage(onOpenLyrics: _openLyricsPage),
                         ),
                       ),
@@ -298,6 +310,8 @@ class _NowPlayingBodyState extends ConsumerState<_NowPlayingBody> {
                         clipBehavior: Clip.hardEdge,
                         child: LyricsPanel(
                           edgeFadeEnabled: !_compactPagerMoving,
+                          horizontalPadding:
+                              playerContentInset + playerProgressTrackInset,
                         ),
                       ),
                     ],
@@ -307,7 +321,7 @@ class _NowPlayingBodyState extends ConsumerState<_NowPlayingBody> {
             ),
           ),
           const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
+            padding: EdgeInsets.symmetric(horizontal: playerContentInset),
             child: TransportBar(),
           ),
         ],

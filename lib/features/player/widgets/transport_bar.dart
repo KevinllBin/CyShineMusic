@@ -7,6 +7,7 @@ import '../player_controller.dart';
 import 'playback_queue_sheet.dart';
 import 'player_palette.dart';
 import 'player_control_color.dart';
+import 'player_layout.dart';
 import 'player_slider_thumb_shape.dart';
 
 class TransportBar extends ConsumerStatefulWidget {
@@ -90,47 +91,55 @@ class _TransportBarState extends ConsumerState<TransportBar> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                child: Slider(
-                  key: ValueKey(vm.trackId),
-                  value: shownMs,
-                  max: maxMs.toDouble(),
-                  label: _formatDuration(
-                    Duration(milliseconds: shownMs.round()),
-                  ),
-                  semanticFormatterCallback: (value) =>
-                      _formatDuration(Duration(milliseconds: value.round())),
-                  onChangeStart: canControl
-                      ? (value) => setState(() {
-                          _interactionToken = Object();
-                          _dragMs = value;
-                        })
-                      : null,
-                  onChanged: canControl
-                      ? (value) => setState(() => _dragMs = value)
-                      : null,
-                  onChangeEnd: canControl
-                      ? (value) async {
-                          final token = _interactionToken;
-                          try {
-                            await controller.seek(
-                              Duration(milliseconds: value.round()),
-                            );
-                          } finally {
-                            // 旧 seek 结束不能清掉换曲或后一次拖动的状态。
-                            if (mounted &&
-                                identical(_interactionToken, token)) {
-                              setState(() {
-                                _dragMs = null;
-                                _interactionToken = null;
-                              });
+                child: SizedBox(
+                  height: 28,
+                  child: Slider(
+                    key: ValueKey(vm.trackId),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: playerProgressTrackInset,
+                    ),
+                    value: shownMs,
+                    max: maxMs.toDouble(),
+                    label: _formatDuration(
+                      Duration(milliseconds: shownMs.round()),
+                    ),
+                    semanticFormatterCallback: (value) =>
+                        _formatDuration(Duration(milliseconds: value.round())),
+                    onChangeStart: canControl
+                        ? (value) => setState(() {
+                            _interactionToken = Object();
+                            _dragMs = value;
+                          })
+                        : null,
+                    onChanged: canControl
+                        ? (value) => setState(() => _dragMs = value)
+                        : null,
+                    onChangeEnd: canControl
+                        ? (value) async {
+                            final token = _interactionToken;
+                            try {
+                              await controller.seek(
+                                Duration(milliseconds: value.round()),
+                              );
+                            } finally {
+                              // 旧 seek 结束不能清掉换曲或后一次拖动的状态。
+                              if (mounted &&
+                                  identical(_interactionToken, token)) {
+                                setState(() {
+                                  _dragMs = null;
+                                  _interactionToken = null;
+                                });
+                              }
                             }
                           }
-                        }
-                      : null,
+                        : null,
+                  ),
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: playerProgressTrackInset,
+                ),
                 child: Row(
                   children: [
                     Text(

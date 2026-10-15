@@ -8,6 +8,7 @@ import '../../../core/storage/settings_store.dart';
 import '../../../theme/app_motion.dart';
 import '../lyric_parser.dart';
 import '../player_controller.dart';
+import 'player_layout.dart';
 
 /// Blur applied directly to the previous and next lyric text. Increase this
 /// value for a stronger effect; the active line always stays sharp.
@@ -66,7 +67,7 @@ class MiniLyricsPanel extends ConsumerWidget {
               height: 84,
               child: Padding(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 14 - _miniLyricBlurBleed,
+                  horizontal: playerProgressTrackInset - _miniLyricBlurBleed,
                   vertical: 9 - _miniLyricBlurBleed,
                 ),
                 child: SizedBox(

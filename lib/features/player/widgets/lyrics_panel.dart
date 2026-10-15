@@ -4,13 +4,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../theme/app_motion.dart';
 import '../player_controller.dart';
 import 'karaoke_lyrics_view.dart';
+import 'player_layout.dart';
 import 'player_palette.dart';
 import 'track_change_switcher.dart';
 
 class LyricsPanel extends ConsumerStatefulWidget {
-  const LyricsPanel({super.key, this.edgeFadeEnabled = true});
+  const LyricsPanel({
+    super.key,
+    this.edgeFadeEnabled = true,
+    this.horizontalPadding = playerContentInset,
+  });
 
   final bool edgeFadeEnabled;
+  final double horizontalPadding;
 
   @override
   ConsumerState<LyricsPanel> createState() => _LyricsPanelState();
@@ -70,10 +76,12 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
               lyrics: vm.lyrics,
               showTranslation: hasExtraLyrics && _showTranslation,
               edgeFadeEnabled: widget.edgeFadeEnabled,
+              horizontalPadding: widget.horizontalPadding,
             ),
           ),
           if (hasExtraLyrics)
             _LyricsTranslationToggle(
+              horizontalPadding: widget.horizontalPadding,
               showTranslation: _showTranslation,
               hasTranslation: hasTranslation,
               hasRoman: hasRoman,
@@ -96,6 +104,7 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
 
 class _LyricsTranslationToggle extends StatelessWidget {
   const _LyricsTranslationToggle({
+    required this.horizontalPadding,
     required this.showTranslation,
     required this.hasTranslation,
     required this.hasRoman,
@@ -103,6 +112,7 @@ class _LyricsTranslationToggle extends StatelessWidget {
   });
 
   final bool showTranslation;
+  final double horizontalPadding;
   final bool hasTranslation;
   final bool hasRoman;
   final VoidCallback onTap;
@@ -132,10 +142,7 @@ class _LyricsTranslationToggle extends StatelessWidget {
     final buttonText = _buttonText;
     final tooltipMessage = _tooltipMessage;
     return Padding(
-      // Horizontal 16 mirrors the lyric rows' blur-bleed inset: the page
-      // keeps 16px less outer padding, so this restores the toggle's
-      // original on-screen position.
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+      padding: EdgeInsets.fromLTRB(horizontalPadding, 4, horizontalPadding, 10),
       child: Align(
         alignment: Alignment.centerRight,
         child: Tooltip(

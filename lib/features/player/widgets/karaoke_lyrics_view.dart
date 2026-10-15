@@ -10,6 +10,7 @@ import '../../../theme/app_motion.dart';
 import '../lyric_parser.dart';
 import '../player_controller.dart';
 import 'lyric_line.dart';
+import 'player_layout.dart';
 
 const double _kLyricScrollAnchor = 0.42;
 const double _kLyricScrollStiffness = 210;
@@ -19,10 +20,8 @@ const double _kLyricEdgeFadeExtent = 48;
 // Every ancestor clip (list viewport, compact pager ClipRect, PageView) sits
 // flush against the panel edge; a blur halo extends ~3*sigma (~11px at the
 // deepest 3.65 sigma) past the glyphs, so without this inset the halo is
-// sliced into a hard vertical seam at the first/last glyph. The page layout
-// hands this same amount back (player_page keeps 16px less outer padding for
-// the compact pager), so glyph positions on screen are unchanged.
-const double _kLyricBlurBleedInset = 16;
+// sliced into a hard vertical seam at the first/last glyph. Keep the padding
+// inside each row so the panel and pager clips leave room for the blur.
 const Duration _kLyricLineLayoutDuration = Duration(milliseconds: 380);
 const Duration _kLyricBlurRestoreDelay = Duration(seconds: 3);
 
@@ -32,11 +31,13 @@ class KaraokeLyricsView extends ConsumerStatefulWidget {
     required this.lyrics,
     required this.showTranslation,
     this.edgeFadeEnabled = true,
+    this.horizontalPadding = playerContentInset,
   });
 
   final KaraokeLyrics lyrics;
   final bool showTranslation;
   final bool edgeFadeEnabled;
+  final double horizontalPadding;
 
   @override
   ConsumerState<KaraokeLyricsView> createState() => _KaraokeLyricsViewState();
@@ -695,8 +696,8 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
             shiftPx: _lyricStaggerShiftPx,
             visibleStartIndex: _lyricStaggerVisibleStartIndex,
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: _kLyricBlurBleedInset,
+              padding: EdgeInsets.symmetric(
+                horizontal: widget.horizontalPadding,
               ),
               child: LyricLineTile(
                 line: line,
