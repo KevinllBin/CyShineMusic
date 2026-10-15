@@ -156,9 +156,13 @@ class _NowPlayingBodyState extends ConsumerState<_NowPlayingBody> {
 
   bool _handleCompactPagerScroll(ScrollNotification notification) {
     if (notification.depth != 0) return false;
-    if (notification is ScrollStartNotification &&
-        notification.dragDetails == null) {
-      _setCompactPagerScrolling(true);
+    if (notification is ScrollStartNotification) {
+      // Shared artwork lives above the pager, so return it before scrolling
+      // to let the page's movement and clipping apply immediately.
+      PlayerTransitionScope.maybeOf(context)?.cancelCoverFlight();
+      if (notification.dragDetails == null) {
+        _setCompactPagerScrolling(true);
+      }
     } else if (notification is ScrollEndNotification) {
       _setCompactPagerScrolling(false);
     }
@@ -197,6 +201,7 @@ class _NowPlayingBodyState extends ConsumerState<_NowPlayingBody> {
 
   void _setCompactPagerHorizontalDrag(bool value) {
     if (_compactPagerHorizontalDrag == value) return;
+    if (value) PlayerTransitionScope.maybeOf(context)?.cancelCoverFlight();
     final wasMoving = _compactPagerMoving;
     _compactPagerHorizontalDrag = value;
     if (wasMoving != _compactPagerMoving) setState(() {});

@@ -173,6 +173,13 @@ class PlayerTransition extends ChangeNotifier {
       ? PlayerMotion.cover(miniCover!, fullCover!, progress.value)
       : null;
 
+  /// Hand artwork back to the pager when it interrupts the reveal animation.
+  void cancelCoverFlight() {
+    if (fullCover == null) return;
+    fullCover = null;
+    notifyListeners();
+  }
+
   void capture({bool refreshSource = false}) {
     final root = rootKey.currentContext?.findRenderObject();
     final page = pageKey.currentContext?.findRenderObject();
