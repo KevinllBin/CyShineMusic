@@ -1,9 +1,49 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/storage/settings_store.dart';
+import '../../../core/ui/app_overlays.dart';
 import '../../../theme/app_motion.dart';
 import '../../../theme/app_theme.dart';
 import '../../../theme/color_style.dart';
+import '../../../theme/dynamic_color_status.dart';
 import 'settings_style.dart';
+
+Future<void> showColorStyleSheet(BuildContext context) =>
+    showAppBottomSheet<void>(
+      context: context,
+      useRootNavigator: true,
+      useSafeArea: true,
+      isScrollControlled: true,
+      showDragHandle: true,
+      constraints: const BoxConstraints(maxWidth: 560),
+      builder: (context) => Consumer(
+        builder: (context, ref, _) {
+          final settings = ref.watch(settingsProvider);
+          final dynamicColor = ref.watch(dynamicColorStatusProvider);
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('切换配色风格', style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 20),
+                ColorStyleRow(
+                  value: settings.colorStyle,
+                  seed: settings.themeSeed,
+                  enabled:
+                      settings.customTheme.enabled ||
+                      !(settings.useDynamicColor && dynamicColor.available),
+                  onPick: (style) =>
+                      ref.read(settingsProvider.notifier).setColorStyle(style),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
 
 typedef _PreviewKey = ({int seed, Brightness brightness, AppColorStyle style});
 

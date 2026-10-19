@@ -1,8 +1,10 @@
+import '../../../core/ui/app_controls.dart';
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_theme.dart';
 import '../../../theme/color_style.dart';
 import '../../../theme/custom_theme.dart';
+import '../../../core/ui/app_overlays.dart';
 import 'color_picker_sheet.dart';
 
 Future<CustomTheme?> showCustomThemeSheet(
@@ -18,19 +20,25 @@ Future<CustomTheme?> showCustomThemeSheet(
   final dark =
       app?.darkTheme?.extension<AppThemeBase>()?.scheme ??
       AppTheme.schemeFor(seed, Brightness.dark, style);
+  final glass = liquidGlassEnabledOf(context);
   return showModalBottomSheet<CustomTheme>(
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,
-    showDragHandle: true,
+    showDragHandle: !glass,
+    backgroundColor: glass ? Colors.transparent : null,
     builder: (_) => FractionallySizedBox(
       heightFactor: 0.9,
-      child: _CustomThemeSheet(
-        initial: initial,
-        brightness: Theme.of(context).brightness,
-        light: light,
-        dark: dark,
-        style: style,
+      child: AppSheetSurface(
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
+        grabber: true,
+        child: _CustomThemeSheet(
+          initial: initial,
+          brightness: Theme.of(context).brightness,
+          light: light,
+          dark: dark,
+          style: style,
+        ),
       ),
     ),
   );
@@ -131,7 +139,7 @@ class _CustomThemeSheetState extends State<_CustomThemeSheet> {
           children: [
             Text('自定义主题', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
-            SwitchListTile(
+            AppSwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('启用自定义配色'),
               subtitle: const Text('未设置的颜色跟随基础主题，文字默认自动匹配'),

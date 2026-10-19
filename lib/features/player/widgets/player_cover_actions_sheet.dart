@@ -1,3 +1,5 @@
+import '../../../core/ui/app_controls.dart';
+import '../../../core/ui/app_overlays.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -22,7 +24,7 @@ Future<void> showPlayerCoverActionsSheet(
 }) async {
   final music = ref.read(playerControllerProvider.notifier).currentMusic;
   final scheme = Theme.of(context).colorScheme;
-  final result = await showModalBottomSheet<_PlayerCoverResult>(
+  final result = await showAppBottomSheet<_PlayerCoverResult>(
     context: context,
     useRootNavigator: true,
     useSafeArea: true,
@@ -143,7 +145,7 @@ class _PlayerCoverActionsSheet extends ConsumerWidget {
         onTap: () => unawaited(
           ref.read(settingsProvider.notifier).setShowMiniLyrics(!miniLyrics),
         ),
-        trailing: Switch(
+        trailing: AppSwitch(
           key: const ValueKey('player-cover-action-mini-lyrics-switch'),
           value: miniLyrics,
           onChanged: (value) => unawaited(

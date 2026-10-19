@@ -1,10 +1,11 @@
+import '../../core/ui/app_overlays.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 
 Future<String?> showMusicSourceUrlDialog(BuildContext context) async {
   final disposed = Completer<void>();
-  final result = await showDialog<String>(
+  final result = await showAppDialog<String>(
     context: context,
     builder: (dialogContext) => _MusicSourceUrlDialog(
       onDisposed: () {
@@ -37,7 +38,7 @@ class _MusicSourceUrlDialogState extends State<_MusicSourceUrlDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return AppAlertDialog(
       icon: const Icon(Icons.link_rounded),
       title: const Text('从 URL 导入音源'),
       content: TextField(
@@ -72,9 +73,9 @@ class _MusicSourceUrlDialogState extends State<_MusicSourceUrlDialog> {
 }
 
 Future<bool> confirmThirdPartySourceRisk(BuildContext context) async {
-  return await showDialog<bool>(
+  return await showAppDialog<bool>(
         context: context,
-        builder: (dialogContext) => AlertDialog(
+        builder: (dialogContext) => AppAlertDialog(
           icon: const Icon(Icons.security_rounded),
           title: const Text('运行第三方音源'),
           content: const Text('音源脚本可以访问网络。请只导入来源可信、内容明确的脚本。'),

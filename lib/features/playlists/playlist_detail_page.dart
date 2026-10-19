@@ -1,3 +1,4 @@
+import '../../core/ui/app_overlays.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -970,9 +971,9 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
 
   Future<void> _confirmUnfavorite(LocalPlaylist playlist) async {
     if (_removingFavorite) return;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         icon: const Icon(Icons.heart_broken_rounded),
         title: const Text('取消收藏这个歌单？'),
         content: Text('“${playlist.name}”会从我的歌单移除，本地音乐文件和下载记录不会受到影响。'),
@@ -1042,9 +1043,9 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
       showAppToast(context, '请先选择要移出的歌曲', type: AppToastType.warning);
       return;
     }
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         icon: const Icon(Icons.playlist_remove_rounded),
         title: const Text('移出已选歌曲？'),
         content: Text('将从这个歌单移出 ${selected.length} 首歌曲，不会删除本地文件。'),

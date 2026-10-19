@@ -1,3 +1,5 @@
+import '../../../core/ui/app_controls.dart';
+import '../../../core/ui/app_overlays.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -12,7 +14,7 @@ Future<Color?> showColorPickerSheet(
   Widget Function(Color)? previewBuilder,
   bool allowAlpha = true,
 }) {
-  return showModalBottomSheet<Color>(
+  return showAppBottomSheet<Color>(
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,
@@ -272,7 +274,7 @@ class _LabeledSlider extends StatelessWidget {
                 overlayColor: activeColor.withValues(alpha: 0.12),
                 trackHeight: 6,
               ),
-              child: Slider(
+              child: AppSlider(
                 value: value,
                 min: min,
                 max: max,

@@ -101,7 +101,7 @@ class _StartupGateState extends ConsumerState<StartupGate> {
   }
 }
 
-class _StartupLoading extends StatelessWidget {
+class _StartupLoading extends ConsumerWidget {
   const _StartupLoading({
     super.key,
     required this.poem,
@@ -112,7 +112,7 @@ class _StartupLoading extends StatelessWidget {
   final String versionLabel;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final author = poem.author?.trim();
@@ -131,7 +131,7 @@ class _StartupLoading extends StatelessWidget {
                 const StartupLogo(size: 124),
                 const SizedBox(height: 28),
                 Text(
-                  '栖弦',
+                  ref.watch(appDisplayNameProvider),
                   style: theme.textTheme.headlineMedium?.copyWith(
                     color: scheme.onSurface,
                     fontWeight: FontWeight.w600,

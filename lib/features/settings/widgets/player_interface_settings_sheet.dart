@@ -1,3 +1,4 @@
+import '../../../core/ui/app_overlays.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,7 +7,7 @@ import 'lyric_settings_sheet.dart';
 import 'settings_action.dart';
 
 Future<void> showPlayerInterfaceSettingsSheet(BuildContext context) =>
-    showModalBottomSheet<void>(
+    showAppBottomSheet<void>(
       context: context,
       useRootNavigator: true,
       isScrollControlled: true,

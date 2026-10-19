@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:liquid_glass_easy/liquid_glass_easy.dart';
 
+import '../../../core/storage/settings_store.dart';
 import '../../../theme/app_motion.dart';
 import '../../player/player_controller.dart';
 import '../player_transition.dart';
 import 'toolbar_metrics.dart';
 
 /// Shared appearance for the original toolbar and the independent mini player.
-class ToolbarCapsule extends StatelessWidget {
+class ToolbarCapsule extends ConsumerWidget {
   const ToolbarCapsule({
     super.key,
     required this.scheme,
@@ -20,34 +22,48 @@ class ToolbarCapsule extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final transition = PlayerTransitionScope.maybeOf(context);
+    final liquidGlassEnabled = ref.watch(
+      settingsProvider.select((settings) => settings.liquidGlassEnabled),
+    );
     final surface = _ToolbarProgressBorder(
       color: scheme.primary.withValues(
         alpha: scheme.brightness == Brightness.light ? 0.72 : 0.86,
       ),
       child: RepaintBoundary(
-        child: AnimatedContainer(
-          duration: AppMotion.long,
-          curve: AppMotion.emphasized,
-          height: height,
-          decoration: BoxDecoration(
-            color: toolbarCapsuleColor(scheme),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: scheme.outlineVariant.withValues(alpha: 0.52),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: scheme.shadow.withValues(
-                  alpha: scheme.brightness == Brightness.light ? 0.08 : 0.18,
+        child: liquidGlassEnabled
+            ? LiquidGlassLens(
+                style: LiquidGlassTabBar.defaultStyle.copyWith(
+                  shape: LiquidGlassShape.roundedRectangle(
+                    cornerRadius: height / 2,
+                  ),
                 ),
-                blurRadius: 28,
-                offset: const Offset(0, 10),
+                child: SizedBox(height: height),
+              )
+            : AnimatedContainer(
+                duration: AppMotion.long,
+                curve: AppMotion.emphasized,
+                height: height,
+                decoration: BoxDecoration(
+                  color: toolbarCapsuleColor(scheme),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: scheme.outlineVariant.withValues(alpha: 0.52),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: scheme.shadow.withValues(
+                        alpha: scheme.brightness == Brightness.light
+                            ? 0.08
+                            : 0.18,
+                      ),
+                      blurRadius: 28,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
               ),
-            ],
-          ),
-        ),
       ),
     );
     Widget layers(double p) => Stack(

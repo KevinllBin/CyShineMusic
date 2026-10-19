@@ -1,3 +1,4 @@
+import '../../../core/ui/app_overlays.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -9,14 +10,12 @@ Future<void> showDiscoverySourceOrderSheet(
   required List<MusicSource> order,
   required Future<void> Function(List<MusicSource>) onChanged,
 }) {
-  return showModalBottomSheet<void>(
+  return showAppBottomSheet<void>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
-    builder: (context) => _DiscoverySourceOrderSheet(
-      initialOrder: order,
-      onChanged: onChanged,
-    ),
+    builder: (context) =>
+        _DiscoverySourceOrderSheet(initialOrder: order, onChanged: onChanged),
   );
 }
 
@@ -34,7 +33,8 @@ class _DiscoverySourceOrderSheet extends StatefulWidget {
       _DiscoverySourceOrderSheetState();
 }
 
-class _DiscoverySourceOrderSheetState extends State<_DiscoverySourceOrderSheet> {
+class _DiscoverySourceOrderSheetState
+    extends State<_DiscoverySourceOrderSheet> {
   late final List<MusicSource> _order = List<MusicSource>.of(
     widget.initialOrder,
   );
@@ -62,9 +62,9 @@ class _DiscoverySourceOrderSheetState extends State<_DiscoverySourceOrderSheet> 
             children: [
               Text(
                 '发现页平台顺序',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 12),
               Expanded(

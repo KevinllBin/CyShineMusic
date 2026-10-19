@@ -1,3 +1,4 @@
+import '../../core/ui/app_overlays.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -270,9 +271,9 @@ class _WebDavSyncPageState extends ConsumerState<WebDavSyncPage> {
 
   Future<void> _unlink() async {
     final confirmed =
-        await showDialog<bool>(
+        await showAppDialog<bool>(
           context: context,
-          builder: (dialogContext) => AlertDialog(
+          builder: (dialogContext) => AppAlertDialog(
             icon: const Icon(Icons.link_off_rounded),
             title: const Text('解除 WebDAV 连接？'),
             content: const Text('只会删除本机连接信息，云端同步文件会保留。'),
@@ -300,9 +301,9 @@ class _WebDavSyncPageState extends ConsumerState<WebDavSyncPage> {
   }
 
   Future<bool> _confirmInsecureConnection() async {
-    return await showDialog<bool>(
+    return await showAppDialog<bool>(
           context: context,
-          builder: (dialogContext) => AlertDialog(
+          builder: (dialogContext) => AppAlertDialog(
             icon: const Icon(Icons.warning_amber_rounded),
             title: const Text('连接未加密'),
             content: const Text('HTTP 会明文传输账号和同步数据，仅应在可信局域网中使用。'),
@@ -322,12 +323,12 @@ class _WebDavSyncPageState extends ConsumerState<WebDavSyncPage> {
   }
 
   Future<bool?> _chooseInitialDirection(WebDavLinkPreview preview) {
-    return showDialog<bool>(
+    return showAppDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => PopScope(
         canPop: false,
-        child: AlertDialog(
+        child: AppAlertDialog(
           icon: const Icon(Icons.cloud_sync_outlined),
           title: const Text('发现云端数据'),
           content: Text(

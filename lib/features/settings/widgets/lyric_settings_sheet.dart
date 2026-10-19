@@ -1,3 +1,5 @@
+import '../../../core/ui/app_controls.dart';
+import '../../../core/ui/app_overlays.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -13,7 +15,7 @@ Future<({double weight, double size})> showLyricSettingsSheet(
     weight: normalizeLyricFontWeight(weight),
     size: normalizeLyricFontSize(size),
   );
-  await showModalBottomSheet<void>(
+  await showAppBottomSheet<void>(
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,
@@ -505,7 +507,7 @@ class _StyleControlState extends State<_StyleControl> {
                   inactiveTickMarkColor: Colors.transparent,
                   showValueIndicator: ShowValueIndicator.never,
                 ),
-                child: Slider(
+                child: AppSlider(
                   value: widget.value,
                   min: widget.min,
                   max: widget.max,

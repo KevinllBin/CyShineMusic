@@ -1,3 +1,4 @@
+import '../../core/ui/app_overlays.dart';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -136,9 +137,9 @@ class _DownloadHistoryPageState extends ConsumerState<DownloadHistoryPage> {
   }
 
   Future<void> _confirmClear() async {
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         icon: const Icon(Icons.cleaning_services_outlined),
         title: const Text('清空下载记录？'),
         content: const Text('会清理已结束的队列项和应用内历史，不会删除已经保存的音乐文件。'),
@@ -168,9 +169,9 @@ class _DownloadHistoryPageState extends ConsumerState<DownloadHistoryPage> {
         path != null &&
         path.isNotEmpty &&
         File(path).existsSync();
-    final choice = await showDialog<_RemoveChoice>(
+    final choice = await showAppDialog<_RemoveChoice>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         icon: const Icon(Icons.delete_outline_rounded),
         title: const Text('删除下载记录？'),
         content: Text(

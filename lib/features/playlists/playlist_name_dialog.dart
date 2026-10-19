@@ -1,3 +1,4 @@
+import '../../core/ui/app_overlays.dart';
 import 'package:flutter/material.dart';
 
 Future<String?> showPlaylistNameDialog(
@@ -6,7 +7,7 @@ Future<String?> showPlaylistNameDialog(
   required String actionLabel,
   String initialValue = '',
 }) async {
-  final result = await showDialog<String>(
+  final result = await showAppDialog<String>(
     context: context,
     builder: (_) => _PlaylistNameDialog(
       title: title,
@@ -57,7 +58,7 @@ class _PlaylistNameDialogState extends State<_PlaylistNameDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return AppAlertDialog(
       icon: const Icon(Icons.queue_music_rounded),
       title: Text(widget.title),
       content: TextField(

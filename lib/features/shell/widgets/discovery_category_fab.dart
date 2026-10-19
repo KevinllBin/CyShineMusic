@@ -8,6 +8,7 @@ import '../../discovery/discovery_controller.dart';
 import '../../search/search_toolbar_state.dart';
 import '../shell_bottom_area.dart';
 import 'shell_fab_menu_action.dart';
+import 'liquid_glass_fab_menu.dart';
 import 'toolbar_metrics.dart';
 
 class DiscoveryCategoryFabLayer extends ConsumerStatefulWidget {
@@ -29,6 +30,9 @@ class _DiscoveryCategoryFabLayerState
 
   @override
   Widget build(BuildContext context) {
+    final glass = ref.watch(
+      settingsProvider.select((settings) => settings.liquidGlassEnabled),
+    );
     final bottomArea = ShellBottomArea.maybeOf(context);
     if ((bottomArea?.nativeNavigation == true ||
             bottomArea?.navigationMode == AppNavigationMode.dualCapsule) &&
@@ -77,51 +81,31 @@ class _DiscoveryCategoryFabLayerState
             ),
           ),
         SafeArea(
+          key: const ValueKey('discovery-category-controls'),
           top: false,
           child: Align(
             alignment: Alignment.bottomRight,
             child: Padding(
               padding: fabPadding,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  AnimatedSwitcher(
-                    duration: AppMotion.medium,
-                    switchInCurve: AppMotion.emphasizedDecelerate,
-                    switchOutCurve: AppMotion.emphasizedAccelerate,
-                    transitionBuilder: (child, animation) {
-                      final offset = Tween<Offset>(
-                        begin: const Offset(0, 0.14),
-                        end: Offset.zero,
-                      ).animate(animation);
-                      return FadeTransition(
-                        opacity: animation,
-                        child: SlideTransition(position: offset, child: child),
-                      );
-                    },
-                    child: _expanded
-                        ? Column(
-                            key: const ValueKey('discovery-category-menu-open'),
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              for (
-                                var index = 0;
-                                index < categories.length;
-                                index++
-                              ) ...[
-                                if (index > 0) const SizedBox(height: 10),
-                                ShellFabMenuAction(
-                                  key: ValueKey(
-                                    'discovery-category-${categories[index].id}',
-                                  ),
-                                  icon: categories[index].id == selected.id
-                                      ? Icons.check_rounded
-                                      : _categoryIcon(categories[index].label),
-                                  label: categories[index].label,
-                                  enabled: categories[index].id != selected.id,
-                                  onPressed: () {
+              child: glass
+                  ? LiquidGlassFabMenu(
+                      key: const ValueKey('discovery-category-fab'),
+                      label: selected.label,
+                      icon: Icons.filter_list_rounded,
+                      expanded: _expanded,
+                      onToggle: () => _setExpanded(!_expanded),
+                      actions: [
+                        for (final category in categories)
+                          LiquidGlassFabMenuAction(
+                            label: category.label,
+                            icon: category.id == selected.id
+                                ? Icons.check_rounded
+                                : _categoryIcon(category.label),
+                            selected: category.id == selected.id,
+                            onPressed: category.id == selected.id
+                                ? null
+                                : () {
+                                    _setExpanded(false);
                                     ref
                                             .read(
                                               selectedDiscoveryCategoryProvider(
@@ -129,41 +113,104 @@ class _DiscoveryCategoryFabLayerState
                                               ).notifier,
                                             )
                                             .state =
-                                        categories[index].id;
-                                    _setExpanded(false);
+                                        category.id;
                                   },
-                                ),
-                              ],
-                            ],
-                          )
-                        : const SizedBox.shrink(
-                            key: ValueKey('discovery-category-menu-closed'),
                           ),
-                  ),
-                  const SizedBox(height: 10),
-                  FloatingActionButton.extended(
-                    key: const ValueKey('discovery-category-fab'),
-                    heroTag: 'discovery-category-fab',
-                    tooltip: _expanded ? '收起分类菜单' : '切换歌单分类',
-                    elevation: 3,
-                    highlightElevation: 4,
-                    icon: AnimatedSwitcher(
-                      duration: AppMotion.short,
-                      child: Icon(
-                        _expanded
-                            ? Icons.close_rounded
-                            : Icons.filter_list_rounded,
-                        key: ValueKey(_expanded),
-                      ),
+                      ],
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        AnimatedSwitcher(
+                          duration: AppMotion.medium,
+                          switchInCurve: AppMotion.emphasizedDecelerate,
+                          switchOutCurve: AppMotion.emphasizedAccelerate,
+                          transitionBuilder: (child, animation) {
+                            final offset = Tween<Offset>(
+                              begin: const Offset(0, 0.14),
+                              end: Offset.zero,
+                            ).animate(animation);
+                            return FadeTransition(
+                              opacity: animation,
+                              child: SlideTransition(
+                                position: offset,
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: _expanded
+                              ? Column(
+                                  key: const ValueKey(
+                                    'discovery-category-menu-open',
+                                  ),
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    for (
+                                      var index = 0;
+                                      index < categories.length;
+                                      index++
+                                    ) ...[
+                                      if (index > 0) const SizedBox(height: 10),
+                                      ShellFabMenuAction(
+                                        key: ValueKey(
+                                          'discovery-category-${categories[index].id}',
+                                        ),
+                                        icon:
+                                            categories[index].id == selected.id
+                                            ? Icons.check_rounded
+                                            : _categoryIcon(
+                                                categories[index].label,
+                                              ),
+                                        label: categories[index].label,
+                                        enabled:
+                                            categories[index].id != selected.id,
+                                        onPressed: () {
+                                          ref
+                                              .read(
+                                                selectedDiscoveryCategoryProvider(
+                                                  source,
+                                                ).notifier,
+                                              )
+                                              .state = categories[index]
+                                              .id;
+                                          _setExpanded(false);
+                                        },
+                                      ),
+                                    ],
+                                  ],
+                                )
+                              : const SizedBox.shrink(
+                                  key: ValueKey(
+                                    'discovery-category-menu-closed',
+                                  ),
+                                ),
+                        ),
+                        const SizedBox(height: 10),
+                        FloatingActionButton.extended(
+                          key: const ValueKey('discovery-category-fab'),
+                          heroTag: 'discovery-category-fab',
+                          tooltip: _expanded ? '收起分类菜单' : '切换歌单分类',
+                          elevation: 3,
+                          highlightElevation: 4,
+                          icon: AnimatedSwitcher(
+                            duration: AppMotion.short,
+                            child: Icon(
+                              _expanded
+                                  ? Icons.close_rounded
+                                  : Icons.filter_list_rounded,
+                              key: ValueKey(_expanded),
+                            ),
+                          ),
+                          label: Text(
+                            selected.label,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          onPressed: () => _setExpanded(!_expanded),
+                        ),
+                      ],
                     ),
-                    label: Text(
-                      selected.label,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    onPressed: () => _setExpanded(!_expanded),
-                  ),
-                ],
-              ),
             ),
           ),
         ),

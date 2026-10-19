@@ -37,6 +37,7 @@ const String _kAutoPlayOnStartupKey = 'auto_play_on_startup';
 const String _kSkipStartupScreenKey = 'skip_startup_screen';
 const String _kUseNativeNavigationKey = 'use_native_navigation';
 const String _kNavigationModeKey = 'navigation_mode';
+const String _kLiquidGlassEnabledKey = 'liquid_glass_enabled';
 const String _kNetworkAdapterModeKey = 'network_adapter_mode';
 const String _kEnabledSearchSourcesKey = 'enabled_search_source_codes';
 const String _kDiscoverySourceOrderKey = 'discovery_source_order';
@@ -107,6 +108,7 @@ class AppSettings {
     this.autoPlayOnStartup = false,
     this.skipStartupScreen = false,
     required this.navigationMode,
+    this.liquidGlassEnabled = false,
     required this.networkAdapterMode,
     required this.enabledSearchSources,
     required this.discoverySourceOrder,
@@ -149,7 +151,13 @@ class AppSettings {
   final bool autoPlayOnStartup;
   final bool skipStartupScreen;
   final AppNavigationMode navigationMode;
-  bool get useNativeNavigation => navigationMode == AppNavigationMode.native;
+  final bool liquidGlassEnabled;
+
+  /// Glass fixes the layout without overwriting the user's non-glass choice.
+  AppNavigationMode get effectiveNavigationMode =>
+      liquidGlassEnabled ? AppNavigationMode.dualCapsule : navigationMode;
+  bool get useNativeNavigation =>
+      effectiveNavigationMode == AppNavigationMode.native;
   final NetworkAdapterMode networkAdapterMode;
   final Set<MusicSource> enabledSearchSources;
   final List<MusicSource> discoverySourceOrder;
@@ -186,6 +194,7 @@ class AppSettings {
     bool? autoPlayOnStartup,
     bool? skipStartupScreen,
     AppNavigationMode? navigationMode,
+    bool? liquidGlassEnabled,
     bool? useNativeNavigation,
     NetworkAdapterMode? networkAdapterMode,
     Set<MusicSource>? enabledSearchSources,
@@ -228,6 +237,7 @@ class AppSettings {
                   ? AppNavigationMode.native
                   : AppNavigationMode.singleCapsule)
             : this.navigationMode),
+    liquidGlassEnabled: liquidGlassEnabled ?? this.liquidGlassEnabled,
     networkAdapterMode: networkAdapterMode ?? this.networkAdapterMode,
     enabledSearchSources: enabledSearchSources ?? this.enabledSearchSources,
     discoverySourceOrder: discoverySourceOrder ?? this.discoverySourceOrder,
@@ -322,6 +332,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
       autoPlayOnStartup: _prefs.getBool(_kAutoPlayOnStartupKey) ?? false,
       skipStartupScreen: _prefs.getBool(_kSkipStartupScreenKey) ?? false,
       navigationMode: _decodeNavigationMode(_prefs),
+      liquidGlassEnabled: _prefs.getBool(_kLiquidGlassEnabledKey) ?? false,
       networkAdapterMode: NetworkAdapterPreference.current,
       enabledSearchSources: decodeEnabledSearchSources(
         _prefs.getStringList(_kEnabledSearchSourcesKey),
@@ -502,6 +513,11 @@ class SettingsNotifier extends Notifier<AppSettings> {
   Future<void> setSkipStartupScreen(bool value) async {
     await _prefs.setBool(_kSkipStartupScreenKey, value);
     state = state.copyWith(skipStartupScreen: value);
+  }
+
+  Future<void> setLiquidGlassEnabled(bool value) async {
+    await _prefs.setBool(_kLiquidGlassEnabledKey, value);
+    state = state.copyWith(liquidGlassEnabled: value);
   }
 
   Future<void> setNavigationMode(AppNavigationMode mode) async {

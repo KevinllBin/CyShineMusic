@@ -407,26 +407,42 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> play() async {
+    _logTransport(
+      'play',
+      reason: _trackTransitionActive ? 'ignored_track_transition' : null,
+    );
     if (_trackTransitionActive) return;
     final pauseGeneration = _pauseGeneration;
-    _logTransport('play');
-    if (_player.processingState == BassProcessingState.completed) {
-      await _player.seek(Duration.zero);
+    try {
+      if (_player.processingState == BassProcessingState.completed) {
+        await _player.seek(Duration.zero);
+      }
+      if (!_audioSessionConfigured) {
+        await setAllowMixWithOthers(_allowMixWithOthers);
+      }
+      if (shouldActivatePlayerAudioSession(
+        allowMixWithOthers: _allowMixWithOthers,
+        isAndroid: Platform.isAndroid,
+      )) {
+        unawaited(AppLogger.write('audio-session', 'activate requested'));
+        final session = await AudioSession.instance;
+        final granted = await session.setActive(true);
+        unawaited(
+          AppLogger.write('audio-session', 'activate granted=$granted'),
+        );
+        if (!granted) return;
+      }
+      if (pauseGeneration != _pauseGeneration) {
+        _logTransport('play_cancelled', reason: 'pause_during_activation');
+        return;
+      }
+      _logTransport('play_engine_request');
+      await _player.play();
+      _logTransport('play_result');
+    } catch (error) {
+      await AppLogger.write('player-error', 'transport_play_failed: $error');
+      rethrow;
     }
-    if (!_audioSessionConfigured) {
-      await setAllowMixWithOthers(_allowMixWithOthers);
-    }
-    if (shouldActivatePlayerAudioSession(
-      allowMixWithOthers: _allowMixWithOthers,
-      isAndroid: Platform.isAndroid,
-    )) {
-      final session = await AudioSession.instance;
-      final granted = await session.setActive(true);
-      unawaited(AppLogger.write('audio-session', 'activate granted=$granted'));
-      if (!granted) return;
-    }
-    if (pauseGeneration != _pauseGeneration) return;
-    await _player.play();
   }
 
   @override
@@ -479,11 +495,13 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> skipToPrevious() async {
+    _logTransport('skip_previous');
     await _onPrevious?.call();
   }
 
   @override
   Future<void> skipToNext() async {
+    _logTransport('skip_next');
     await _onNext?.call();
   }
 
@@ -596,7 +614,12 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     final controls = hasItem
         ? <MediaControl>[
             MediaControl.skipToPrevious,
-            if (_player.playing) MediaControl.pause else MediaControl.play,
+            // Use the standard toggle key for notification PendingIntents.
+            // Separate play/pause actions use audio_service's bypass keycodes,
+            // which may be filtered by vendor media controls.
+            (_player.playing ? MediaControl.pause : MediaControl.play).copyWith(
+              action: MediaAction.playPause,
+            ),
             MediaControl.skipToNext,
           ]
         : const <MediaControl>[];
@@ -640,6 +663,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         'player-transport',
         'action=$action state=${_player.processingState.name} '
             'reason=${reason ?? 'transport_callback'} '
+            'transition=$_trackTransitionActive '
+            'sessionState=${playbackState.value.processingState.name} '
+            'sessionPlaying=${playbackState.value.playing} '
             'lifecycle=${WidgetsBinding.instance.lifecycleState?.name ?? 'unknown'} '
             'playing=${_player.playing} positionMs=${_player.position.inMilliseconds} '
             'targetMs=${target?.inMilliseconds ?? -1} '

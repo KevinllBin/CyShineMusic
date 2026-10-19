@@ -1,3 +1,4 @@
+import '../../core/ui/app_overlays.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -149,9 +150,9 @@ class _MusicSourcePageState extends ConsumerState<MusicSourcePage> {
       if (settings.useBuiltInSourceFilePicker && browser.isSupported) {
         if (!await PermissionService.ensureScriptFileRead()) {
           if (!mounted) return;
-          await showDialog<void>(
+          await showAppDialog<void>(
             context: context,
-            builder: (context) => AlertDialog(
+            builder: (context) => AppAlertDialog(
               title: const Text('需要存储访问权限'),
               content: const Text(
                 '内置文件选择器需要存储权限才能读取 JS 脚本。'
@@ -319,9 +320,9 @@ class _MusicSourcePageState extends ConsumerState<MusicSourcePage> {
   }
 
   Future<void> _delete(MusicSourceRecord record) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         title: const Text('删除音源'),
         content: Text('确定删除「${record.name}」吗？'),
         actions: [

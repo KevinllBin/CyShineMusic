@@ -1,3 +1,5 @@
+import '../../core/ui/app_controls.dart';
+import '../../core/ui/app_overlays.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -108,7 +110,7 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
                                 ],
                               ),
                             ),
-                            Switch(
+                            AppSwitch(
                               value: settings.enabled,
                               onChanged: notifier.setEnabled,
                             ),
@@ -367,7 +369,7 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
         .toDouble();
     var q = initial.q.clamp(equalizerMinQ, equalizerMaxQ).toDouble();
 
-    return showModalBottomSheet<_BandEditorResult>(
+    return showAppBottomSheet<_BandEditorResult>(
       context: context,
       useRootNavigator: true,
       isScrollControlled: true,
@@ -434,7 +436,7 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
                             ),
                             borderRadius: BorderRadius.circular(16),
                           ),
-                          child: SwitchListTile(
+                          child: AppSwitchListTile(
                             contentPadding: const EdgeInsets.symmetric(
                               horizontal: 16,
                               vertical: 2,
@@ -638,10 +640,10 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
 
   Future<void> _reset() async {
     final confirmed = await _withHiddenToolbar(
-      () => showDialog<bool>(
+      () => showAppDialog<bool>(
         context: context,
         useRootNavigator: true,
-        builder: (dialogContext) => AlertDialog(
+        builder: (dialogContext) => AppAlertDialog(
           title: const Text('恢复默认均衡器？'),
           content: const Text('这会关闭均衡器，并恢复原声配置。'),
           actions: [
@@ -751,7 +753,7 @@ class _GainSlider extends StatelessWidget {
                 trackHeight: 4,
                 thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
               ),
-              child: Slider(
+              child: AppSlider(
                 value: value,
                 min: equalizerMinGainDb,
                 max: equalizerMaxGainDb,
@@ -856,7 +858,7 @@ class _BandSlider extends StatelessWidget {
                       enabledThumbRadius: 6,
                     ),
                   ),
-                  child: Slider(
+                  child: AppSlider(
                     value: band.filter.usesGain
                         ? band.gainDb.clamp(
                             equalizerMinGainDb,
@@ -995,7 +997,7 @@ class _EditorSlider extends StatelessWidget {
               trackHeight: 4,
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
             ),
-            child: Slider(
+            child: AppSlider(
               value: value.clamp(min, max),
               min: min,
               max: max,

@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
+  liquid_glass_easy: 5.0.0
 
   flutter_riverpod: ^2.5.1
   dio: ^5.7.0

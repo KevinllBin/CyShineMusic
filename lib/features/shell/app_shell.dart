@@ -456,7 +456,7 @@ class _AppShellState extends ConsumerState<AppShell>
     // While a player pull owns the toolbar reveal, scrolling must not fight it.
     if (_pullActive ||
         _settleTarget == 0 ||
-        ref.read(settingsProvider).navigationMode !=
+        ref.read(settingsProvider).effectiveNavigationMode !=
             AppNavigationMode.singleCapsule) {
       return false;
     }
@@ -589,7 +589,7 @@ class _AppShellState extends ConsumerState<AppShell>
     final toolbarTravelExtent = _bottomToolbarTravelExtent(context);
     _toolbarTravelExtent = toolbarTravelExtent;
     final navigationMode = ref.watch(
-      settingsProvider.select((settings) => settings.navigationMode),
+      settingsProvider.select((settings) => settings.effectiveNavigationMode),
     );
     final showPlayerBar =
         navigationMode != AppNavigationMode.singleCapsule &&
@@ -630,7 +630,7 @@ class _AppShellState extends ConsumerState<AppShell>
         : 0.0;
 
     ref.listen<AppNavigationMode>(
-      settingsProvider.select((settings) => settings.navigationMode),
+      settingsProvider.select((settings) => settings.effectiveNavigationMode),
       (previous, next) {
         _toolbarScrollSequenceActive = false;
         _lastToolbarScrollDelta = 0;

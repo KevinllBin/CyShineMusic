@@ -6,6 +6,7 @@ import '../../../theme/app_motion.dart';
 import '../../songs/songs_toolbar_state.dart';
 import '../shell_route_utils.dart';
 import 'library_view_menu.dart';
+import 'songs_overflow_menu.dart';
 
 class ShellHeader extends ConsumerWidget {
   const ShellHeader({
@@ -274,7 +275,7 @@ class SongsHeader extends StatelessWidget {
               ],
             ),
           ),
-          _LibraryOverflowMenu(
+          SongsOverflowMenu(
             onOpenHistory: state.onOpenHistory,
             searchLabel: state.searchLabel,
             onSearch: state.onSearch,
@@ -307,85 +308,6 @@ class _SongsHeaderIconButton extends StatelessWidget {
         onPressed: onPressed,
         icon: Icon(icon, size: 20),
         visualDensity: VisualDensity.compact,
-      ),
-    );
-  }
-}
-
-class _LibraryOverflowMenu extends StatelessWidget {
-  const _LibraryOverflowMenu({
-    this.onOpenHistory,
-    this.searchLabel = '搜索本地歌曲',
-    this.onSearch,
-    this.onUpdatePlaylist,
-    this.updatingPlaylist = false,
-  });
-
-  final VoidCallback? onOpenHistory;
-  final String searchLabel;
-  final VoidCallback? onSearch;
-  final VoidCallback? onUpdatePlaylist;
-  final bool updatingPlaylist;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return MenuAnchor(
-      key: const ValueKey('songs-overflow-menu'),
-      useRootOverlay: true,
-      style: MenuStyle(
-        backgroundColor: WidgetStatePropertyAll(scheme.surfaceContainerHigh),
-        surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
-        elevation: const WidgetStatePropertyAll(3),
-        padding: const WidgetStatePropertyAll(
-          EdgeInsets.symmetric(vertical: 6),
-        ),
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      ),
-      menuChildren: [
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.search_rounded, size: 20),
-          onPressed: onSearch == null
-              ? null
-              : () {
-                  FocusManager.instance.primaryFocus?.unfocus();
-                  onSearch!();
-                },
-          child: Text(searchLabel),
-        ),
-        if (onUpdatePlaylist != null)
-          MenuItemButton(
-            leadingIcon: updatingPlaylist
-                ? const SizedBox.square(
-                    dimension: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2.2),
-                  )
-                : const Icon(Icons.refresh_rounded, size: 20),
-            onPressed: updatingPlaylist ? null : onUpdatePlaylist,
-            child: Text(updatingPlaylist ? '正在更新' : '更新歌单'),
-          ),
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.history_rounded, size: 20),
-          onPressed: onOpenHistory ?? () => context.go('/downloads'),
-          child: const Text('下载历史'),
-        ),
-      ],
-      builder: (context, controller, child) => SizedBox.square(
-        dimension: 44,
-        child: IconButton(
-          tooltip: '更多歌曲操作',
-          onPressed: () {
-            if (controller.isOpen) {
-              controller.close();
-            } else {
-              controller.open();
-            }
-          },
-          icon: const Icon(Icons.more_vert_rounded, size: 21),
-          visualDensity: VisualDensity.compact,
-        ),
       ),
     );
   }

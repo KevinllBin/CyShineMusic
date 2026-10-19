@@ -1,3 +1,4 @@
+import '../../core/ui/app_overlays.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -86,10 +87,10 @@ Future<void> _showUpdateDialog(
   required String currentVersion,
   required AppRelease release,
 }) async {
-  final shouldOpen = await showDialog<bool>(
+  final shouldOpen = await showAppDialog<bool>(
     context: context,
     useRootNavigator: true,
-    builder: (dialogContext) => AlertDialog(
+    builder: (dialogContext) => AppAlertDialog(
       key: const ValueKey('app-update-dialog'),
       icon: const Icon(Icons.system_update_alt_rounded, size: 36),
       title: const Text('发现新版本'),

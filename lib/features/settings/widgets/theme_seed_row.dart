@@ -1,3 +1,4 @@
+import '../../../core/ui/app_controls.dart';
 import 'package:flutter/material.dart';
 
 import 'seed_swatch_row.dart';
@@ -152,7 +153,7 @@ class DynamicColorRow extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 12),
-        Switch(value: value, onChanged: onChanged),
+        AppSwitch(value: value, onChanged: onChanged),
       ],
     );
   }

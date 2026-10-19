@@ -1,3 +1,4 @@
+import '../../../core/ui/app_overlays.dart';
 import 'package:flutter/material.dart';
 
 import '../songs_toolbar_state.dart';
@@ -9,7 +10,7 @@ Future<void> showSongsSortSheet({
   required void Function(SongSortMode mode, bool ascending) onChanged,
 }) {
   final scheme = Theme.of(context).colorScheme;
-  return showModalBottomSheet<void>(
+  return showAppBottomSheet<void>(
     context: context,
     useRootNavigator: true,
     useSafeArea: true,

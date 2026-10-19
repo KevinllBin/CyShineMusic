@@ -6,6 +6,7 @@ import '../../../theme/app_motion.dart';
 import '../../search/search_toolbar_state.dart';
 import '../shell_bottom_area.dart';
 import 'shell_fab_menu_action.dart';
+import 'liquid_glass_fab_menu.dart';
 import 'toolbar_metrics.dart';
 
 class SearchPagingFabLayer extends ConsumerStatefulWidget {
@@ -70,6 +71,7 @@ class _SearchPagingFabLayerState extends ConsumerState<SearchPagingFabLayer> {
             ),
           ),
         SafeArea(
+          key: const ValueKey('search-paging-controls'),
           top: false,
           child: Align(
             alignment: Alignment.bottomRight,
@@ -90,7 +92,7 @@ class _SearchPagingFabLayerState extends ConsumerState<SearchPagingFabLayer> {
   }
 }
 
-class _SearchPagingFabMenu extends StatelessWidget {
+class _SearchPagingFabMenu extends ConsumerWidget {
   const _SearchPagingFabMenu({
     required this.state,
     required this.expanded,
@@ -106,8 +108,33 @@ class _SearchPagingFabMenu extends StatelessWidget {
   final VoidCallback onNext;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final glass = ref.watch(
+      settingsProvider.select((settings) => settings.liquidGlassEnabled),
+    );
+    if (glass) {
+      return LiquidGlassFabMenu(
+        key: const ValueKey('search-paging-fab'),
+        label: '第 ${state.page} 页',
+        icon: Icons.keyboard_arrow_up_rounded,
+        loading: state.loading,
+        expanded: expanded,
+        onToggle: onToggle,
+        actions: [
+          LiquidGlassFabMenuAction(
+            icon: Icons.chevron_left_rounded,
+            label: '上一页',
+            onPressed: !state.loading && state.canPrev ? onPrev : null,
+          ),
+          LiquidGlassFabMenuAction(
+            icon: Icons.chevron_right_rounded,
+            label: '下一页',
+            onPressed: !state.loading && state.canNext ? onNext : null,
+          ),
+        ],
+      );
+    }
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,

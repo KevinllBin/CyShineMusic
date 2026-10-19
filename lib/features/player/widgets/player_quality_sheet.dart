@@ -1,3 +1,4 @@
+import '../../../core/ui/app_overlays.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -42,7 +43,7 @@ Future<void> showPlaybackQualitySheet(
   if (track.isLocal || options.length < 2) return;
   final controller = ref.read(playerControllerProvider.notifier);
   final scheme = Theme.of(context).colorScheme;
-  final selected = await showModalBottomSheet<Quality>(
+  final selected = await showAppBottomSheet<Quality>(
     context: context,
     useRootNavigator: true,
     useSafeArea: true,

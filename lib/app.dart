@@ -1,3 +1,4 @@
+import 'core/ui/app_overlays.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -12,6 +13,7 @@ import 'package:dynamic_color/dynamic_color.dart';
 import 'package:material_color_utilities/material_color_utilities.dart';
 
 import 'core/services/app_logger.dart';
+import 'core/app_info.dart';
 import 'core/services/permission_service.dart';
 import 'core/storage/settings_store.dart';
 import 'core/sync/webdav_sync_controller.dart';
@@ -207,10 +209,10 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
   }
 
   Future<bool> _showPermissionDialog(BuildContext context) async {
-    return await showDialog<bool>(
+    return await showAppDialog<bool>(
           context: context,
           barrierDismissible: false,
-          builder: (ctx) => AlertDialog(
+          builder: (ctx) => AppAlertDialog(
             icon: const Icon(Icons.folder_shared_outlined, size: 36),
             title: const Text('需要存储权限'),
             content: const Text(
@@ -336,7 +338,7 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
             );
 
             return MaterialApp.router(
-              title: '栖弦',
+              title: ref.watch(appDisplayNameProvider),
               debugShowCheckedModeBanner: false,
               themeAnimationDuration: AppMotion.long,
               themeAnimationCurve: AppMotion.emphasized,

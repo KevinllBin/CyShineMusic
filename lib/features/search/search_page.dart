@@ -288,6 +288,11 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     _releaseSearchFocus();
   }
 
+  void _openSearch() {
+    if (!mounted || !_controller.isAttached || _controller.isOpen) return;
+    _controller.openView();
+  }
+
   void _syncToolbarState(SearchState state) {
     if (!TickerMode.valuesOf(context).enabled ||
         ModalRoute.of(context)?.isCurrent == false) {
@@ -305,6 +310,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         return;
       }
       final next = SearchToolbarState(
+        onSearch: _openSearch,
         visible: hasResults,
         page: state.page,
         loading: state.loading,

@@ -1,3 +1,4 @@
+import '../../core/ui/app_overlays.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
@@ -8,7 +9,7 @@ import '../../theme/app_theme.dart';
 import 'download_progress.dart';
 
 Future<void> showDownloadQueueSheet(BuildContext context) {
-  return showModalBottomSheet<void>(
+  return showAppBottomSheet<void>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,

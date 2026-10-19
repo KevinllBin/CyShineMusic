@@ -1,3 +1,4 @@
+import '../../../core/ui/app_overlays.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,7 +24,7 @@ Future<void> showPlayerSleepTimerSheet(
   final wasToolbarVisible = ref.read(shellToolbarVisibleProvider);
   toolbar.state = false;
   try {
-    await showModalBottomSheet<void>(
+    await showAppBottomSheet<void>(
       context: context,
       useRootNavigator: true,
       useSafeArea: true,

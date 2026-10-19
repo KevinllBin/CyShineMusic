@@ -1,3 +1,4 @@
+import '../../core/ui/app_overlays.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -261,9 +262,9 @@ class _PlaylistManagementPageState
     WidgetRef ref,
     LocalPlaylist playlist,
   ) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         icon: const Icon(Icons.delete_outline_rounded),
         title: const Text('删除这个歌单？'),
         content: Text('“${playlist.name}”会被删除，本地音乐文件和下载记录不会受到影响。'),

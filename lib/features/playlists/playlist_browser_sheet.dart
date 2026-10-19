@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/ui/app_scrollbar.dart';
+import '../../core/ui/app_overlays.dart';
 import '../../theme/app_motion.dart';
 import 'playlist_models.dart';
 import 'playlist_store.dart';
@@ -45,12 +46,8 @@ class _PlaylistBrowserSheet extends ConsumerWidget {
       snap: true,
       snapSizes: [minChildSize, 0.72, 0.92],
       builder: (context, scrollController) {
-        return Material(
+        return AppSheetSurface(
           color: scheme.surfaceContainerHigh,
-          clipBehavior: Clip.antiAlias,
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
-          ),
           child: Column(
             children: [
               const SizedBox(height: 10),

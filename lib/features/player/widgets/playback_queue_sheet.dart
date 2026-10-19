@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/tagger.dart';
 import '../../../core/ui/cover_image_source.dart';
+import '../../../core/ui/app_overlays.dart';
 import '../../../theme/app_motion.dart';
 import '../../downloads/download_history_store.dart';
 import '../player_controller.dart';
@@ -128,10 +129,9 @@ class _PlaybackQueueSheet extends ConsumerWidget {
 
     return FractionallySizedBox(
       heightFactor: 0.72,
-      child: Material(
+      child: AppSheetSurface(
         color: sheetColor,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
-        clipBehavior: Clip.antiAlias,
         child: SafeArea(
           top: false,
           child: Column(

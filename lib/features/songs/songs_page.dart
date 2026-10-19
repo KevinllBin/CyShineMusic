@@ -1,3 +1,4 @@
+import '../../core/ui/app_overlays.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
@@ -898,9 +899,9 @@ class _SongsPageState extends ConsumerState<SongsPage> {
       return;
     }
 
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => AppAlertDialog(
         icon: const Icon(Icons.delete_outline_rounded),
         title: const Text('删除已选歌曲？'),
         content: Text('将删除 ${selected.length} 首本地歌曲文件，并移除对应下载记录。此操作无法撤销。'),

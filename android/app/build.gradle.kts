@@ -20,15 +20,26 @@ fun currentGitBranch(): String? = runCatching {
 val appChannel = (
     providers.gradleProperty("app.channel").orNull
         ?: System.getenv("APP_CHANNEL")
-        ?: if (currentGitBranch() == "dev") "dev" else "main"
+        ?: when (currentGitBranch()) {
+            "dev" -> "dev"
+            "codex/liquid-glass-refactor" -> "glass"
+            else -> "main"
+        }
     ).trim().lowercase()
-require(appChannel == "main" || appChannel == "dev") {
-    "app.channel must be either 'main' or 'dev', but was '$appChannel'."
+require(appChannel in setOf("main", "dev", "glass")) {
+    "app.channel must be 'main', 'dev', or 'glass', but was '$appChannel'."
 }
 
-val isDevChannel = appChannel == "dev"
-val appId = if (isDevChannel) "com.cyshine.music.dev" else "com.cyshine.music"
-val appLabel = if (isDevChannel) "栖弦dev" else "栖弦"
+val appId = when (appChannel) {
+    "dev" -> "com.cyshine.music.dev"
+    "glass" -> "com.cyshine.music.glass"
+    else -> "com.cyshine.music"
+}
+val appLabel = when (appChannel) {
+    "dev" -> "栖弦dev"
+    "glass" -> "栖弦-液态玻璃"
+    else -> "栖弦"
+}
 
 val targetPlatformToAbi = mapOf(
     "android-arm" to "armeabi-v7a",
@@ -42,7 +53,9 @@ val requestedAbis = (project.findProperty("target-platform") as? String)
     ?: setOf("arm64-v8a")
 val splitPerAbi = project.findProperty("split-per-abi") == "true"
 
-val signingPropertiesFile = rootProject.file("signing/$appChannel.properties")
+// The glass app has its own install identity and reuses the fixed dev key.
+val signingChannel = if (appChannel == "glass") "dev" else appChannel
+val signingPropertiesFile = rootProject.file("signing/$signingChannel.properties")
 val signingProperties = Properties().apply {
     if (signingPropertiesFile.isFile) {
         signingPropertiesFile.inputStream().use(::load)

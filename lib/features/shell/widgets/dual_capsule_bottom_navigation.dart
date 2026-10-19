@@ -3,11 +3,13 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/storage/settings_store.dart';
 import '../../../theme/app_motion.dart';
 import '../player_transition.dart';
 import '../shell_navigation.dart';
 import '../shell_route_utils.dart';
 import 'floating_player_bar.dart';
+import 'liquid_glass_navigation.dart';
 import 'toolbar_action.dart';
 import 'toolbar_capsule.dart';
 import 'toolbar_metrics.dart';
@@ -59,6 +61,9 @@ class DualCapsuleBottomNavigation extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final transition = PlayerTransitionScope.maybeOf(context);
+    final liquidGlassEnabled = ref.watch(
+      settingsProvider.select((settings) => settings.liquidGlassEnabled),
+    );
     final navOpacity = transition == null
         ? AlwaysStoppedAnimation(isPlayer ? 0.0 : 1.0)
         : ReverseAnimation(
@@ -107,13 +112,20 @@ class DualCapsuleBottomNavigation extends ConsumerWidget {
                       10,
                 );
                 return Center(
-                  child: _DualCapsuleNavBar(
-                    location: location,
-                    routeLocation: routeLocation,
-                    width: width,
-                    height: dualCapsuleNavBarHeight(context),
-                    transition: transition,
-                  ),
+                  child: liquidGlassEnabled
+                      ? LiquidGlassNavigation(
+                          location: location,
+                          routeLocation: routeLocation,
+                          width: width,
+                          height: dualCapsuleNavBarHeight(context),
+                        )
+                      : _DualCapsuleNavBar(
+                          location: location,
+                          routeLocation: routeLocation,
+                          width: width,
+                          height: dualCapsuleNavBarHeight(context),
+                          transition: transition,
+                        ),
                 );
               },
             ),

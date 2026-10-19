@@ -85,6 +85,10 @@ flutter build apk --target-platform=android-arm64
 `com.cyshine.music.dev`、应用名“栖弦dev”的开发版，两者可同时安装。Release
 构建分别使用固定签名；签名文件配置见 `android/signing/README.md`。
 
+`codex/liquid-glass-refactor` 分支默认构建 `glass` 渠道：应用名
+“栖弦-液态玻璃”，包名 `com.cyshine.music.glass`，复用 dev 签名，
+可与正式版及 dev 版同时安装。显式指定渠道时使用 `APP_CHANNEL=glass`。
+
 构建产物位于：
 
 ```text

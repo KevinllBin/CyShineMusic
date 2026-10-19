@@ -1,3 +1,4 @@
+import '../../core/ui/app_overlays.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -541,19 +542,37 @@ class SettingsPage extends ConsumerWidget {
                               menuId: 'navigation-mode-menu',
                               icon: Icons.view_day_outlined,
                               title: '导航模式',
-                              subtitle:
-                                  '${settings.navigationMode.label} · '
-                                  '${settings.navigationMode.description}',
+                              subtitle: settings.liquidGlassEnabled
+                                  ? '液态玻璃使用双胶囊导航'
+                                  : '${settings.navigationMode.label} · '
+                                        '${settings.navigationMode.description}',
                               options: [
-                                for (final mode in AppNavigationMode.values)
+                                for (final mode
+                                    in settings.liquidGlassEnabled
+                                        ? [AppNavigationMode.dualCapsule]
+                                        : AppNavigationMode.values)
                                   SettingsMenuOption(
                                     id: mode.code,
                                     label: mode.label,
-                                    selected: mode == settings.navigationMode,
+                                    selected:
+                                        mode ==
+                                        settings.effectiveNavigationMode,
+                                    enabled: !settings.liquidGlassEnabled,
                                     onSelected: () =>
                                         _setNavigationMode(context, ref, mode),
                                   ),
                               ],
+                            ),
+                            const SizedBox(height: 4),
+                            SettingsSwitchAction(
+                              key: const ValueKey('liquid-glass-setting'),
+                              icon: Icons.blur_on_rounded,
+                              title: '液态玻璃',
+                              subtitle: '双胶囊导航与歌曲菜单使用玻璃效果',
+                              value: settings.liquidGlassEnabled,
+                              onChanged: (value) => ref
+                                  .read(settingsProvider.notifier)
+                                  .setLiquidGlassEnabled(value),
                             ),
                             const SizedBox(height: 4),
                             SettingsSwitchAction(
@@ -725,10 +744,10 @@ class SettingsPage extends ConsumerWidget {
     WidgetRef ref,
   ) async {
     if (ref.read(settingsProvider).bluetoothLyricNoticeSeen) return;
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       useRootNavigator: true,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppAlertDialog(
         icon: const Icon(Icons.directions_car_filled_rounded),
         title: const Text('蓝牙歌词提示'),
         content: const Text(

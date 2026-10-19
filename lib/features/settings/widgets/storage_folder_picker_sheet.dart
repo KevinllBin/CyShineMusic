@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/ui/app_overlays.dart';
 
 import '../../../core/services/storage_browser_service.dart';
 import '../../../theme/app_motion.dart';
@@ -133,10 +134,9 @@ class _StorageFolderPickerSheetState extends State<StorageFolderPickerSheet> {
         alignment: Alignment.bottomCenter,
         child: FractionallySizedBox(
           heightFactor: 0.88,
-          child: Material(
+          child: AppSheetSurface(
             color: scheme.surface,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-            clipBehavior: Clip.antiAlias,
             child: Column(
               children: [
                 const SizedBox(height: 10),

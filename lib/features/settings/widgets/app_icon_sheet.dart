@@ -1,3 +1,4 @@
+import '../../../core/ui/app_overlays.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/services/app_icon_service.dart';
@@ -6,7 +7,7 @@ Future<AppIconVariant?> showAppIconSheet(
   BuildContext context,
   AppIconVariant current,
 ) {
-  return showModalBottomSheet<AppIconVariant>(
+  return showAppBottomSheet<AppIconVariant>(
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,

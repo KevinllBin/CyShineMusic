@@ -8,6 +8,18 @@ final packageInfoProvider = FutureProvider<PackageInfo>((ref) {
   return PackageInfo.fromPlatform();
 });
 
+final appDisplayNameProvider = Provider<String>((ref) {
+  return ref
+      .watch(packageInfoProvider)
+      .maybeWhen(
+        data: (info) {
+          final name = info.appName.trim();
+          return name.isEmpty ? appDisplayName : name;
+        },
+        orElse: () => appDisplayName,
+      );
+});
+
 final appVersionLabelProvider = Provider<String>((ref) {
   final version = ref
       .watch(packageInfoProvider)
@@ -19,5 +31,5 @@ final appVersionLabelProvider = Provider<String>((ref) {
         orElse: () => fallbackAppVersion,
       );
 
-  return '$appDisplayName $version';
+  return '${ref.watch(appDisplayNameProvider)} $version';
 });

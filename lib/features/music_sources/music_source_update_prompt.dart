@@ -1,3 +1,4 @@
+import '../../core/ui/app_overlays.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -95,7 +96,7 @@ class _MusicSourceUpdatePromptState
       }
       _showing = true;
       try {
-        final updated = await showDialog<bool>(
+        final updated = await showAppDialog<bool>(
           context: context,
           barrierDismissible: false,
           builder: (_) =>
@@ -185,7 +186,7 @@ class _MusicSourceUpdateDialogState
     final theme = Theme.of(context);
     return PopScope(
       canPop: !_updating,
-      child: AlertDialog(
+      child: AppAlertDialog(
         icon: const Icon(Icons.system_update_alt_rounded),
         title: const Text('音源有更新'),
         content: SizedBox(

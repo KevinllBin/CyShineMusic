@@ -5,12 +5,15 @@ tracked by Git:
 
 - `main.properties` and `main-release.jks` sign the `main` app.
 - `dev.properties` and `dev-release.jks` sign the `dev` app.
+- The `glass` app (`com.cyshine.music.glass`) reuses the `dev` signing key.
 
 Back up both keystores and their properties securely. Losing a keystore makes
 future APKs unable to update apps signed by that key.
 
 The channel is detected from the current Git branch. CI or detached checkouts
-must set `APP_CHANNEL` to `main` or `dev` explicitly.
+must set `APP_CHANNEL` to `main`, `dev`, or `glass` explicitly. The
+`codex/liquid-glass-refactor` branch defaults to `glass` when no channel override
+is supplied.
 
 GitHub Actions restores the same files from these repository secrets:
 
