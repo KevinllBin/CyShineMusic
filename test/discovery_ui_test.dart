@@ -878,8 +878,14 @@ void main() {
         find.byKey(const ValueKey('playlist-detail-info')),
         findsOneWidget,
       );
-      expect(find.byType(BackdropFilter), findsNothing);
-      expect(find.byTooltip('返回上一页'), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('immersive-playlist-header')),
+          matching: find.byType(BackdropFilter),
+        ),
+        findsNothing,
+      );
+      expect(find.byTooltip('返回上一页'), findsOneWidget);
       expect(find.text('播放全部'), findsOneWidget);
       expect(find.byTooltip('选择音质下载'), findsWidgets);
       await tester.tap(find.text('收藏歌单'));

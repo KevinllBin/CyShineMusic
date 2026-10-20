@@ -32,7 +32,11 @@ void main() {
   testWidgets('legacy pager remains the default and settings switch live', (
     tester,
   ) async {
-    final harness = await _pumpApp(tester, native: false);
+    final harness = await _pumpApp(
+      tester,
+      native: false,
+      initialLocation: '/settings/appearance',
+    );
     expect(find.byType(NavigationBar), findsNothing);
     expect(find.byTooltip('播放页'), findsOneWidget);
 
@@ -51,7 +55,7 @@ void main() {
     await _pumpUi(tester);
     await tester.tap(find.text('原生导航').last);
     await _pumpUi(tester);
-    expect(harness.location, '/settings');
+    expect(harness.location, '/settings/appearance');
     expect(find.byType(BottomToolbar), findsNothing);
     expect(find.byType(NavigationBar).hitTestable(), findsOneWidget);
     expect(_miniPlayer.hitTestable(), findsOneWidget);
@@ -66,7 +70,7 @@ void main() {
     await _pumpUi(tester);
     expect(find.byType(NavigationBar), findsNothing);
     expect(find.byTooltip('播放页'), findsOneWidget);
-    expect(harness.location, '/settings');
+    expect(harness.location, '/settings/appearance');
     expect(harness.controller.snapshot.playing, isTrue);
     expect(tester.takeException(), isNull);
     await tester.pump(const Duration(seconds: 4));
@@ -75,7 +79,11 @@ void main() {
   testWidgets(
     'dual capsule navigation renders mini player and navigation capsule',
     (tester) async {
-      final harness = await _pumpApp(tester, native: false);
+      final harness = await _pumpApp(
+        tester,
+        native: false,
+        initialLocation: '/settings/appearance',
+      );
       final setting = find.byKey(const ValueKey('navigation-mode-menu-anchor'));
       await tester.ensureVisible(setting);
       await _pumpUi(tester);
@@ -105,10 +113,12 @@ void main() {
       await _pumpUi(tester);
       expect(harness.location, '/player');
       expect(
-        find.descendant(
-          of: find.byType(DualCapsuleBottomNavigation),
-          matching: find.text('发现'),
-        ).hitTestable(),
+        find
+            .descendant(
+              of: find.byType(DualCapsuleBottomNavigation),
+              matching: find.text('发现'),
+            )
+            .hitTestable(),
         findsNothing,
       );
 
@@ -116,10 +126,12 @@ void main() {
       await _pumpUi(tester);
       expect(harness.location, '/');
       expect(
-        find.descendant(
-          of: find.byType(DualCapsuleBottomNavigation),
-          matching: find.text('发现'),
-        ).hitTestable(),
+        find
+            .descendant(
+              of: find.byType(DualCapsuleBottomNavigation),
+              matching: find.text('发现'),
+            )
+            .hitTestable(),
         findsOneWidget,
       );
       await tester.pump(const Duration(seconds: 4));

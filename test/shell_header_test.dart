@@ -9,7 +9,7 @@ import 'package:cy_shine_music/features/shell/widgets/shell_header.dart';
 import 'package:cy_shine_music/features/shell/widgets/toolbar_metrics.dart';
 
 void main() {
-  testWidgets('standard section headers have no visible back arrow', (
+  testWidgets('section headers show back arrows for navigable child routes', (
     tester,
   ) async {
     for (final entry in <String, String>{
@@ -21,9 +21,12 @@ void main() {
       '/discover/leaderboards/kw': '排行榜',
     }.entries) {
       await _pumpHeader(tester, entry.key);
+      final backArrow = entry.key == '/discover/leaderboards/kw'
+          ? findsNothing
+          : findsOneWidget;
       expect(find.text(entry.value), findsOneWidget);
-      expect(find.byIcon(Icons.arrow_back_ios_new_rounded), findsNothing);
-      expect(find.byTooltip('返回上一页'), findsNothing);
+      expect(find.byIcon(Icons.arrow_back_ios_new_rounded), backArrow);
+      expect(find.byTooltip('返回上一页'), backArrow);
       expect(find.byTooltip('返回歌曲列表'), findsNothing);
     }
   });

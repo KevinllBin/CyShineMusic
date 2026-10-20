@@ -25,7 +25,7 @@ void main() {
   });
 
   testWidgets(
-    'music source page uses one shell header and returns to settings',
+    'music source page uses one shell header and returns to network settings',
     (tester) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(390, 844);
@@ -59,7 +59,7 @@ void main() {
       expect(find.text('音源管理'), findsOneWidget);
       expect(find.byType(SliverAppBar), findsNothing);
       expect(find.byIcon(Icons.arrow_back_rounded), findsNothing);
-      expect(find.byIcon(Icons.arrow_back_ios_new_rounded), findsNothing);
+      expect(find.byIcon(Icons.arrow_back_ios_new_rounded), findsOneWidget);
       final localImport = find.widgetWithText(FilledButton, '本地导入');
       final buttonTheme = FilledButtonTheme.of(
         tester.element(localImport),
@@ -68,11 +68,14 @@ void main() {
 
       expect(await tester.binding.handlePopRoute(), isTrue);
       await _pumpUi(tester);
-      expect(router.routeInformationProvider.value.uri.path, '/settings');
+      expect(
+        router.routeInformationProvider.value.uri.path,
+        '/settings/network',
+      );
       expect(
         find.descendant(
           of: find.byType(ShellHeader),
-          matching: find.text('设置'),
+          matching: find.text('音源与网络'),
         ),
         findsOneWidget,
       );

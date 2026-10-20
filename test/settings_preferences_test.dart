@@ -9,6 +9,7 @@ import 'package:cy_shine_music/core/models/music_info.dart';
 import 'package:cy_shine_music/core/storage/settings_store.dart';
 import 'package:cy_shine_music/features/search/widgets/source_filter_chips.dart';
 import 'package:cy_shine_music/features/settings/settings_page.dart';
+import 'package:cy_shine_music/features/settings/settings_section.dart';
 import 'package:cy_shine_music/features/settings/widgets/settings_action.dart';
 import 'package:cy_shine_music/features/settings/widgets/settings_style.dart';
 import 'package:cy_shine_music/theme/app_theme.dart';
@@ -282,7 +283,10 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: MaterialApp(theme: AppTheme.light(), home: const SettingsPage()),
+        child: MaterialApp(
+          theme: AppTheme.light(),
+          home: const SettingsPage(section: SettingsSection.playback),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -379,42 +383,57 @@ void main() {
     expect(prefs.getString('base_url'), isNull);
   });
 
-  testWidgets('settings exposes music source management instead of resolver', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(430, 900));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    final prefs = await SharedPreferences.getInstance();
-    final container = _settingsContainer(prefs);
-    addTearDown(container.dispose);
+  testWidgets(
+    'settings categories expose related controls instead of resolver settings',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(430, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final prefs = await SharedPreferences.getInstance();
+      final container = _settingsContainer(prefs);
+      addTearDown(container.dispose);
 
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: MaterialApp(theme: AppTheme.light(), home: const SettingsPage()),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('音源管理'), findsOneWidget);
-    final pickerSetting = find.byKey(
-      const ValueKey('source-file-picker-setting'),
-    );
-    await tester.tap(
-      find.descendant(of: pickerSetting, matching: find.byType(Switch)),
-    );
-    await tester.pumpAndSettle();
-    expect(container.read(settingsProvider).useBuiltInSourceFilePicker, isTrue);
-    expect(find.text('WebDAV 同步'), findsOneWidget);
-    expect(find.text('允许与其他 APP 共同播放'), findsOneWidget);
-    expect(find.text('批量下载音质'), findsOneWidget);
-    expect(find.text('扫描文件夹'), findsOneWidget);
-    expect(find.text('浏览U盘'), findsNWidgets(2));
-    expect(find.text('检查更新'), findsOneWidget);
-    expect(find.byIcon(Icons.folder_outlined), findsOneWidget);
-    expect(find.text('URL 解析服务器'), findsNothing);
-    expect(find.text('解析服务器健康检查'), findsNothing);
-    expect(tester.takeException(), isNull);
-  });
+      Future<void> pumpSection(SettingsSection section) async {
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              theme: AppTheme.light(),
+              home: SettingsPage(section: section),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      await pumpSection(SettingsSection.network);
+      expect(find.text('音源管理'), findsOneWidget);
+      final pickerSetting = find.byKey(
+        const ValueKey('source-file-picker-setting'),
+      );
+      await tester.tap(
+        find.descendant(of: pickerSetting, matching: find.byType(Switch)),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        container.read(settingsProvider).useBuiltInSourceFilePicker,
+        isTrue,
+      );
+      expect(find.text('WebDAV 同步'), findsOneWidget);
+      expect(find.text('URL 解析服务器'), findsNothing);
+      expect(find.text('解析服务器健康检查'), findsNothing);
+      await pumpSection(SettingsSection.playback);
+      expect(find.text('允许与其他 APP 共同播放'), findsOneWidget);
+      await pumpSection(SettingsSection.downloads);
+      expect(find.text('批量下载音质'), findsOneWidget);
+      expect(find.text('扫描文件夹 1'), findsOneWidget);
+      expect(find.text('浏览U盘'), findsOneWidget);
+      expect(find.text('添加 U 盘文件夹'), findsOneWidget);
+      expect(find.byIcon(Icons.folder_outlined), findsOneWidget);
+      await pumpSection(SettingsSection.about);
+      expect(find.text('检查更新'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   test(
     'search sources and playback quality persist and reject an empty set',
@@ -622,17 +641,13 @@ void main() {
           container: container,
           child: MaterialApp(
             theme: AppTheme.light(),
-            home: const SettingsPage(),
+            home: const SettingsPage(section: SettingsSection.network),
           ),
         ),
       );
       await tester.pumpAndSettle();
       expect(find.byIcon(Icons.cable_rounded), findsOneWidget);
-      expect(find.byIcon(Icons.manage_search_rounded), findsOneWidget);
-      expect(find.byIcon(Icons.high_quality_rounded), findsOneWidget);
       expect(Icons.cable_rounded.fontFamily, 'MaterialIcons');
-      expect(Icons.manage_search_rounded.fontFamily, 'MaterialIcons');
-      expect(Icons.high_quality_rounded.fontFamily, 'MaterialIcons');
 
       final anchor = find.byKey(const ValueKey('network-adapter-menu-anchor'));
       final anchorRect = tester.getRect(anchor);
@@ -736,6 +751,21 @@ void main() {
       expect(panel, findsNothing);
       await tester.pump(const Duration(seconds: 4));
 
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: AppTheme.light(),
+            home: const SettingsPage(section: SettingsSection.playback),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.manage_search_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.high_quality_rounded), findsOneWidget);
+      expect(Icons.manage_search_rounded.fontFamily, 'MaterialIcons');
+      expect(Icons.high_quality_rounded.fontFamily, 'MaterialIcons');
+
       final qualityAnchor = find.byKey(
         const ValueKey('online-quality-menu-anchor'),
       );
@@ -773,7 +803,10 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: MaterialApp(theme: AppTheme.light(), home: const SettingsPage()),
+        child: MaterialApp(
+          theme: AppTheme.light(),
+          home: const SettingsPage(section: SettingsSection.playback),
+        ),
       ),
     );
     await tester.pumpAndSettle();

@@ -13,7 +13,7 @@ import 'package:cy_shine_music/theme/app_motion.dart';
 final _artworkProvider = StateProvider<ImageProvider<Object>?>((ref) => null);
 
 void main() {
-  testWidgets('新封面加载期间保留旧色，并直接过渡到新色', (tester) async {
+  testWidgets('keeps the old color until new artwork is ready', (tester) async {
     final harness = await _pumpColor(tester, disableAnimations: false);
     final first = _Artwork();
     harness.setArtwork(first);
@@ -40,7 +40,7 @@ void main() {
     expect(harness.color, isNot(harness.fallback));
   });
 
-  testWidgets('新封面加载失败或确认无封面时恢复默认色', (tester) async {
+  testWidgets('resets colors for missing or failed artwork', (tester) async {
     final harness = await _pumpColor(tester);
     final first = _Artwork();
     harness.setArtwork(first);
@@ -69,7 +69,7 @@ void main() {
     expect(harness.color, harness.fallback);
   });
 
-  testWidgets('快速换曲后，旧封面的延迟取色不能覆盖新颜色', (tester) async {
+  testWidgets('ignores late colors from previous artwork', (tester) async {
     final harness = await _pumpColor(tester);
     final latePixels = Completer<ByteData?>();
     final first = _Artwork();
@@ -93,7 +93,7 @@ void main() {
   });
 
   for (final brightness in Brightness.values) {
-    testWidgets('$brightness 下黑白及灰阶封面保持中性', (tester) async {
+    testWidgets('$brightness keeps grayscale artwork neutral', (tester) async {
       final harness = await _pumpColor(tester, brightness: brightness);
       for (final color in [Colors.black, Colors.grey, Colors.white]) {
         final artwork = _Artwork();
@@ -105,7 +105,7 @@ void main() {
       }
     });
 
-    testWidgets('$brightness 下边界色在基础背景上保持对比度', (tester) async {
+    testWidgets('$brightness preserves base surface contrast', (tester) async {
       final harness = await _pumpColor(tester, brightness: brightness);
       for (final color in [
         const Color(0xFFFFFF00),
@@ -123,7 +123,7 @@ void main() {
           HSLColor.fromColor(harness.color).lightness,
           closeTo(brightness == Brightness.dark ? 0.82 : 0.23, 0.01),
         );
-        // 这里只验证基础背景，流动背景的局部亮度仍需真机验收。
+        // The flowing background still needs contrast checks on a real device.
         final inkLuminance = harness.color.computeLuminance();
         final surfaceLuminance = harness.surface.computeLuminance();
         final ratio = inkLuminance > surfaceLuminance
@@ -134,7 +134,7 @@ void main() {
     });
   }
 
-  testWidgets('减少动画时，新颜色就绪后立即应用', (tester) async {
+  testWidgets('applies colors immediately with reduced motion', (tester) async {
     final harness = await _pumpColor(tester);
     final artwork = _Artwork();
     harness.setArtwork(artwork);
@@ -234,10 +234,10 @@ class _ArtworkStream extends ImageStreamCompleter {
     setImage(ImageInfo(image: _ArtworkImage(pixels)));
   }
 
-  void fail() => reportError(exception: StateError('封面加载失败'));
+  void fail() => reportError(exception: StateError('Artwork failed to load'));
 }
 
-// 仅提供取色所需像素，测试不访问网络或等待引擎解码。
+// Supplies pixels without network requests or engine decoding.
 class _ArtworkImage extends Fake implements ui.Image {
   _ArtworkImage(this.pixels);
 

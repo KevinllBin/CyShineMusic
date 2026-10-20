@@ -29,14 +29,19 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  testWidgets('system back from debug returns to settings', (tester) async {
+  testWidgets('system back from debug returns to debug settings', (
+    tester,
+  ) async {
     final harness = await _pumpRoutedApp(tester, initialLocation: '/debug');
 
     expect(harness.router.routeInformationProvider.value.uri.path, '/debug');
     expect(await tester.binding.handlePopRoute(), isTrue);
     await _pumpUi(tester);
 
-    expect(harness.router.routeInformationProvider.value.uri.path, '/settings');
+    expect(
+      harness.router.routeInformationProvider.value.uri.path,
+      '/settings/debug',
+    );
     expect(tester.takeException(), isNull);
   });
 

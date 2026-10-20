@@ -362,10 +362,15 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('playlist-detail-info')), findsOneWidget);
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(find.byType(BackdropFilter), findsWidgets);
     expect(find.byTooltip('搜索歌单歌曲'), findsOneWidget);
     expect(find.byIcon(Icons.arrow_drop_down_rounded), findsNothing);
-    expect(find.text('空歌单'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('playlist-detail-title')))
+          .data,
+      '空歌单',
+    );
     expect(find.text('歌单还是空的'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

@@ -55,7 +55,7 @@ void main() {
     expect(find.byType(SongsSearchBar), findsOneWidget);
     expect(tester.widget<SongsPage>(find.byType(SongsPage)).searchMode, isTrue);
     expect(find.byTooltip('返回歌曲列表'), findsNothing);
-    expect(find.byIcon(Icons.arrow_back_ios_new_rounded), findsNothing);
+    expect(find.byIcon(Icons.arrow_back_ios_new_rounded), findsOneWidget);
     final container = ProviderScope.containerOf(
       tester.element(find.byType(SongsPage)),
     );
@@ -115,7 +115,7 @@ void main() {
     await _pumpUi(tester);
 
     expect(find.byTooltip('返回歌曲列表'), findsNothing);
-    expect(find.byIcon(Icons.arrow_back_ios_new_rounded), findsNothing);
+    expect(find.byIcon(Icons.arrow_back_ios_new_rounded), findsOneWidget);
     expect(await tester.binding.handlePopRoute(), isTrue);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 120));

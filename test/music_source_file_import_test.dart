@@ -97,7 +97,10 @@ void main() {
     });
     messenger.setMockMethodCallHandler(_systemPickerChannel, (call) async {
       systemPickerCalls++;
-      throw PlatformException(code: 'unavailable', message: '系统文件选择器不可用');
+      throw PlatformException(
+        code: 'unavailable',
+        message: 'System file picker unavailable',
+      );
     });
     await container.read(musicSourceControllerProvider.future);
   });

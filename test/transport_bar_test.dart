@@ -16,7 +16,7 @@ import 'package:cy_shine_music/features/player/widgets/transport_bar.dart';
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  test('滑块始终预留相同布局尺寸', () {
+  test('slider thumb reserves a stable layout size', () {
     const shape = PlayerSliderThumbShape(disableAnimations: false);
     for (final enabled in [true, false]) {
       for (final discrete in [true, false]) {
@@ -28,7 +28,7 @@ void main() {
     }
   });
 
-  testWidgets('拖动时平滑放大，松手后不等待 seek 即可缩回', (tester) async {
+  testWidgets('thumb animates without waiting for seek', (tester) async {
     final controller = await _pumpTransport(tester);
     final sliderFinder = find.byType(Slider);
     final originalSize = tester.getSize(sliderFinder);
@@ -72,7 +72,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('减少动画时按压与松手立即切换滑块大小', (tester) async {
+  testWidgets('reduced motion changes thumb size immediately', (tester) async {
     final controller = await _pumpTransport(tester, disableAnimations: true);
     final sliderFinder = find.byType(Slider);
     final gesture = await tester.startGesture(tester.getCenter(sliderFinder));
@@ -93,7 +93,7 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('旧 seek 完成不会清掉后一次拖动的目标进度', (tester) async {
+  testWidgets('old seek completion preserves a new drag', (tester) async {
     final controller = await _pumpTransport(tester);
     _startDrag(tester, 45000);
     final firstSeek = _releaseDrag(tester, 45000);
@@ -114,7 +114,7 @@ void main() {
     expect(_slider(tester).value, 90000);
   });
 
-  testWidgets('seek 失败后清理目标进度，后续拖动仍可正常使用', (tester) async {
+  testWidgets('failed seeks allow subsequent drags', (tester) async {
     final controller = await _pumpTransport(tester);
     _startDrag(tester, 45000);
     final seek = _releaseDrag(tester, 45000);
@@ -122,7 +122,9 @@ void main() {
     expect(_slider(tester).value, 45000);
 
     final assertion = expectLater(seek, throwsStateError);
-    controller.requests.single.completion.completeError(StateError('seek 失败'));
+    controller.requests.single.completion.completeError(
+      StateError('Seek failed'),
+    );
     await assertion;
     await tester.pump();
     expect(_slider(tester).value, 20000);
@@ -135,7 +137,7 @@ void main() {
     expect(_slider(tester).value, 60000);
   });
 
-  testWidgets('换曲会清理旧交互，旧 seek 不影响新曲拖动', (tester) async {
+  testWidgets('track changes clear previous interactions', (tester) async {
     final controller = await _pumpTransport(tester);
     final originalKey = _slider(tester).key;
     _startDrag(tester, 45000);
@@ -161,7 +163,7 @@ void main() {
     expect(_slider(tester).value, 30000);
   });
 
-  testWidgets('组件卸载后 seek 完成不会触发 setState', (tester) async {
+  testWidgets('seek completion after disposal is safe', (tester) async {
     final controller = await _pumpTransport(tester);
     _startDrag(tester, 45000);
     final seek = _releaseDrag(tester, 45000);
@@ -172,7 +174,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('保留拖动时间气泡与无障碍时间语义', (tester) async {
+  testWidgets('keeps drag time labels and accessibility', (tester) async {
     await _pumpTransport(tester);
     _startDrag(tester, 65000);
     await tester.pump();
@@ -189,13 +191,13 @@ void main() {
   });
 }
 
-PaintPattern _paintsThumbRadius(bool Function(double) matchesRadius) => paints
-  ..something((method, args) {
-    if (method != #drawCircle) return false;
-    final color = (args[2] as Paint).color;
-    return color.toARGB32() == kPlayerInk.toARGB32() &&
-        matchesRadius(args[1] as double);
-  });
+PaintPattern _paintsThumbRadius(bool Function(double) matchesRadius) =>
+    paints..something((method, args) {
+      if (method != #drawCircle) return false;
+      final color = (args[2] as Paint).color;
+      return color.toARGB32() == kPlayerInk.toARGB32() &&
+          matchesRadius(args[1] as double);
+    });
 
 Slider _slider(WidgetTester tester) =>
     tester.widget<Slider>(find.byType(Slider));
@@ -207,7 +209,7 @@ void _startDrag(WidgetTester tester, double target) {
 }
 
 Future<void> _releaseDrag(WidgetTester tester, double target) {
-  // 保留异步回调返回值，以便测试能观察异常与 finally 清理。
+  // Preserve the future so tests can observe errors and final cleanup.
   return Function.apply(_slider(tester).onChangeEnd!, [target]) as Future<void>;
 }
 
@@ -259,10 +261,10 @@ class _TestPlayerController extends PlayerController {
       track: PlayerTrack(
         id: id,
         kind: PlayerTrackKind.localFile,
-        title: '测试歌曲',
-        artist: '测试歌手',
-        album: '测试专辑',
-        sourceLabel: '本地',
+        title: 'Test song',
+        artist: 'Test artist',
+        album: 'Test album',
+        sourceLabel: 'Local',
         qualityLabel: 'FLAC',
         localPath: '$id.flac',
       ),

@@ -70,7 +70,7 @@ void main() {
       expect(find.byType(DraggableScrollableSheet), findsNothing);
       expect(router.routeInformationProvider.value.uri.path, '/playlists');
       expect(find.text('夜晚循环'), findsOneWidget);
-      expect(find.byTooltip('返回上一页'), findsNothing);
+      expect(find.byTooltip('返回上一页'), findsOneWidget);
 
       await tester.tap(find.text('夜晚循环'));
       await _pumpUi(tester);
@@ -83,7 +83,7 @@ void main() {
         find.byType(PlaylistDetailPage),
       );
       expect(detail.returnLocation, '/playlists/night?from=manage');
-      expect(find.byTooltip('返回上一页'), findsNothing);
+      expect(find.byTooltip('返回上一页'), findsOneWidget);
 
       await tester.tap(find.byTooltip('播放页'));
       await _pumpUi(tester);
