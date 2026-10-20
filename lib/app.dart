@@ -82,7 +82,7 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
       final scanCache = ref.read(localSongScanCacheProvider);
       unawaited(
         scanCache.ensureScan(
-          directory: ref.read(settingsProvider).localMusicDir,
+          directories: ref.read(settingsProvider).localMusicDirs,
         ),
       );
     });

@@ -14,6 +14,7 @@ import '../playlists/playlist_store.dart';
 import 'download_history_store.dart';
 import 'download_progress.dart';
 import '../shell/shell_navigation.dart';
+import '../shell/widgets/scrolling_page_header.dart';
 
 class DownloadHistoryPage extends ConsumerStatefulWidget {
   const DownloadHistoryPage({super.key});
@@ -46,6 +47,7 @@ class _DownloadHistoryPageState extends ConsumerState<DownloadHistoryPage> {
           parent: AlwaysScrollableScrollPhysics(),
         ),
         slivers: [
+          const SliverToBoxAdapter(child: ScrollHeaderSpacer()),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             sliver: SliverToBoxAdapter(

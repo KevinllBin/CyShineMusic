@@ -11,6 +11,7 @@ import '../../core/ui/car_display_layout.dart';
 import '../settings/widgets/settings_action.dart';
 import '../shell/shell_toolbar_visibility.dart';
 import '../shell/shell_bottom_area.dart';
+import '../shell/widgets/scrolling_page_header.dart';
 import 'equalizer_store.dart';
 
 sealed class _BandEditorResult {
@@ -46,6 +47,7 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
         parent: AlwaysScrollableScrollPhysics(),
       ),
       slivers: [
+        const SliverToBoxAdapter(child: ScrollHeaderSpacer()),
         SliverPadding(
           padding: EdgeInsets.fromLTRB(
             28,

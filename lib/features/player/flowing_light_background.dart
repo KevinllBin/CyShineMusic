@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -26,12 +27,8 @@ class FlowingLightBackground extends StatefulWidget {
   /// and something is actually playing.
   final bool running;
 
-  /// The shell's player reveal progress, if available. Motion holds below
-  /// [kFlowingLightRevealThreshold] so a drag does not compete with the
-  /// composite for raster time.
-  ///
-  /// Read directly inside the ticker rather than listened to, so scrubbing the
-  /// player open never rebuilds this subtree.
+  /// Artwork sampling and composition wait until the player is fully open.
+  /// The previous frame stays visible throughout entry/exit and dragging.
   final Animation<double>? revealProgress;
 
   @override
@@ -57,6 +54,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
   ImageStream? _imageStream;
   ImageStreamListener? _imageListener;
   ui.Image? _artwork;
+  ui.Image? _pendingArtwork;
   Color _baseColor = const Color(0xFF000000);
 
   /// The frame fed back into the next composition. Always the same object as
@@ -75,6 +73,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
   void initState() {
     super.initState();
     _fade.addStatusListener(_onFadeStatus);
+    widget.revealProgress?.addListener(_onRevealChanged);
   }
 
   @override
@@ -88,6 +87,11 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
   @override
   void didUpdateWidget(covariant FlowingLightBackground oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.revealProgress != oldWidget.revealProgress) {
+      oldWidget.revealProgress?.removeListener(_onRevealChanged);
+      widget.revealProgress?.addListener(_onRevealChanged);
+      _onRevealChanged();
+    }
     if (widget.imageProvider != oldWidget.imageProvider) {
       _subscribeToArtwork();
     }
@@ -104,16 +108,47 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     if (previous != null) _imageStream?.removeListener(previous);
 
     final generation = ++_artworkGeneration;
-    final listener = ImageStreamListener(
-      (imageInfo, synchronousCall) {
+    _pendingArtwork?.dispose();
+    _pendingArtwork = null;
+    final listener = ImageStreamListener((imageInfo, synchronousCall) {
+      try {
         if (!mounted || generation != _artworkGeneration) return;
-        _adoptArtwork(imageInfo.image.clone(), generation);
-      },
-      onError: (Object error, StackTrace? stackTrace) {},
-    );
+        _pendingArtwork?.dispose();
+        _pendingArtwork = imageInfo.image.clone();
+        _adoptPendingArtwork();
+      } finally {
+        imageInfo.dispose();
+      }
+    }, onError: (Object error, StackTrace? stackTrace) {});
     _imageStream = stream;
     _imageListener = listener;
     stream.addListener(listener);
+  }
+
+  bool get _compositionAllowed {
+    final reveal = widget.revealProgress;
+    return reveal == null || reveal.value >= kFlowingLightRevealThreshold;
+  }
+
+  void _onRevealChanged() {
+    // No rebuild on a reveal tick; only resume pending decoration at the end.
+    if (_compositionAllowed) {
+      _adoptPendingArtwork();
+      if (_frames.value.outgoing != null && !_fade.isCompleted) {
+        _fade.forward();
+      }
+    } else if (_fade.isAnimating) {
+      _fade.stop(canceled: false);
+    }
+    _syncTicker();
+  }
+
+  void _adoptPendingArtwork() {
+    if (!_compositionAllowed) return;
+    final image = _pendingArtwork;
+    if (image == null) return;
+    _pendingArtwork = null;
+    unawaited(_adoptArtwork(image, _artworkGeneration));
   }
 
   Future<void> _adoptArtwork(ui.Image image, int generation) async {
@@ -126,6 +161,16 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     }
     if (!mounted || generation != _artworkGeneration) {
       image.dispose();
+      return;
+    }
+
+    if (!_compositionAllowed) {
+      // The user can start closing while the pixel readback is in flight.
+      if (_pendingArtwork == null) {
+        _pendingArtwork = image;
+      } else {
+        image.dispose();
+      }
       return;
     }
 
@@ -169,17 +214,12 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     _disposeLater(outgoing);
   }
 
-  bool get _motionAllowed {
-    if (!widget.running || _reduceMotion) return false;
-    final reveal = widget.revealProgress;
-    return reveal == null || reveal.value >= kFlowingLightRevealThreshold;
-  }
+  bool get _motionAllowed =>
+      _compositionAllowed && widget.running && !_reduceMotion;
 
-  /// Reveal progress is intentionally excluded: it changes without a rebuild,
-  /// so stopping the ticker on it would leave nothing to notice it coming back.
-  /// While the player is fully parked `TickerMode` mutes the ticker anyway.
+  /// The reveal listener wakes the ticker after the transition has finished.
   bool get _tickerWanted {
-    if (_artwork == null || _spec == null) return false;
+    if (!_compositionAllowed || _artwork == null || _spec == null) return false;
     return _needsCompose || (widget.running && !_reduceMotion);
   }
 
@@ -196,6 +236,7 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
   }
 
   void _onTick(Duration elapsed) {
+    if (!_compositionAllowed) return;
     final last = _lastTick;
     _lastTick = elapsed;
 
@@ -215,7 +256,8 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     final lastCompose = _lastCompose;
     final due =
         _motionAllowed &&
-        (lastCompose == null || _clock - lastCompose >= kFlowingLightFrameInterval);
+        (lastCompose == null ||
+            _clock - lastCompose >= kFlowingLightFrameInterval);
     if (_needsCompose || due) {
       _lastCompose = _clock;
       _compose();
@@ -267,11 +309,13 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     _artworkGeneration++;
     final listener = _imageListener;
     if (listener != null) _imageStream?.removeListener(listener);
+    widget.revealProgress?.removeListener(_onRevealChanged);
     _ticker.dispose();
     _fade.removeStatusListener(_onFadeStatus);
     _fadeCurve.dispose();
     _fade.dispose();
     _artwork?.dispose();
+    _pendingArtwork?.dispose();
     _frames.value.current?.dispose();
     _frames.value.outgoing?.dispose();
     _frames.dispose();
@@ -316,7 +360,10 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
               ColoredBox(color: widget.backgroundColor),
               CustomPaint(
                 key: const ValueKey('flowing-light-image'),
-                painter: _FlowingLightPainter(frames: _frames, fade: _fadeCurve),
+                painter: _FlowingLightPainter(
+                  frames: _frames,
+                  fade: _fadeCurve,
+                ),
               ),
             ],
           ),
@@ -351,8 +398,7 @@ class _Frames {
     );
   }
 
-  _Frames withoutOutgoing() =>
-      _Frames(current: current, spec: spec);
+  _Frames withoutOutgoing() => _Frames(current: current, spec: spec);
 }
 
 class _FlowingLightPainter extends CustomPainter {

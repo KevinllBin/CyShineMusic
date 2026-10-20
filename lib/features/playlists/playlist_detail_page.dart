@@ -247,40 +247,50 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
     required int localCount,
     required ImageProvider<Object>? artworkProvider,
   }) {
-    return AppScrollbar(
-      controller: _scrollController,
-      child: CustomScrollView(
+    return ScrollingImmersivePlaylistBody(
+      title: playlist.name,
+      onBack: _searchMode
+          ? _closeSearch
+          : _batchMode
+          ? _toggleBatchMode
+          : null,
+      child: AppScrollbar(
         controller: _scrollController,
-        key: PageStorageKey('playlist-detail-${widget.playlistId}'),
-        physics: const BouncingScrollPhysics(
-          parent: AlwaysScrollableScrollPhysics(),
-        ),
-        slivers: [
-          SliverToBoxAdapter(
-            child: ImmersivePlaylistHeader(
-              artworkProvider: artworkProvider,
-              topBar: _buildImmersiveTopBar(
-                queue: queue,
-                selectedCount: selectedCount,
-                visibleCount: filtered.length,
+        child: CustomScrollView(
+          controller: _scrollController,
+          key: PageStorageKey('playlist-detail-${widget.playlistId}'),
+          physics: const BouncingScrollPhysics(
+            parent: AlwaysScrollableScrollPhysics(),
+          ),
+          slivers: [
+            SliverToBoxAdapter(
+              child: ImmersivePlaylistHeader(
+                artworkProvider: artworkProvider,
+                topBar: _buildImmersiveTopBar(
+                  title: playlist.name,
+                  queue: queue,
+                  selectedCount: selectedCount,
+                  visibleCount: filtered.length,
+                  showBack: false,
+                ),
               ),
             ),
-          ),
-          SliverToBoxAdapter(
-            child: PlaylistDetailInfo(
-              title: playlist.name,
-              metadata: _playlistMetadata(playlist, localCount: localCount),
-              description: playlist.description,
+            SliverToBoxAdapter(
+              child: PlaylistDetailInfo(
+                title: playlist.name,
+                metadata: _playlistMetadata(playlist, localCount: localCount),
+                description: playlist.description,
+              ),
             ),
-          ),
-          SliverToBoxAdapter(child: _buildActions(playlist, queue)),
-          ..._trackListSlivers(
-            playlist: playlist,
-            resolved: resolved,
-            filtered: filtered,
-            queue: queue,
-          ),
-        ],
+            SliverToBoxAdapter(child: _buildActions(playlist, queue)),
+            ..._trackListSlivers(
+              playlist: playlist,
+              resolved: resolved,
+              filtered: filtered,
+              queue: queue,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -296,6 +306,7 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
   }) {
     return PlaylistWideBody(
       topBar: _buildImmersiveTopBar(
+        title: playlist.name,
         queue: queue,
         selectedCount: selectedCount,
         visibleCount: filtered.length,
@@ -479,15 +490,20 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
   }
 
   Widget _buildImmersiveTopBar({
+    required String title,
     required List<DownloadHistoryEntry> queue,
     required int selectedCount,
     required int visibleCount,
     bool onImage = true,
+    bool showBack = true,
   }) {
     if (_searchMode) {
       return ImmersivePlaylistTopBar(
         title: '搜索歌单歌曲',
         onImage: onImage,
+        showBack: showBack,
+        showGradient: !onImage,
+        onBack: _closeSearch,
         actions: [
           ImmersiveTopIconButton(
             tooltip: '退出搜索',
@@ -503,6 +519,9 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
       return ImmersivePlaylistTopBar(
         title: '已选中 $selectedCount 项',
         onImage: onImage,
+        showBack: showBack,
+        showGradient: !onImage,
+        onBack: _toggleBatchMode,
         actions: [
           ImmersiveTopIconButton(
             tooltip: allSelected ? '取消全选' : '全选',
@@ -525,8 +544,10 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
       );
     }
     return ImmersivePlaylistTopBar(
-      title: '歌单详情',
+      title: onImage ? '' : title,
       onImage: onImage,
+      showBack: showBack,
+      showGradient: !onImage,
       actions: [
         ImmersiveTopIconButton(
           tooltip: '搜索歌单歌曲',
@@ -965,7 +986,7 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
     openPlayer(context, returnLocation: _resolvedReturnLocation);
     await ref
         .read(playerControllerProvider.notifier)
-        .playFromPlaylistQueue(first, queue);
+        .playFromPlaylistQueue(first, queue, playlistId: widget.playlistId);
   }
 
   Future<void> _confirmUnfavorite(LocalPlaylist playlist) async {
@@ -1027,7 +1048,11 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
     openPlayer(context, returnLocation: _resolvedReturnLocation);
     await ref
         .read(playerControllerProvider.notifier)
-        .playFromPlaylistQueue(selectedQueue.first, selectedQueue);
+        .playFromPlaylistQueue(
+          selectedQueue.first,
+          selectedQueue,
+          playlistId: widget.playlistId,
+        );
   }
 
   Future<void> _removeSelectedVisible(
@@ -1091,7 +1116,7 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
     unawaited(
       ref
           .read(playerControllerProvider.notifier)
-          .playFromPlaylistQueue(first, queue),
+          .playFromPlaylistQueue(first, queue, playlistId: widget.playlistId),
     );
   }
 
@@ -1114,7 +1139,7 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
     openPlayer(context, returnLocation: _resolvedReturnLocation);
     await ref
         .read(playerControllerProvider.notifier)
-        .playFromPlaylistQueue(entry, queue);
+        .playFromPlaylistQueue(entry, queue, playlistId: widget.playlistId);
   }
 
   Future<void> _removeTrack(
@@ -1239,25 +1264,28 @@ class _MissingImmersivePlaylist extends StatelessWidget {
           final scheme = Theme.of(context).colorScheme;
           return Scaffold(
             backgroundColor: scheme.surface,
-            body: CustomScrollView(
-              physics: const AlwaysScrollableScrollPhysics(
-                parent: BouncingScrollPhysics(),
-              ),
-              slivers: const [
-                SliverToBoxAdapter(
-                  child: ImmersivePlaylistHeader(
-                    artworkProvider: null,
-                    topBar: ImmersivePlaylistTopBar(title: '歌单详情'),
+            body: ScrollingImmersivePlaylistBody(
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics(),
+                ),
+                slivers: const [
+                  SliverToBoxAdapter(
+                    child: ImmersivePlaylistHeader(
+                      artworkProvider: null,
+                      topBar: ImmersivePlaylistTopBar(title: '歌单详情'),
+                      showTopBar: false,
+                    ),
                   ),
-                ),
-                SliverToBoxAdapter(
-                  child: PlaylistDetailInfo(title: '歌单不存在', metadata: '本地歌单'),
-                ),
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: MissingPlaylist(),
-                ),
-              ],
+                  SliverToBoxAdapter(
+                    child: PlaylistDetailInfo(title: '歌单不存在', metadata: '本地歌单'),
+                  ),
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: MissingPlaylist(),
+                  ),
+                ],
+              ),
             ),
           );
         },

@@ -8,6 +8,7 @@ import '../../core/sync/webdav_sync_controller.dart';
 import '../../core/ui/app_toast.dart';
 import '../../core/ui/car_display_layout.dart';
 import '../shell/shell_bottom_area.dart';
+import '../shell/widgets/scrolling_page_header.dart';
 import 'widgets/settings_action.dart';
 
 class WebDavSyncPage extends ConsumerStatefulWidget {
@@ -66,6 +67,7 @@ class _WebDavSyncPageState extends ConsumerState<WebDavSyncPage> {
           parent: AlwaysScrollableScrollPhysics(),
         ),
         slivers: [
+          const SliverToBoxAdapter(child: ScrollHeaderSpacer()),
           SliverPadding(
             padding: EdgeInsets.fromLTRB(
               28,

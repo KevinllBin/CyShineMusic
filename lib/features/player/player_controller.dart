@@ -6,6 +6,7 @@ import 'package:audio_service/audio_service.dart'
     show AudioServiceRepeatMode, AudioServiceShuffleMode, MediaItem;
 import 'package:bass_player/bass_player.dart'
     show BassPlaybackSnapshot, BassProcessingState;
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -79,6 +80,7 @@ class PlayerController extends StateNotifier<PlayerState>
       }),
       _audioHandler.playerStateStream.listen((playerState) {
         if (!mounted || _transportSuppressionToken != null) return;
+        if (_audioHandler.hasPendingSourceRetry) return;
         final wasPlaying = state.playing;
         if (!wasPlaying &&
             playerState.playing &&
@@ -159,6 +161,7 @@ class PlayerController extends StateNotifier<PlayerState>
   Quality? _currentQuality;
   List<DownloadHistoryEntry> _queue = const [];
   int _queueIndex = -1;
+  String? _queuePlaylistId;
   List<int> _playOrder = const [];
   int _playOrderCursor = -1;
   final math.Random _random = math.Random();
@@ -176,6 +179,9 @@ class PlayerController extends StateNotifier<PlayerState>
       BluetoothLyricMetadataCoordinator();
 
   MusicInfo? get currentMusic => _currentMusic;
+
+  /// Saved library playlist that started this queue, independent of browsing.
+  String? get queuePlaylistId => _queuePlaylistId;
 
   /// Widget cold-start commands must wait until the saved audio source is
   /// ready; loading it still follows the existing startup/autoplay setting.
@@ -371,16 +377,53 @@ class PlayerController extends StateNotifier<PlayerState>
         );
       }
       await AppLogger.write('player', 'play remote failed: $e');
-      if (!identical(_requestToken, token)) return false;
-      _audioHandler.failTrackTransition(e);
+      if (!mounted || !identical(_requestToken, token)) return false;
+      if (autoPlay && pauseGeneration == _sleepTimerPauseGeneration) {
+        final nextIndex = _nextQueueIndexAfterFailure();
+        if (nextIndex != null) {
+          _logPlayback('all sources failed, skipping to queueIndex=$nextIndex');
+          await _playQueueIndex(nextIndex);
+          return false;
+        }
+      }
+      try {
+        await _audioHandler.pause();
+      } catch (pauseError) {
+        await AppLogger.write(
+          'player',
+          'pause after source failure: $pauseError',
+        );
+      }
+      if (!mounted || !identical(_requestToken, token)) return false;
+      final failedTrack = restoredTrack ?? transitionTrack;
+      _currentQuality =
+          Quality.tryFromCode(failedTrack.qualityLabel) ?? selectedQuality;
+      _audioHandler.pauseAfterSourceFailure(
+        item: _buildMediaItem(
+          failedTrack,
+          artUri: _networkArtworkUri(failedTrack.coverUrl),
+        ),
+        queueIndex: _hasCurrentQueueTrack ? _queueIndex : null,
+        onRetry: () async {
+          await _playRemoteMusic(
+            music,
+            quality: selectedQuality,
+            restoredTrack: failedTrack,
+          );
+        },
+      );
       _endTransportSuppression(token);
       state = state.copyWith(
+        track: failedTrack,
         loading: false,
         lyricLoading: preservePresentation ? state.lyricLoading : false,
         playing: false,
-        processingState: PlayerProcessingState.idle,
-        error: showErrors ? describeDioError(e) : null,
+        processingState: PlayerProcessingState.ready,
+        error: null,
       );
+      _syncQueueAvailability();
+      if (showErrors) state = state.copyWith(error: describeDioError(e));
+      _persistFullSession();
       return false;
     }
   }
@@ -407,7 +450,11 @@ class PlayerController extends StateNotifier<PlayerState>
   }
 
   void _handlePlaybackError(Object error) {
-    if (!mounted || _pausedBySleepTimer) return;
+    if (!mounted ||
+        _pausedBySleepTimer ||
+        _audioHandler.hasPendingSourceRetry) {
+      return;
+    }
     if (_transportSuppressionToken != null ||
         _lateSourceFallbackActive ||
         state.loading) {
@@ -632,9 +679,10 @@ class PlayerController extends StateNotifier<PlayerState>
 
   Future<void> playFromPlaylistQueue(
     DownloadHistoryEntry entry,
-    List<DownloadHistoryEntry> queue,
-  ) {
-    return _playFromQueue(entry, queue);
+    List<DownloadHistoryEntry> queue, {
+    String? playlistId,
+  }) {
+    return _playFromQueue(entry, queue, playlistId: playlistId);
   }
 
   /// Replaces a playlist queue after its remaining tracks finish loading,
@@ -669,9 +717,11 @@ class PlayerController extends StateNotifier<PlayerState>
 
   Future<void> _playFromQueue(
     DownloadHistoryEntry entry,
-    List<DownloadHistoryEntry> queue,
-  ) async {
+    List<DownloadHistoryEntry> queue, {
+    String? playlistId,
+  }) async {
     _pendingRestoredSession = null;
+    _queuePlaylistId = playlistId;
     _queue = _playableQueue(queue);
     _queueIndex = _queue.indexWhere((item) => _sameEntry(item, entry));
     if (_queueIndex < 0 && _isPlayableEntry(entry)) {
@@ -861,10 +911,16 @@ class PlayerController extends StateNotifier<PlayerState>
           ? rawLyrics
           : null;
       if (embeddedLyrics != null) {
+        final parsed = await compute(
+          KaraokeLyricsParser.parseEmbedded,
+          embeddedLyrics,
+          debugLabel: 'player-embedded-lyrics',
+        );
+        if (!mounted || !identical(_requestToken, token)) return false;
         state = state
             .withLoadedLyrics(
               info: LyricInfo(lyric: embeddedLyrics),
-              parsed: KaraokeLyricsParser.parseEmbedded(embeddedLyrics),
+              parsed: parsed,
             )
             .copyWith(
               position: _audioHandler.position,
@@ -977,6 +1033,7 @@ class PlayerController extends StateNotifier<PlayerState>
   }
 
   void _setQueueForEntry(DownloadHistoryEntry entry) {
+    _queuePlaylistId = null;
     final history = _playableQueue(_ref.read(downloadHistoryProvider));
     if (history.isEmpty) {
       _queue = _isPlayableEntry(entry) ? [entry] : const [];
@@ -1012,6 +1069,7 @@ class PlayerController extends StateNotifier<PlayerState>
     final path = entry.savedPath?.trim();
     if (path != null && path.isNotEmpty && File(path).existsSync()) {
       if (state.track?.localPath == path) {
+        _syncQueueAvailability();
         return _restartCurrentTrack();
       }
       return _playLocal(
@@ -1023,6 +1081,7 @@ class PlayerController extends StateNotifier<PlayerState>
     if (music != null) {
       final remoteTrackId = '${music.source.code}:${music.id}:remote';
       if (state.track?.id == remoteTrackId) {
+        _syncQueueAvailability();
         return _restartCurrentTrack();
       }
       return _playRemoteMusic(music);
@@ -1032,6 +1091,10 @@ class PlayerController extends StateNotifier<PlayerState>
   }
 
   Future<void> _restartCurrentTrack() async {
+    if (_audioHandler.hasPendingSourceRetry) {
+      await _audioHandler.play();
+      return;
+    }
     final pauseGeneration = _sleepTimerPauseGeneration;
     _completionHandledForTrackId = null;
     await _audioHandler.seek(Duration.zero);
@@ -1107,6 +1170,7 @@ class PlayerController extends StateNotifier<PlayerState>
   }
 
   void _clearQueue({bool syncState = true}) {
+    _queuePlaylistId = null;
     _queue = const [];
     _queueIndex = -1;
     _playOrder = const [];
@@ -1194,6 +1258,18 @@ class PlayerController extends StateNotifier<PlayerState>
       return _playOrder.length > 1 ? _playOrder[1] : _queueIndex;
     }
     return _queueIndex + 1 < _queue.length ? _queueIndex + 1 : 0;
+  }
+
+  int? _nextQueueIndexAfterFailure() {
+    if (_queue.isEmpty) return null;
+    if (!_hasCurrentQueueTrack) return 0;
+    // Failure skips repeat-one, but never wraps or reshuffles at the end.
+    if (state.playbackMode == PlayerPlaybackMode.shuffle) {
+      return _playOrderCursor + 1 < _playOrder.length
+          ? _playOrder[_playOrderCursor + 1]
+          : null;
+    }
+    return _queueIndex + 1 < _queue.length ? _queueIndex + 1 : null;
   }
 
   void _syncQueueAvailability() {
@@ -1374,6 +1450,7 @@ class PlayerController extends StateNotifier<PlayerState>
   }
 
   void _hydrateRestoredSession(PlayerSessionSnapshot snapshot) {
+    _queuePlaylistId = snapshot.queuePlaylistId;
     final restoredTrack = _playerTrackFromPersisted(snapshot.track);
     final savedQueueEntry =
         snapshot.queueIndex >= 0 && snapshot.queueIndex < snapshot.queue.length
@@ -1539,6 +1616,7 @@ class PlayerController extends StateNotifier<PlayerState>
       duration: state.duration,
       queue: List<DownloadHistoryEntry>.unmodifiable(_queue),
       queueIndex: _queueIndex,
+      queuePlaylistId: _queuePlaylistId,
       playbackModeCode: state.playbackMode.name,
     );
     final checkpoint = _checkpointForCurrentTrack();
@@ -1649,10 +1727,13 @@ class PlayerController extends StateNotifier<PlayerState>
           .getLyric(musicInfo: music)
           .timeout(_lyricLoadTimeout);
       if (!identical(_requestToken, token)) return;
-      state = state.withLoadedLyrics(
-        info: lyricInfo,
-        parsed: KaraokeLyricsParser.parse(lyricInfo),
+      final parsed = await compute(
+        KaraokeLyricsParser.parse,
+        lyricInfo,
+        debugLabel: 'player-network-lyrics',
       );
+      if (!mounted || !identical(_requestToken, token)) return;
+      state = state.withLoadedLyrics(info: lyricInfo, parsed: parsed);
       _syncBluetoothMetadata(force: true);
     } on TimeoutException catch (e) {
       await AppLogger.write(

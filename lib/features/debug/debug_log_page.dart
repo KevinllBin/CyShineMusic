@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../core/services/app_logger.dart';
 import '../../core/ui/app_toast.dart';
 import '../../theme/app_motion.dart';
+import '../shell/widgets/scrolling_page_header.dart';
 
 class DebugLogPage extends StatefulWidget {
   const DebugLogPage({super.key});
@@ -98,7 +99,12 @@ class _DebugLogPageState extends State<DebugLogPage> {
     return Scaffold(
       backgroundColor: scheme.surface,
       body: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          ScrollHeaderInset.of(context) + 8,
+          16,
+          0,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

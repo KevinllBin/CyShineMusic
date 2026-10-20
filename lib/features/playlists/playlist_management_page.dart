@@ -8,6 +8,7 @@ import '../../core/ui/app_toast.dart';
 import '../../core/ui/car_display_layout.dart';
 import '../../theme/app_motion.dart';
 import '../shell/shell_bottom_area.dart';
+import '../shell/widgets/scrolling_page_header.dart';
 import 'lx_playlist_import.dart';
 import 'online_playlist_updater.dart';
 import 'playlist_cover_resolver.dart';
@@ -50,6 +51,7 @@ class _PlaylistManagementPageState
             parent: AlwaysScrollableScrollPhysics(),
           ),
           slivers: [
+            const SliverToBoxAdapter(child: ScrollHeaderSpacer()),
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(16, 2, 16, 0),
               sliver: SliverToBoxAdapter(

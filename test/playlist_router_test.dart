@@ -188,11 +188,9 @@ void main() {
       );
       expect(find.byKey(const ValueKey('songs-sort-button')), findsNothing);
 
-      await tester.tap(find.byTooltip('更多歌曲操作'));
-      await _pumpUi(tester);
-      expect(find.text('搜索歌单歌曲'), findsOneWidget);
-      expect(find.text('搜索本地歌曲'), findsNothing);
-      await tester.tap(find.text('搜索歌单歌曲'));
+      expect(find.byTooltip('搜索歌单歌曲'), findsOneWidget);
+      expect(find.byTooltip('搜索本地歌曲'), findsNothing);
+      await tester.tap(find.byTooltip('搜索歌单歌曲'));
       await _pumpUi(tester);
       expect(router.routeInformationProvider.value.uri.path, '/songs/search');
       expect(find.text('搜索歌单歌曲'), findsOneWidget);

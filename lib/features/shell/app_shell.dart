@@ -15,6 +15,7 @@ import '../player/widgets/spinning_cover_art.dart';
 import '../player/player_controller.dart';
 import '../playlists/playlist_detail_toolbar_state.dart';
 import '../search/search_controller.dart';
+import '../settings/settings_section.dart';
 import '../songs/songs_toolbar_state.dart';
 import 'player_pull_scope.dart';
 import 'player_transition.dart';
@@ -396,16 +397,14 @@ class _AppShellState extends ConsumerState<AppShell>
     }
 
     _releaseRouteFocus();
+    final settingsParent = settingsParentLocation(widget.location);
     if (_isTopLevelMenuLocation(widget.location)) {
       await _handleTopLevelBack();
     } else if (widget.location == '/downloads' ||
         widget.location == '/songs/search') {
       context.go('/songs');
-    } else if (widget.location == '/settings/sources' ||
-        widget.location == '/settings/webdav' ||
-        widget.location == '/settings/equalizer' ||
-        widget.location == '/debug') {
-      context.go('/settings');
+    } else if (settingsParent != null) {
+      context.go(settingsParent);
     } else if (context.canPop()) {
       context.pop();
     } else if (isDiscoveryLocation(widget.location) && widget.location != '/') {
@@ -871,11 +870,11 @@ class _AppShellState extends ConsumerState<AppShell>
         child: ExcludeSemantics(
           child: AnimatedBuilder(
             animation: _transition,
-            child: RepaintBoundary(
-              child: RotationTransition(
-                turns: square
-                    ? const AlwaysStoppedAnimation<double>(0)
-                    : _coverRotation,
+            child: RotationTransition(
+              turns: square
+                  ? const AlwaysStoppedAnimation<double>(0)
+                  : _coverRotation,
+              child: RepaintBoundary(
                 child: PlayerArtworkImage(
                   url: CoverImageSource.normalizeUrl(
                     track?.coverUrl,
@@ -892,20 +891,34 @@ class _AppShellState extends ConsumerState<AppShell>
             ),
             builder: (context, child) {
               final flight = track == null ? null : _transition.coverRect;
+              final destination = _transition.fullCover;
               return Stack(
                 children: [
-                  if (flight != null)
+                  if (flight != null && destination != null)
+                    // Keep the decoded artwork and its clip at the final size.
+                    // The flight only changes paint transforms, not layout and
+                    // raster-cache dimensions on every animation frame.
                     Positioned.fromRect(
-                      key: const ValueKey('player-shared-cover'),
-                      rect: flight,
-                      child: square
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(
-                                flight.width * kSquareCoverRadiusFactor,
-                              ),
-                              child: child,
-                            )
-                          : ClipOval(child: child),
+                      rect: destination,
+                      child: Transform.translate(
+                        offset: flight.topLeft - destination.topLeft,
+                        child: Transform.scale(
+                          scale: flight.width / destination.width,
+                          alignment: Alignment.topLeft,
+                          child: RepaintBoundary(
+                            key: const ValueKey('player-shared-cover'),
+                            child: square
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(
+                                      destination.width *
+                                          kSquareCoverRadiusFactor,
+                                    ),
+                                    child: child,
+                                  )
+                                : ClipOval(child: child),
+                          ),
+                        ),
+                      ),
                     ),
                 ],
               );

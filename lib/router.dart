@@ -17,6 +17,7 @@ import 'features/playlists/playlist_detail_page.dart';
 import 'features/playlists/playlist_management_page.dart';
 import 'features/search/search_page.dart';
 import 'features/settings/settings_page.dart';
+import 'features/settings/settings_section.dart';
 import 'features/settings/webdav_sync_page.dart';
 import 'features/music_sources/music_source_page.dart';
 import 'features/shell/app_shell.dart';
@@ -231,6 +232,20 @@ GoRouter createAppRouter({
                         child: const SettingsPage(),
                       ),
                     ),
+                  ),
+                  for (final section in SettingsSection.values)
+                    GoRoute(
+                      path: section.location,
+                      pageBuilder: (context, state) => NoTransitionPage(
+                        child: _shellPageContent(
+                          state,
+                          child: SettingsPage(section: section),
+                        ),
+                      ),
+                    ),
+                  GoRoute(
+                    path: '/settings/localMusic',
+                    redirect: (_, _) => SettingsSection.downloads.location,
                   ),
                   GoRoute(
                     path: '/settings/sources',

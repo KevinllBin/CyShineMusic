@@ -1,7 +1,11 @@
+import 'dart:math' as math;
+import 'dart:ui';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/storage/settings_store.dart';
 import '../../../core/ui/container_transform.dart';
@@ -9,6 +13,7 @@ import '../../../core/ui/cover_image_source.dart';
 import '../../../core/ui/cover_placeholder.dart';
 import '../../../theme/app_motion.dart';
 import '../../../theme/app_theme.dart';
+import '../../shell/widgets/scrolling_page_header.dart';
 
 ImageProvider<Object>? networkPlaylistArtworkProvider(
   String? rawUrl, {
@@ -204,18 +209,19 @@ class ImmersivePlaylistHeader extends StatelessWidget {
     required this.topBar,
     this.artworkLoading = false,
     this.artworkHeroTag,
+    this.showTopBar = true,
   });
 
   final ImageProvider<Object>? artworkProvider;
   final Widget topBar;
   final bool artworkLoading;
   final Object? artworkHeroTag;
+  final bool showTopBar;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final screen = MediaQuery.sizeOf(context);
-    final height = (screen.height * 0.4).clamp(320.0, 460.0);
+    final height = _immersivePlaylistHeaderHeight(context);
     final artwork = PlaylistArtworkImage(
       provider: artworkProvider,
       loading: artworkLoading,
@@ -229,7 +235,7 @@ class ImmersivePlaylistHeader extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.center,
-            colors: [Color(0x8A000000), Color(0x00000000)],
+            colors: [Color(0x4D000000), Color(0x00000000)],
           ),
         ),
       ),
@@ -238,16 +244,17 @@ class ImmersivePlaylistHeader extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            stops: const [0.68, 1],
+            stops: const [0.55, 0.78, 1],
             colors: [
               Colors.transparent,
               scheme.surface.withValues(alpha: 0.18),
+              scheme.surface,
             ],
           ),
         ),
       ),
-      Positioned(left: 0, right: 0, top: 0, child: topBar),
     ];
+    final topBarOverlay = Positioned(left: 0, right: 0, top: 0, child: topBar);
 
     return SizedBox(
       key: const ValueKey('immersive-playlist-header'),
@@ -273,7 +280,7 @@ class ImmersivePlaylistHeader extends StatelessWidget {
                         toHero,
                         overlay: Stack(
                           fit: StackFit.expand,
-                          children: overlays,
+                          children: [...overlays, topBarOverlay],
                         ),
                       ),
               child: artwork,
@@ -281,8 +288,85 @@ class ImmersivePlaylistHeader extends StatelessWidget {
           else
             artwork,
           ...overlays,
+          if (showTopBar) topBarOverlay,
         ],
       ),
+    );
+  }
+}
+
+double _immersivePlaylistHeaderHeight(BuildContext context) =>
+    (MediaQuery.sizeOf(context).height * 0.4).clamp(320.0, 460.0);
+
+TextStyle _playlistDetailTitleStyle(BuildContext context) =>
+    DefaultTextStyle.of(context).style.copyWith(
+      color: Theme.of(context).colorScheme.onSurface,
+      fontSize: 27,
+      height: 1.12,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0,
+    );
+
+/// 图片与大标题滚走后，顶部再淡入单行名称。
+class ScrollingImmersivePlaylistBody extends StatelessWidget {
+  const ScrollingImmersivePlaylistBody({
+    super.key,
+    required this.child,
+    this.title = '',
+    this.onBack,
+  });
+
+  final Widget child;
+  final String title;
+  final VoidCallback? onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final top = MediaQuery.viewPaddingOf(context).top;
+        final headerHeight = _immersivePlaylistHeaderHeight(context);
+        final painter =
+            TextPainter(
+              text: TextSpan(
+                text: title,
+                style: _playlistDetailTitleStyle(context),
+              ),
+              maxLines: 2,
+              ellipsis: '…',
+              textDirection: Directionality.of(context),
+              textScaler: MediaQuery.textScalerOf(context),
+              textHeightBehavior: DefaultTextStyle.of(
+                context,
+              ).textHeightBehavior,
+              locale: Localizations.maybeLocaleOf(context),
+            )..layout(
+              maxWidth: math.min(900, math.max(1, constraints.maxWidth - 40)),
+            );
+        // 原标题底边进入状态栏遮罩后，再用 32dp 的滚动距离淡入。
+        final titleRevealStart = headerHeight + 20 + painter.height - top;
+        painter.dispose();
+        return ScrollingPageHeader(
+          topInset: 0,
+          headerBuilder: (context, scrollOffset) {
+            final imageEnd = headerHeight - top - 64;
+            final revealProgress = Curves.easeOut.transform(
+              ((scrollOffset - titleRevealStart) / 32).clamp(0.0, 1.0),
+            );
+            return ImmersivePlaylistTopBar(
+              title: title,
+              titleOpacity: title.trim().isEmpty ? 0 : revealProgress,
+              showGradient: revealProgress > 0,
+              backdropOpacity: revealProgress,
+              blurSigma: 24 * revealProgress,
+              onImage: scrollOffset < imageEnd,
+              statusBarOnImage: scrollOffset < headerHeight,
+              onBack: onBack,
+            );
+          },
+          child: child,
+        );
+      },
     );
   }
 }
@@ -323,13 +407,7 @@ class PlaylistDetailInfo extends StatelessWidget {
                   key: const ValueKey('playlist-detail-title'),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: scheme.onSurface,
-                    fontSize: 27,
-                    height: 1.12,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0,
-                  ),
+                  style: _playlistDetailTitleStyle(context),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -439,11 +517,25 @@ class ImmersivePlaylistTopBar extends StatelessWidget {
     this.leading,
     this.actions = const [],
     this.onImage = true,
+    this.showBack = true,
+    this.showGradient = true,
+    this.onBack,
+    this.titleOpacity = 1,
+    this.blurSigma = 0,
+    this.backdropOpacity = 1,
+    this.statusBarOnImage,
   });
 
   final String title;
   final Widget? leading;
   final List<Widget> actions;
+  final bool showBack;
+  final bool showGradient;
+  final VoidCallback? onBack;
+  final double titleOpacity;
+  final double blurSigma;
+  final double backdropOpacity;
+  final bool? statusBarOnImage;
 
   /// true = 压在头图上（白字 + 阴影）；false = 直接放在 surface 上，
   /// 前景跟随主题（宽屏分栏没有头图，白字在浅色主题下不可见）。
@@ -454,36 +546,161 @@ class ImmersivePlaylistTopBar extends StatelessWidget {
     final top = MediaQuery.viewPaddingOf(context).top;
     final scheme = Theme.of(context).colorScheme;
     final foreground = onImage ? Colors.white : scheme.onSurface;
-    return IconTheme(
-      data: IconThemeData(color: foreground),
-      child: DefaultTextStyle(
-        style: TextStyle(
-          color: foreground,
-          fontSize: 17,
-          fontWeight: FontWeight.w600,
-          shadows: onImage
-              ? const [Shadow(color: Color(0x85000000), blurRadius: 8)]
-              : null,
-        ),
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(16, top, 12, 8),
-          child: SizedBox(
-            height: 48,
-            child: Row(
-              children: [
-                if (leading != null) ...[leading!, const SizedBox(width: 4)],
-                Expanded(
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+    final lightStatusBar =
+        (statusBarOnImage ?? onImage) || scheme.brightness == Brightness.dark;
+    final back =
+        leading ??
+        (showBack
+            ? ImmersiveTopIconButton(
+                tooltip: '返回上一页',
+                icon: Icons.arrow_back_ios_new_rounded,
+                onImage: onImage,
+                onPressed:
+                    onBack ??
+                    () {
+                      if (context.canPop()) {
+                        context.pop();
+                        return;
+                      }
+                      final uri = GoRouterState.of(context).uri;
+                      context.go(
+                        uri.path.startsWith('/discover/')
+                            ? '/'
+                            : uri.queryParameters['from'] == 'manage'
+                            ? '/playlists'
+                            : '/songs',
+                      );
+                    },
+              )
+            : null);
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: lightStatusBar
+            ? Brightness.light
+            : Brightness.dark,
+        statusBarBrightness: lightStatusBar
+            ? Brightness.dark
+            : Brightness.light,
+      ),
+      child: IconTheme(
+        data: IconThemeData(color: foreground),
+        child: DefaultTextStyle(
+          style: TextStyle(
+            color: foreground,
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+            shadows: onImage
+                ? const [Shadow(color: Color(0x85000000), blurRadius: 8)]
+                : null,
+          ),
+          child: Stack(
+            children: [
+              if (showGradient)
+                Positioned.fill(
+                  bottom: 14,
+                  child: IgnorePointer(
+                    child: _PlaylistTopBarBackdrop(
+                      onImage: onImage,
+                      blurSigma: blurSigma,
+                      opacity: backdropOpacity,
+                    ),
                   ),
                 ),
-                ...actions,
-              ],
-            ),
+              Padding(
+                padding: EdgeInsets.fromLTRB(16, top + 8, 16, 20),
+                child: SizedBox(
+                  height: 44,
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 44,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: back == null
+                              ? null
+                              : FloatingHeaderSurface(
+                                  onImage: onImage,
+                                  child: back,
+                                ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: IgnorePointer(
+                          child: Opacity(
+                            opacity: titleOpacity,
+                            child: Text(
+                              title,
+                              maxLines: 1,
+                              textAlign: TextAlign.center,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      if (actions.isEmpty)
+                        const SizedBox(width: 44)
+                      else
+                        FloatingHeaderSurface(
+                          onImage: onImage,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: actions,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _PlaylistTopBarBackdrop extends StatelessWidget {
+  const _PlaylistTopBarBackdrop({
+    required this.onImage,
+    required this.blurSigma,
+    required this.opacity,
+  });
+
+  final bool onImage;
+  final double blurSigma;
+  final double opacity;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = Theme.of(context).colorScheme.surface;
+    final background = DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          stops: const [0, 0.58, 1],
+          colors: onImage
+              ? [
+                  Colors.black.withValues(alpha: 0.4 * opacity),
+                  Colors.black.withValues(alpha: (0x30 / 255) * opacity),
+                  Colors.transparent,
+                ]
+              : [
+                  surface.withValues(alpha: 0.96 * opacity),
+                  surface.withValues(alpha: 0.82 * opacity),
+                  surface.withValues(alpha: 0),
+                ],
+        ),
+      ),
+    );
+    if (blurSigma <= 0) return background;
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+        child: background,
       ),
     );
   }
@@ -518,7 +735,7 @@ class ImmersiveTopIconButton extends StatelessWidget {
           disabledForegroundColor: onImage
               ? Colors.white.withValues(alpha: 0.38)
               : scheme.onSurface.withValues(alpha: 0.34),
-          backgroundColor: onImage ? const Color(0x30000000) : null,
+          backgroundColor: Colors.transparent,
         ),
         icon: Icon(icon, size: 20),
       ),

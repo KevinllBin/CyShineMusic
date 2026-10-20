@@ -120,7 +120,7 @@ class _StaggeredLyricLineState extends State<StaggeredLyricLine>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _controller,
-      child: widget.child,
+      child: RepaintBoundary(child: widget.child),
       builder: (context, child) {
         return Transform.translate(
           key: ValueKey('lyric-stagger-${widget.lineStartMs}'),
@@ -220,7 +220,7 @@ class LyricLineTile extends ConsumerWidget {
           curve: _kLyricFocusCurve,
           style: mainStyle,
           textAlign: TextAlign.start,
-          child: _mainText(),
+          child: RepaintBoundary(child: _mainText()),
         ),
         if (hasTranslationLine)
           TweenAnimationBuilder<double>(
@@ -292,7 +292,7 @@ class LyricLineTile extends ConsumerWidget {
       lineStartMs: line.startMs,
       active: active,
       disableAnimations: MediaQuery.disableAnimationsOf(context),
-      child: lineContent,
+      child: RepaintBoundary(child: lineContent),
     );
 
     final tile = GestureDetector(
@@ -334,8 +334,8 @@ class LyricLineTile extends ConsumerWidget {
       child: tile,
       builder: (context, suppressed, child) {
         return TweenAnimationBuilder<double>(
-          tween: Tween<double>(end: blurSigma),
-          duration: duration,
+          tween: Tween<double>(end: blurDisabled || suppressed ? 0 : blurSigma),
+          duration: blurDisabled || suppressed ? Duration.zero : duration,
           curve: AppMotion.emphasized,
           child: child,
           builder: (context, sigma, child) {

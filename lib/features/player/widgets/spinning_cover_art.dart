@@ -110,10 +110,12 @@ class _SpinningCoverArtState extends ConsumerState<SpinningCoverArt>
             boxShadow: widget.boxShadow,
           ),
           clipBehavior: Clip.antiAlias,
-          child: PlayerArtworkImage(
-            url: normalized,
-            bytes: widget.track.coverBytes,
-            placeholder: widget.placeholder,
+          child: RepaintBoundary(
+            child: PlayerArtworkImage(
+              url: normalized,
+              bytes: widget.track.coverBytes,
+              placeholder: widget.placeholder,
+            ),
           ),
         ),
       ),

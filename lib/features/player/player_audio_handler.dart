@@ -6,6 +6,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:bass_player/bass_player.dart';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
@@ -96,6 +97,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   final BassPlayer _player;
+  // Notification and home-widget updates often request the same byte buffer.
+  // Weak keys share that work without retaining artwork from old tracks.
+  final _artworkFiles = Expando<Future<Uri>>('player-artwork-files');
   bool _allowMixWithOthers;
   bool _audioSessionConfigured = false;
   bool _engineInitialized = false;
@@ -122,6 +126,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   MediaItem? _mediaItemBeforeTransition;
   int? _queueIndexBeforeTransition;
   bool _trackTransitionActive = false;
+  PlayerTransportCallback? _retryAfterSourceFailure;
 
   Stream<Duration> get positionStream => _player.positionStream;
   Stream<Duration?> get durationStream => _player.durationStream;
@@ -132,8 +137,11 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   Duration get position => _player.position;
   Duration? get duration => _player.duration;
-  bool get playing => _player.playing;
-  BassProcessingState get processingState => _player.processingState;
+  bool get hasPendingSourceRetry => _retryAfterSourceFailure != null;
+  bool get playing => !hasPendingSourceRetry && _player.playing;
+  BassProcessingState get processingState => hasPendingSourceRetry
+      ? BassProcessingState.ready
+      : _player.processingState;
 
   Future<void> initializeEngine() async {
     final info = await _player.initialize();
@@ -247,6 +255,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     required MediaItem item,
     int? queueIndex,
   }) async {
+    _retryAfterSourceFailure = null;
     if (!_trackTransitionActive) {
       _mediaItemBeforeTransition = _currentMediaItem;
       _queueIndexBeforeTransition = _queueIndex;
@@ -286,11 +295,26 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     );
   }
 
+  void pauseAfterSourceFailure({
+    required MediaItem item,
+    required PlayerTransportCallback onRetry,
+    int? queueIndex,
+  }) {
+    _retryAfterSourceFailure = onRetry;
+    _trackTransitionActive = false;
+    _clearTransitionSnapshot();
+    _queueIndex = queueIndex;
+    _currentMediaItem = item;
+    mediaItem.add(item);
+    _broadcastState(_player.snapshot);
+  }
+
   Future<Duration?> load({
     required MediaItem item,
     required Uri sourceUri,
     int? queueIndex,
   }) async {
+    _retryAfterSourceFailure = null;
     _queueIndex = queueIndex;
     _currentMediaItem = item;
     mediaItem.add(item);
@@ -387,19 +411,37 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   Future<Uri?> cacheArtwork(Uint8List? bytes) async {
     if (bytes == null || bytes.isEmpty) return null;
+    final cached = _artworkFiles[bytes];
+    if (cached != null) return cached;
+    final pending = _cacheArtwork(bytes);
+    _artworkFiles[bytes] = pending;
+    try {
+      return await pending;
+    } catch (_) {
+      _artworkFiles[bytes] = null;
+      rethrow;
+    }
+  }
+
+  Future<Uri> _cacheArtwork(Uint8List bytes) async {
     final cacheRoot = await getTemporaryDirectory();
+    final digest = await compute(
+      _artworkDigest,
+      bytes,
+      debugLabel: 'player-artwork-hash',
+    );
     final artDirectory = Directory(
       '${cacheRoot.path}${Platform.pathSeparator}media_art',
     );
-    if (!artDirectory.existsSync()) {
+    if (!await artDirectory.exists()) {
       await artDirectory.create(recursive: true);
     }
     final extension = _artworkExtension(bytes);
     final file = File(
       '${artDirectory.path}${Platform.pathSeparator}'
-      '${sha256.convert(bytes)}.$extension',
+      '$digest.$extension',
     );
-    if (!file.existsSync()) {
+    if (!await file.exists()) {
       await file.writeAsBytes(bytes, flush: true);
     }
     return file.uri;
@@ -408,6 +450,11 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> play() async {
     if (_trackTransitionActive) return;
+    final retry = _retryAfterSourceFailure;
+    if (retry != null) {
+      await retry();
+      return;
+    }
     final pauseGeneration = _pauseGeneration;
     _logTransport('play');
     if (_player.processingState == BassProcessingState.completed) {
@@ -447,7 +494,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     unawaited(AppLogger.write('player-control', 'media_button=${button.name}'));
     switch (button) {
       case MediaButton.media:
-        if (_player.playing) {
+        if (playing) {
           await _pausePlayer(reason: 'media_button');
         } else {
           await play();
@@ -464,7 +511,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> seek(Duration position) {
-    if (_trackTransitionActive) return Future<void>.value();
+    if (_trackTransitionActive || hasPendingSourceRetry) {
+      return Future<void>.value();
+    }
     _logTransport('seek', target: position);
     return _player.seek(position);
   }
@@ -508,6 +557,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> stop() async {
+    _retryAfterSourceFailure = null;
     _logTransport('stop');
     await _player.stop();
     await super.stop();
@@ -562,6 +612,10 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
             'error=$error',
       ),
     );
+    if (hasPendingSourceRetry) {
+      _broadcastState(_player.snapshot);
+      return;
+    }
     if (_trackTransitionActive) {
       playbackState.add(_transitionState(_player.snapshot));
       return;
@@ -596,7 +650,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     final controls = hasItem
         ? <MediaControl>[
             MediaControl.skipToPrevious,
-            if (_player.playing) MediaControl.pause else MediaControl.play,
+            if (playing) MediaControl.pause else MediaControl.play,
             MediaControl.skipToNext,
           ]
         : const <MediaControl>[];
@@ -612,7 +666,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
               MediaAction.setShuffleMode,
             }
           : const {},
-      processingState: switch (_player.processingState) {
+      processingState: switch (processingState) {
         BassProcessingState.idle => AudioProcessingState.idle,
         BassProcessingState.loading => AudioProcessingState.loading,
         BassProcessingState.buffering => AudioProcessingState.buffering,
@@ -620,7 +674,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
         BassProcessingState.completed => AudioProcessingState.completed,
         BassProcessingState.error => AudioProcessingState.error,
       },
-      playing: _player.playing,
+      playing: playing,
       updatePosition: _player.position,
       bufferedPosition: _player.bufferedPosition,
       speed: _player.speed,
@@ -674,3 +728,5 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 final playerAudioHandlerProvider = Provider<PlayerAudioHandler>((ref) {
   throw StateError('playerAudioHandlerProvider must be overridden at startup');
 });
+
+String _artworkDigest(Uint8List bytes) => sha256.convert(bytes).toString();

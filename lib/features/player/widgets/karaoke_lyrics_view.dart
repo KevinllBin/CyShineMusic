@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -110,7 +111,16 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
       next,
     ) {
       _reanchorPlaybackClock(next);
-      _syncActiveLine(next);
+      _syncActiveLine(
+        next,
+        // An interpolated line advance must not bounce backwards when the next
+        // monotonic native sample still lies just before the boundary.
+        allowBackward:
+            previous == null ||
+            next < previous ||
+            !_playing.value ||
+            _buffering.value,
+      );
       _scheduleLineAdvance();
     });
     ref.listenManual(playerControllerProvider.select((s) => s.playing), (
@@ -197,8 +207,9 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
     });
   }
 
-  void _syncActiveLine(Duration position) {
+  void _syncActiveLine(Duration position, {bool allowBackward = true}) {
     final next = widget.lyrics.activeIndex(position);
+    if (!allowBackward && next < _activeIndex) return;
     if (next == _activeIndex) return;
     final previous = _activeIndex;
     final skipLineStagger = _skipNextLineStagger;
@@ -785,6 +796,9 @@ class _RenderToggleableLyricEdgeFade extends RenderProxyBox {
 
   bool _enabled;
   double _fadeExtent;
+  ui.Shader? _edgeShader;
+  Size? _shaderSize;
+  double? _shaderFadeExtent;
 
   bool get enabled => _enabled;
 
@@ -822,12 +836,14 @@ class _RenderToggleableLyricEdgeFade extends RenderProxyBox {
     }
 
     assert(needsCompositing);
-    final edgeStop = size.height <= 0
-        ? 0.0
-        : math.min(_fadeExtent / size.height, 0.18);
-    layer ??= ShaderMaskLayer();
-    layer!
-      ..shader = LinearGradient(
+    if (_edgeShader == null ||
+        _shaderSize != size ||
+        _shaderFadeExtent != _fadeExtent) {
+      final edgeStop = size.height <= 0
+          ? 0.0
+          : math.min(_fadeExtent / size.height, 0.18);
+      _edgeShader?.dispose();
+      _edgeShader = LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: const [
@@ -837,9 +853,21 @@ class _RenderToggleableLyricEdgeFade extends RenderProxyBox {
           Colors.transparent,
         ],
         stops: [0, edgeStop, 1 - edgeStop, 1],
-      ).createShader(Offset.zero & size)
+      ).createShader(Offset.zero & size);
+      _shaderSize = size;
+      _shaderFadeExtent = _fadeExtent;
+    }
+    layer ??= ShaderMaskLayer();
+    layer!
+      ..shader = _edgeShader
       ..maskRect = offset & size
       ..blendMode = BlendMode.dstIn;
     context.pushLayer(layer!, super.paint, offset);
+  }
+
+  @override
+  void dispose() {
+    _edgeShader?.dispose();
+    super.dispose();
   }
 }

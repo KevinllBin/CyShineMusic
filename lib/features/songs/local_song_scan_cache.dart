@@ -64,16 +64,25 @@ class LocalSongFileSnapshot {
 @immutable
 class LocalSongScanSnapshot {
   const LocalSongScanSnapshot({
-    required this.directory,
+    String? directory,
+    List<String>? directories,
     required this.cachedAt,
     required this.files,
     this.error,
-  });
+  }) : _directory = directory,
+       _directories = directories;
 
-  final String directory;
+  final String? _directory;
+  final List<String>? _directories;
+  List<String> get directories =>
+      _directories ?? [if (_directory?.isNotEmpty ?? false) _directory!];
+  String get directory => directories.firstOrNull ?? '';
   final DateTime cachedAt;
   final List<LocalSongFileSnapshot> files;
   final String? error;
+
+  bool matchesDirectories(List<String> values) =>
+      listEquals(directories, _normalizeDirectories(values));
 
   factory LocalSongScanSnapshot.fromJson(Map<String, dynamic> json) {
     final rawFiles = json['files'];
@@ -88,8 +97,13 @@ class LocalSongScanSnapshot {
         }
       }
     }
+    final rawDirectories = json['directories'];
     return LocalSongScanSnapshot(
-      directory: json['directory'] as String? ?? '',
+      directories: _normalizeDirectories(
+        rawDirectories is List
+            ? rawDirectories.whereType<String>().toList()
+            : [json['directory'] as String? ?? ''],
+      ),
       cachedAt:
           DateTime.tryParse(json['cachedAt'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
@@ -100,6 +114,7 @@ class LocalSongScanSnapshot {
 
   Map<String, dynamic> toJson() => {
     'directory': directory,
+    'directories': directories,
     'cachedAt': cachedAt.toIso8601String(),
     'files': [for (final file in files) file.toJson()],
     if (error != null) 'error': error,
@@ -112,7 +127,7 @@ class LocalSongScanCache extends ChangeNotifier {
   LocalSongScanSnapshot? _snapshot;
   Future<void>? _loadFuture;
   Future<void>? _scanFuture;
-  String? _scanDirectory;
+  List<String>? _scanDirectories;
   int _scanGeneration = 0;
 
   LocalSongScanSnapshot? get snapshot => _snapshot;
@@ -136,66 +151,83 @@ class LocalSongScanCache extends ChangeNotifier {
     }
   }
 
-  Future<void> ensureScan({required String directory}) async {
+  Future<void> ensureScan({
+    String? directory,
+    List<String>? directories,
+  }) async {
+    final selectedDirectories = _scanRoots(directory, directories);
     await ensureLoaded();
     final snapshot = _snapshot;
     final fresh =
         snapshot != null &&
-        snapshot.directory == directory &&
+        snapshot.matchesDirectories(selectedDirectories) &&
         snapshot.error == null &&
         DateTime.now().difference(snapshot.cachedAt) <
             const Duration(seconds: 12);
     if (fresh) return;
-    await refresh(directory: directory);
+    await refresh(directories: selectedDirectories);
   }
 
-  Future<void> refresh({required String directory}) {
+  Future<void> refresh({String? directory, List<String>? directories}) {
+    final selectedDirectories = _scanRoots(directory, directories);
     final running = _scanFuture;
-    if (running != null && _scanDirectory == directory) return running;
+    if (running != null && listEquals(_scanDirectories, selectedDirectories)) {
+      return running;
+    }
 
     final generation = ++_scanGeneration;
-    _scanDirectory = directory;
-    final future = _scanDirectoryContents(directory, generation);
+    _scanDirectories = selectedDirectories;
+    final future = _scanDirectoryContents(selectedDirectories, generation);
     _scanFuture = future;
     return future;
   }
 
-  Future<void> _scanDirectoryContents(String directory, int generation) async {
+  Future<void> _scanDirectoryContents(
+    List<String> directories,
+    int generation,
+  ) async {
+    final files = <String, LocalSongFileSnapshot>{};
+    final errors = <String>[];
     try {
-      final dir = Directory(directory);
-      if (!await dir.exists()) {
-        if (generation != _scanGeneration) return;
-        await save(directory: directory, files: const [], error: null);
-        return;
+      final roots = [...directories]
+        ..sort((a, b) => a.length.compareTo(b.length));
+      final completedRoots = <String>[];
+      for (final directory in roots) {
+        if (completedRoots.any((root) => p.isWithin(root, directory))) continue;
+        try {
+          final dir = Directory(directory);
+          if (!await dir.exists()) continue;
+          await for (final item in dir.list(
+            recursive: true,
+            followLinks: false,
+          )) {
+            if (generation != _scanGeneration) return;
+            if (item is! File) continue;
+            final fileName = p.basename(item.path);
+            final extension = p.extension(fileName).replaceFirst('.', '');
+            if (!_audioExtensions.contains(extension.toLowerCase())) continue;
+            final key = p.canonicalize(item.path);
+            if (files.containsKey(key)) continue;
+            final stat = await item.stat();
+            files[key] = LocalSongFileSnapshot(
+              path: item.path,
+              fileName: fileName,
+              extension: extension,
+              createdAt: stat.changed,
+              modifiedAt: stat.modified,
+              sizeBytes: stat.size,
+            );
+          }
+          completedRoots.add(directory);
+        } catch (error) {
+          errors.add('$directory：$error');
+        }
       }
-
-      final files = <LocalSongFileSnapshot>[];
-      await for (final item in dir.list(recursive: true, followLinks: false)) {
-        if (generation != _scanGeneration) return;
-        if (item is! File) continue;
-        final fileName = p.basename(item.path);
-        final extension = p.extension(fileName).replaceFirst('.', '');
-        if (!_audioExtensions.contains(extension.toLowerCase())) continue;
-        final stat = await item.stat();
-        files.add(
-          LocalSongFileSnapshot(
-            path: item.path,
-            fileName: fileName,
-            extension: extension,
-            createdAt: stat.changed,
-            modifiedAt: stat.modified,
-            sizeBytes: stat.size,
-          ),
-        );
-      }
-      if (generation != _scanGeneration) return;
-      await save(directory: directory, files: files, error: null);
-    } catch (error) {
       if (generation != _scanGeneration) return;
       await save(
-        directory: directory,
-        files: const [],
-        error: '无法读取本地音乐文件夹：$error',
+        directories: directories,
+        files: files.values.toList(),
+        error: errors.isEmpty ? null : '无法读取本地音乐文件夹：${errors.join('\n')}',
       );
     } finally {
       if (generation == _scanGeneration) _scanFuture = null;
@@ -203,12 +235,13 @@ class LocalSongScanCache extends ChangeNotifier {
   }
 
   Future<void> save({
-    required String directory,
+    String? directory,
+    List<String>? directories,
     required List<LocalSongFileSnapshot> files,
     String? error,
   }) async {
     final snapshot = LocalSongScanSnapshot(
-      directory: directory,
+      directories: _scanRoots(directory, directories),
       cachedAt: DateTime.now(),
       files: List.unmodifiable(files),
       error: error,
@@ -228,6 +261,31 @@ class LocalSongScanCache extends ChangeNotifier {
     final support = await getApplicationSupportDirectory();
     return File(p.join(support.path, _fileName));
   }
+}
+
+List<String> _normalizeDirectories(List<String> values) {
+  final directories = <String>[];
+  for (final value in values) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) continue;
+    final pathContext = trimmed.startsWith('/') ? p.posix : p.context;
+    final directory = pathContext.normalize(trimmed);
+    if (directories.any(
+      (existing) => pathContext.equals(existing, directory),
+    )) {
+      continue;
+    }
+    directories.add(directory);
+  }
+  return List.unmodifiable(directories);
+}
+
+List<String> _scanRoots(String? directory, List<String>? directories) {
+  final normalized = _normalizeDirectories(directories ?? [?directory]);
+  if (normalized.isEmpty) {
+    throw ArgumentError('至少需要一个本地音乐文件夹');
+  }
+  return normalized;
 }
 
 final localSongScanCacheProvider = ChangeNotifierProvider<LocalSongScanCache>(

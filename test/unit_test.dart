@@ -1438,7 +1438,7 @@ void main() {
       // 64 / 255: each frame keeps just over a quarter of the previous one.
       expect(kFlowingLightFeedbackAlpha / 255, closeTo(0.251, 1e-3));
       expect(kFlowingLightCoverScale, 1.3);
-      expect(kFlowingLightRevealThreshold, 0.95);
+      expect(kFlowingLightRevealThreshold, 1.0);
       expect(kFlowingLightLayer2OffsetX, -0.95);
       expect(kFlowingLightLayer2OffsetY, -0.70);
       expect(kFlowingLightLayer3OffsetX, -0.50);

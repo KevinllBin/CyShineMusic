@@ -119,7 +119,7 @@ void main() {
     expect(item?.artHeaders, contains('User-Agent'));
   });
 
-  test('all source load failures publish only the final error state', () async {
+  test('all source load failures keep the current track paused', () async {
     final harness = await _Harness.create(loadFailures: 2);
     addTearDown(harness.dispose);
     final errors = <String>[];
@@ -136,9 +136,16 @@ void main() {
 
     expect(harness.audio.loadedUris, hasLength(2));
     expect(state.loading, isFalse);
-    expect(state.track, isNull);
+    expect(state.track?.id, 'kw:song-1:remote');
+    expect(state.playing, isFalse);
+    expect(state.processingState, PlayerProcessingState.ready);
+    expect(
+      harness.audio.playbackState.value.processingState,
+      AudioProcessingState.ready,
+    );
     expect(state.error, contains('所有已启用音源均无法播放'));
-    expect(harness.audio.failTransitionCount, 1);
+    expect(harness.audio.failTransitionCount, 0);
+    expect(harness.audio.pauseCount, 1);
     expect(errors, hasLength(1));
   });
 
@@ -157,6 +164,7 @@ void main() {
         ),
         music: _music(),
         qualityCode: Quality.k128.code,
+        queuePlaylistId: 'restored-playlist',
       );
       SharedPreferences.setMockInitialValues({
         'auto_play_on_startup': true,
@@ -167,6 +175,7 @@ void main() {
       addTearDown(harness.dispose);
 
       await _waitUntil(() => harness.audio.playCount == 1);
+      expect(harness.controller.queuePlaylistId, 'restored-playlist');
       expect(harness.audio.playing, isTrue);
       expect(harness.container.read(playerControllerProvider).track, isNotNull);
     },
@@ -494,7 +503,11 @@ void main() {
     }
     final initial = expanded.take(3).toList(growable: false);
 
-    await harness.controller.playFromPlaylistQueue(initial[1], initial);
+    await harness.controller.playFromPlaylistQueue(
+      initial[1],
+      initial,
+      playlistId: 'source-a',
+    );
     final before = harness.container.read(playerControllerProvider);
     final loadedBefore = harness.audio.loadedUris.length;
 
@@ -512,6 +525,20 @@ void main() {
     expect(after.queue[after.queueIndex].id, 'track-2');
     expect(after.track?.id, before.track?.id);
     expect(harness.audio.loadedUris, hasLength(loadedBefore));
+    expect(harness.controller.queuePlaylistId, 'source-a');
+    await harness.controller.playNext();
+    expect(harness.controller.queuePlaylistId, 'source-a');
+    // Starting the same song from another collection updates the queue too.
+    await harness.controller.playFromPlaylistQueue(expanded[2], [
+      expanded[2],
+    ], playlistId: 'source-b');
+    expect(harness.controller.queuePlaylistId, 'source-b');
+    expect(
+      harness.container.read(playerControllerProvider).queue,
+      hasLength(1),
+    );
+    await harness.controller.playFromHistoryQueue(expanded[2], expanded);
+    expect(harness.controller.queuePlaylistId, isNull);
   });
 }
 

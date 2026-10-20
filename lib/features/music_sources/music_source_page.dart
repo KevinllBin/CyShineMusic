@@ -16,6 +16,7 @@ import '../../core/storage/settings_store.dart';
 import '../../core/ui/app_toast.dart';
 import '../../core/ui/car_display_layout.dart';
 import '../shell/shell_bottom_area.dart';
+import '../shell/widgets/scrolling_page_header.dart';
 import '../shell/shell_toolbar_visibility.dart';
 import '../settings/widgets/storage_folder_picker_sheet.dart';
 import 'music_source_import_dialog.dart';
@@ -41,6 +42,7 @@ class _MusicSourcePageState extends ConsumerState<MusicSourcePage> {
         parent: AlwaysScrollableScrollPhysics(),
       ),
       slivers: [
+        const SliverToBoxAdapter(child: ScrollHeaderSpacer()),
         SliverPadding(
           padding: EdgeInsets.fromLTRB(
             28,

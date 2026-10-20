@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart'
@@ -124,7 +125,8 @@ class KaraokeLineTextState extends State<KaraokeLineText>
         : 0;
     _anchorPositionMs = anchor;
     _sinceAnchor.reset();
-    _publish();
+    // A seek within the same line can restart a sweep that already finished.
+    _syncClock();
   }
 
   void _handlePlayback() {
@@ -136,26 +138,39 @@ class KaraokeLineTextState extends State<KaraokeLineText>
     _syncClock();
   }
 
+  int get _sweepEndMs => widget.line.words.isEmpty
+      ? widget.line.endMs
+      : widget.line.words.last.endMs;
+
   void _syncClock() {
-    if (widget.playing.value && !widget.buffering.value) {
+    final running = widget.playing.value && !widget.buffering.value;
+    if (running) {
       _sinceAnchor.start();
-      if ((widget.active || _emphasis.isAnimating) && !_ticker.isActive) {
-        _ticker.start();
-      }
     } else {
       _sinceAnchor.stop();
-      if (_ticker.isActive) _ticker.stop();
     }
-    if (!widget.active && !_emphasis.isAnimating && _ticker.isActive) {
+    final needsTicks = running && widget.active && _clockPosition < _sweepEndMs;
+    if (needsTicks && !_ticker.isActive) {
+      _ticker.start();
+    } else if (!needsTicks && _ticker.isActive) {
       _ticker.stop();
     }
     _publish();
   }
 
   void _publish() {
-    // Keep sub-millisecond precision between BASS's 40 ms samples. Only paint
-    // is invalidated; the shaped paragraph and its layout stay unchanged.
-    _position.value = _clockPosition;
+    final position = _clockPosition;
+    if (widget.active) {
+      // A fully swept line is static until the next line or a seek. Keep the
+      // clock running, but stop invalidating its paint during a held note/gap.
+      _position.value = math.min(position, _sweepEndMs.toDouble());
+      if (position >= _sweepEndMs && _ticker.isActive) _ticker.stop();
+    } else if ((_position.value < widget.line.startMs) !=
+        (position < widget.line.startMs)) {
+      // Inactive lines only distinguish upcoming/past for their lift. Sending
+      // every 40ms anchor through the notifier repainted all their blur layers.
+      _position.value = position;
+    }
   }
 
   @override
@@ -201,7 +216,13 @@ class KaraokeLineTextState extends State<KaraokeLineText>
               constraints.maxWidth,
             );
           }
-          if (widget.active && !_reduceMotion) paragraph.prepareGlyphImages();
+          if (!_reduceMotion) {
+            if (widget.active) {
+              paragraph.prepareGlyphAtlas();
+            } else {
+              paragraph.prepareStaticImage();
+            }
+          }
           return CustomPaint(
             size: Size(paragraph.width, paragraph.text.height + paragraph.lift),
             painter: _KaraokePainter(
@@ -225,7 +246,6 @@ class _Glyph {
   final double center;
   final int from;
   final int to;
-  ui.Image? image;
   Offset imageOrigin = Offset.zero;
 }
 
@@ -234,6 +254,8 @@ class _VisualLine {
   final Rect rect;
   final double start;
   final glyphs = <_Glyph>[];
+  Float32List? atlasRects;
+  Float32List? atlasTransforms;
 }
 
 class _TimedSweep {
@@ -368,6 +390,13 @@ class _LyricParagraph {
   late final double end;
   final visualLines = <_VisualLine>[];
   final sweeps = <_TimedSweep>[];
+  ui.Image? glyphAtlas;
+  ui.Image? staticImage;
+  static const _staticImagePadding = 2;
+  Offset get staticImageOrigin => Offset(
+    -_staticImagePadding / pixelRatio,
+    -_staticImagePadding / pixelRatio,
+  );
 
   _VisualLine _rowFor(Rect glyph) => visualLines.firstWhere(
     (row) =>
@@ -401,42 +430,97 @@ class _LyricParagraph {
     return math.cos(phase * math.pi) * (1 - settle) / 2 + (1 + settle) / 2;
   }
 
-  void prepareGlyphImages() {
+  void prepareStaticImage() {
+    if (staticImage != null) return;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder)
+      ..translate(
+        _staticImagePadding.toDouble(),
+        _staticImagePadding.toDouble(),
+      )
+      ..scale(pixelRatio);
+    // Keep upcoming/past text on a fixed pixel grid too. Drawing the native
+    // paragraph directly under the stagger/blur transforms makes Impeller
+    // re-snap its glyphs during the subpixel tail, unlike the active atlas.
+    text.paint(canvas, Offset.zero);
+    final picture = recorder.endRecording();
+    try {
+      staticImage = picture.toImageSync(
+        math.max(1, (width * pixelRatio).ceil() + _staticImagePadding * 2),
+        math.max(
+          1,
+          (text.height * pixelRatio).ceil() + _staticImagePadding * 2,
+        ),
+      );
+    } finally {
+      picture.dispose();
+    }
+  }
+
+  void prepareGlyphAtlas() {
+    if (glyphAtlas != null) return;
+    // One texture for the paragraph rather than one render target per glyph.
+    // Transparent gutters keep bilinear sampling out of neighboring glyphs.
+    const gutter = 2;
+    var atlasWidth = 0;
+    var atlasHeight = 0;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
     for (final row in visualLines) {
-      for (final glyph in row.glyphs) {
-        if (glyph.image != null) continue;
+      final rects = row.atlasRects = Float32List(row.glyphs.length * 4);
+      final transforms = row.atlasTransforms = Float32List(
+        row.glyphs.length * 4,
+      );
+      var left = 0;
+      var rowHeight = 0;
+      for (var index = 0; index < row.glyphs.length; index++) {
+        final glyph = row.glyphs[index];
         final width = (glyph.rect.width * pixelRatio).ceil();
         final height = (glyph.rect.height * pixelRatio).ceil();
-        if (width <= 0 || height <= 0) continue;
         final origin = Offset(
           (glyph.rect.left * pixelRatio).roundToDouble(),
           (glyph.rect.top * pixelRatio).roundToDouble(),
         );
-        final recorder = ui.PictureRecorder();
-        final canvas = Canvas(recorder)
-          ..translate(-origin.dx, -origin.dy)
-          ..scale(pixelRatio);
-        // Capture the already-shaped cluster once at a fixed physical-pixel
-        // origin. During motion only the bitmap moves, so rasterization and
-        // the glyph's clip edges cannot change from frame to frame.
+        glyph.imageOrigin = origin / pixelRatio;
+        final rect = Rect.fromLTWH(
+          (left + gutter).toDouble(),
+          (atlasHeight + gutter).toDouble(),
+          width.toDouble(),
+          height.toDouble(),
+        );
+        final slot = index * 4;
+        rects[slot] = rect.left;
+        rects[slot + 1] = rect.top;
+        rects[slot + 2] = rect.right;
+        rects[slot + 3] = rect.bottom;
+        transforms[slot] = 1 / pixelRatio;
+        transforms[slot + 2] = glyph.imageOrigin.dx;
+        transforms[slot + 3] = glyph.imageOrigin.dy;
+        canvas.save();
+        canvas.clipRect(rect);
+        canvas.translate(rect.left - origin.dx, rect.top - origin.dy);
+        canvas.scale(pixelRatio);
         text.paint(canvas, Offset.zero);
-        final picture = recorder.endRecording();
-        try {
-          glyph.image = picture.toImageSync(width, height);
-          glyph.imageOrigin = origin / pixelRatio;
-        } finally {
-          picture.dispose();
-        }
+        canvas.restore();
+        left += width + gutter * 2;
+        rowHeight = math.max(rowHeight, height + gutter * 2);
       }
+      atlasWidth = math.max(atlasWidth, left);
+      atlasHeight += rowHeight;
+    }
+    final picture = recorder.endRecording();
+    try {
+      if (atlasWidth > 0 && atlasHeight > 0) {
+        glyphAtlas = picture.toImageSync(atlasWidth, atlasHeight);
+      }
+    } finally {
+      picture.dispose();
     }
   }
 
   void dispose() {
-    for (final row in visualLines) {
-      for (final glyph in row.glyphs) {
-        glyph.image?.dispose();
-      }
-    }
+    glyphAtlas?.dispose();
+    staticImage?.dispose();
     text.dispose();
   }
 }
@@ -465,6 +549,16 @@ class _KaraokePainter extends CustomPainter {
     final peak = _dimAlpha + (1 - _dimAlpha) * emphasis.value;
     if (!active) {
       final dy = !reduceMotion && ms < p.line.startMs ? p.lift : 0.0;
+      final image = p.staticImage;
+      if (image != null && !reduceMotion) {
+        _imagePaint.color = Colors.white.withValues(alpha: peak);
+        canvas.save();
+        canvas.translate(p.staticImageOrigin.dx, p.staticImageOrigin.dy + dy);
+        canvas.scale(1 / p.pixelRatio);
+        canvas.drawImage(image, Offset.zero, _imagePaint);
+        canvas.restore();
+        return;
+      }
       canvas.saveLayer(
         Offset.zero & size,
         Paint()..color = Colors.white.withValues(alpha: peak),
@@ -482,21 +576,31 @@ class _KaraokePainter extends CustomPainter {
         row.rect.bottom + p.lift,
       );
       canvas.saveLayer(bounds, Paint());
-      for (final glyph in row.glyphs) {
-        final dy = reduceMotion
-            ? 0.0
-            : p.lift * (1 - p.riseAt(glyph.center, front));
-        final image = glyph.image;
-        canvas.save();
-        if (image != null && !reduceMotion) {
-          canvas.translate(glyph.imageOrigin.dx, glyph.imageOrigin.dy + dy);
-          canvas.scale(1 / p.pixelRatio);
-          canvas.drawImage(image, Offset.zero, _imagePaint);
-        } else {
-          canvas.translate(0, dy);
-          canvas.clipRect(glyph.rect);
-          p.text.paint(canvas, Offset.zero);
+      final atlas = p.glyphAtlas;
+      final transforms = row.atlasTransforms;
+      if (atlas != null && transforms != null && !reduceMotion) {
+        for (var index = 0; index < row.glyphs.length; index++) {
+          final glyph = row.glyphs[index];
+          transforms[index * 4 + 3] =
+              glyph.imageOrigin.dy +
+              p.lift * (1 - p.riseAt(glyph.center, front));
         }
+        // Batch the row's glyphs in one draw. Arrays and texture are reused;
+        // only the Y translations change while the spatial wave advances.
+        canvas.drawRawAtlas(
+          atlas,
+          transforms,
+          row.atlasRects!,
+          null,
+          null,
+          null,
+          _imagePaint,
+        );
+      } else {
+        // With motion disabled the whole shaped row can be painted at once.
+        canvas.save();
+        canvas.clipRect(bounds);
+        p.text.paint(canvas, Offset.zero);
         canvas.restore();
       }
       final x = row.rect.left + front - row.start;

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:go_router/go_router.dart';
@@ -26,10 +27,12 @@ import '../playlists/playlist_store.dart';
 import '../shell/shell_toolbar_visibility.dart';
 import '../shell/shell_bottom_area.dart';
 import '../shell/shell_navigation.dart';
+import '../shell/widgets/scrolling_page_header.dart';
 import 'local_song_scan_cache.dart';
 import 'scanned_song_file.dart';
 import 'song_search.dart';
 import 'songs_toolbar_state.dart';
+import 'songs_playback_location.dart';
 import 'widgets/song_row.dart';
 import 'widgets/songs_batch_action_bar.dart';
 import 'widgets/songs_placeholders.dart';
@@ -56,6 +59,8 @@ class _SongsPageState extends ConsumerState<SongsPage> {
   String _searchQuery = '';
   final Object _toolbarOwner = Object();
   final ScrollController _scrollController = ScrollController();
+  final GlobalKey _songsListKey = GlobalKey(debugLabel: 'songs-list');
+  int _locateGeneration = 0;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode(debugLabel: 'songs-search');
   bool? _toolbarVisibilityBeforeSearchFocus;
@@ -71,7 +76,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
   String? _scanError;
   int _scanGeneration = 0;
   Timer? _tagFlushTimer;
-  ProviderSubscription<String>? _localMusicDirSubscription;
+  ProviderSubscription<List<String>>? _localMusicDirSubscription;
   late final StateController<SongsToolbarState> _toolbarStateController;
   late final StateController<bool> _shellToolbarController;
   late final LocalSongScanCache _scanCache;
@@ -91,10 +96,10 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     if (widget.searchMode) _enableSearchFocusHandling();
     _firstRouteTransitionSettled = _waitForFirstRouteTransition();
     _localMusicDirSubscription = ref.listenManual(
-      settingsProvider.select((settings) => settings.localMusicDir),
+      settingsProvider.select((settings) => settings.localMusicDirs),
       (previous, next) {
         if (previous == null || previous == next) return;
-        // Keep the currently rendered library in place while the new folder is
+        // Keep the currently rendered library in place while the new folders are
         // scanned, then swap the result in one frame. This avoids a loading
         // flash when the local music folder changes from Settings.
         unawaited(_scanLocalMusicFolder());
@@ -108,7 +113,9 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     // would clamp PageStorage's saved scroll offset back to zero.
     final snapshot = _scanCache.snapshot;
     if (snapshot == null ||
-        snapshot.directory != ref.read(settingsProvider).localMusicDir) {
+        !snapshot.matchesDirectories(
+          ref.read(settingsProvider).localMusicDirs,
+        )) {
       return;
     }
     _scannedFiles = [
@@ -149,14 +156,14 @@ class _SongsPageState extends ConsumerState<SongsPage> {
 
     _handleScanCacheChanged();
     final snapshot = _scanCache.snapshot;
-    final currentDirectory = ref.read(settingsProvider).localMusicDir;
+    final currentDirectories = ref.read(settingsProvider).localMusicDirs;
     final shouldRefresh =
         snapshot == null ||
-        snapshot.directory != currentDirectory ||
+        !snapshot.matchesDirectories(currentDirectories) ||
         snapshot.error != null ||
         DateTime.now().difference(snapshot.cachedAt) >= _songScanCacheTtl;
     if (shouldRefresh) {
-      unawaited(_scanCache.refresh(directory: currentDirectory));
+      unawaited(_scanCache.refresh(directories: currentDirectories));
     }
   }
 
@@ -278,8 +285,8 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     if (!mounted) return;
     final snapshot = _scanCache.snapshot;
     if (snapshot == null) return;
-    final currentDirectory = ref.read(settingsProvider).localMusicDir;
-    if (snapshot.directory != currentDirectory) return;
+    final currentDirectories = ref.read(settingsProvider).localMusicDirs;
+    if (!snapshot.matchesDirectories(currentDirectories)) return;
 
     final files = [
       for (final file in snapshot.files) ScannedSongFile.fromSnapshot(file),
@@ -308,14 +315,14 @@ class _SongsPageState extends ConsumerState<SongsPage> {
       _tagCache.addAll(songTagCacheSnapshot);
       _tagModifiedAt.addAll(songTagModifiedAtSnapshot);
     });
-    if (snapshot.error == null && files.isNotEmpty) {
+    if (files.isNotEmpty) {
       unawaited(_resumeCachedHydration(files, generation));
     }
   }
 
   Future<void> _scanLocalMusicFolder() {
     return _scanCache.refresh(
-      directory: ref.read(settingsProvider).localMusicDir,
+      directories: ref.read(settingsProvider).localMusicDirs,
     );
   }
 
@@ -498,7 +505,8 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     final path = entry.savedPath;
     final hasLocalFile =
         path != null && path.isNotEmpty && File(path).existsSync();
-    final playlistMode = ref.read(songsLibraryPlaylistIdProvider) != null;
+    final playlistId = ref.read(songsLibraryPlaylistIdProvider);
+    final playlistMode = playlistId != null;
     if (!hasLocalFile && (!playlistMode || entry.musicInfo == null)) {
       showAppToast(
         context,
@@ -523,9 +531,113 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     );
     final player = ref.read(playerControllerProvider.notifier);
     if (playlistMode) {
-      await player.playFromPlaylistQueue(entry, queue);
+      await player.playFromPlaylistQueue(entry, queue, playlistId: playlistId);
     } else {
       await player.playFromHistoryQueue(entry, queue);
+    }
+  }
+
+  Future<void> _locateCurrentSong() async {
+    final generation = ++_locateGeneration;
+    final initialPlayer = ref.read(playerControllerProvider);
+    final trackId = initialPlayer.track?.id;
+    if (trackId == null) return;
+    final destination = findPlayingLibrary(
+      player: initialPlayer,
+      sourcePlaylistId: ref
+          .read(playerControllerProvider.notifier)
+          .queuePlaylistId,
+      selectedPlaylistId: ref.read(songsLibraryPlaylistIdProvider),
+      playlists: ref.read(localPlaylistsProvider),
+      localSongs: _songs(ref.read(downloadHistoryProvider)),
+    );
+    if (destination == null) {
+      showAppToast(context, '当前歌曲不在本地歌曲或已收藏歌单中');
+      return;
+    }
+    final playlistId = destination.playlistId;
+    _selectLibraryPlaylist(playlistId);
+    if (widget.searchMode) _clearSearch();
+    // Selecting a library replaces the keyed list. Wait until its rows and
+    // scroll dimensions are ready before finding the playing song.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted || generation != _locateGeneration) return;
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : AppMotion.medium;
+
+    // SliverList only builds nearby rows. Use a measured row to reach the
+    // target's neighborhood, then align the actual target after layout.
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (!mounted || generation != _locateGeneration) return;
+      final player = ref.read(playerControllerProvider);
+      if (player.track?.id != trackId ||
+          ref.read(songsLibraryPlaylistIdProvider) != playlistId ||
+          !_scrollController.hasClients) {
+        return;
+      }
+      final queueEntry =
+          player.queueIndex >= 0 && player.queueIndex < player.queue.length
+          ? player.queue[player.queueIndex]
+          : null;
+      final index = _visibleSongs.indexWhere(
+        (entry) => matchesPlayingEntry(
+          entry,
+          queueEntry,
+          player.track?.localPath,
+          trackId,
+        ),
+      );
+      if (index < 0) {
+        showAppToast(context, '当前歌曲不在这个列表中');
+        return;
+      }
+      final sliver = _songsListKey.currentContext?.findRenderObject();
+      if (sliver is! RenderSliverMultiBoxAdaptor) return;
+      RenderBox? anchor;
+      RenderBox? target;
+      var child = sliver.firstChild;
+      while (child != null) {
+        final data = child.parentData! as SliverMultiBoxAdaptorParentData;
+        // The separated list alternates song rows and 1dp dividers.
+        if (data.index!.isEven) anchor ??= child;
+        if (data.index == index * 2) {
+          target = child;
+          break;
+        }
+        child = sliver.childAfter(child);
+      }
+      final position = _scrollController.position;
+      if (target != null) {
+        await position.ensureVisible(
+          target,
+          alignment: 0.45,
+          duration: duration,
+          curve: AppMotion.emphasized,
+        );
+        return;
+      }
+      if (anchor == null) return;
+      final data = anchor.parentData! as SliverMultiBoxAdaptorParentData;
+      final anchorOffset = RenderAbstractViewport.of(
+        anchor,
+      ).getOffsetToReveal(anchor, 0.45).offset;
+      final offset =
+          (anchorOffset + (index - data.index! ~/ 2) * (anchor.size.height + 1))
+              .clamp(position.minScrollExtent, position.maxScrollExtent)
+              .toDouble();
+      // Skip a long scroll animation when the target is far away.
+      if (duration == Duration.zero ||
+          (offset - position.pixels).abs() > position.viewportDimension * 2) {
+        _scrollController.jumpTo(offset);
+      } else {
+        await _scrollController.animateTo(
+          offset,
+          duration: duration,
+          curve: AppMotion.emphasized,
+        );
+      }
+      await WidgetsBinding.instance.endOfFrame;
     }
   }
 
@@ -1066,6 +1178,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
         return (
           queueEntry: queueEntry,
           localPath: state.track?.localPath,
+          trackId: state.track?.id,
           playing: state.playing,
         );
       }),
@@ -1098,6 +1211,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
           parent: AlwaysScrollableScrollPhysics(),
         ),
         slivers: [
+          const SliverToBoxAdapter(child: ScrollHeaderSpacer()),
           if (widget.searchMode)
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(14, 2, 14, 0),
@@ -1156,15 +1270,17 @@ class _SongsPageState extends ConsumerState<SongsPage> {
               ),
               sliver: SlidableAutoCloseBehavior(
                 child: SliverList.separated(
+                  key: _songsListKey,
                   itemCount: songs.length,
                   separatorBuilder: (_, _) => const SongListDivider(),
                   itemBuilder: (context, index) {
                     final entry = songs[index];
                     final path = entry.savedPath;
-                    final playing = _matchesPlayingEntry(
+                    final playing = matchesPlayingEntry(
                       entry,
                       playbackIdentity.queueEntry,
                       playbackIdentity.localPath,
+                      playbackIdentity.trackId,
                     );
                     return SongRow(
                       key: ValueKey(entry.id),
@@ -1225,12 +1341,30 @@ class _SongsPageState extends ConsumerState<SongsPage> {
               playlistMode: playlistMode,
             )
           : null,
-      body: _batchMode || playlistMode
-          ? libraryView
-          : AppRefreshIndicator(
-              onRefresh: _scanLocalMusicFolder,
-              child: libraryView,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          _batchMode || playlistMode
+              ? libraryView
+              : AppRefreshIndicator(
+                  onRefresh: _scanLocalMusicFolder,
+                  child: libraryView,
+                ),
+          if (!_batchMode && playbackIdentity.trackId != null)
+            Positioned(
+              right: 18,
+              bottom: ShellBottomArea.contentPadding(context, 88),
+              child: FloatingActionButton.small(
+                key: const ValueKey('songs-locate-current'),
+                heroTag: null,
+                tooltip: '定位当前歌曲',
+                elevation: 3,
+                onPressed: () => unawaited(_locateCurrentSong()),
+                child: const Icon(Icons.my_location_rounded, size: 22),
+              ),
             ),
+        ],
+      ),
     );
   }
 }
@@ -1238,38 +1372,6 @@ class _SongsPageState extends ConsumerState<SongsPage> {
 String _pathKey(String path) {
   final normalized = path.replaceAll('\\', '/');
   return Platform.isWindows ? normalized.toLowerCase() : normalized;
-}
-
-bool _matchesPlayingEntry(
-  DownloadHistoryEntry entry,
-  DownloadHistoryEntry? queueEntry,
-  String? playerLocalPath,
-) {
-  if (queueEntry != null) {
-    if (queueEntry.id == entry.id) return true;
-    final queuedPath = queueEntry.savedPath?.trim();
-    final entryPath = entry.savedPath?.trim();
-    if (queuedPath != null &&
-        queuedPath.isNotEmpty &&
-        entryPath != null &&
-        entryPath.isNotEmpty &&
-        _pathKey(queuedPath) == _pathKey(entryPath)) {
-      return true;
-    }
-    if (queueEntry.sourceCode == entry.sourceCode &&
-        queueEntry.musicId.isNotEmpty &&
-        queueEntry.musicId == entry.musicId) {
-      return true;
-    }
-  }
-
-  final entryPath = entry.savedPath?.trim();
-  final activePath = playerLocalPath?.trim();
-  return entryPath != null &&
-      entryPath.isNotEmpty &&
-      activePath != null &&
-      activePath.isNotEmpty &&
-      _pathKey(entryPath) == _pathKey(activePath);
 }
 
 String _preferTag(String? value, String fallback) {

@@ -9,6 +9,7 @@ import '../../core/storage/settings_store.dart';
 import '../../core/ui/app_refresh_indicator.dart';
 import '../../core/ui/container_transform.dart';
 import '../../core/ui/car_display_layout.dart';
+import '../shell/widgets/scrolling_page_header.dart';
 import '../shell/widgets/shell_header.dart';
 import '../shell/shell_bottom_area.dart';
 import 'discovery_controller.dart';
@@ -27,20 +28,32 @@ class LeaderboardsPage extends ConsumerWidget {
       settingsProvider.select((settings) => settings.carPadModeEnabled),
     );
     return Scaffold(
-      body: Column(
-        children: [
-          // 发现区页面自绘顶栏，AppShell 对发现区路由不占顶栏空间：这样
-          // 打开榜单详情时导航器高度不变，容器变换展开期间列表不会跳动。
-          const ShellSectionHeader(title: '排行榜'),
-          Expanded(
-            child: _buildBoards(
-              context,
-              ref,
-              boards,
-              carPadModeEnabled: carPadModeEnabled,
-            ),
+      body: ScrollingPageHeader(
+        topInset: MediaQuery.viewPaddingOf(context).top + 72,
+        headerBuilder: (context, scrollOffset) => ShellSectionHeader(
+          title: '排行榜',
+          scrollOffset: scrollOffset,
+          floating: true,
+          leading: IconButton(
+            tooltip: '返回上一页',
+            onPressed: () {
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                context.go('/');
+              }
+            },
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           ),
-        ],
+        ),
+        child: Builder(
+          builder: (context) => _buildBoards(
+            context,
+            ref,
+            boards,
+            carPadModeEnabled: carPadModeEnabled,
+          ),
+        ),
       ),
     );
   }
@@ -68,6 +81,7 @@ class LeaderboardsPage extends ConsumerWidget {
             parent: BouncingScrollPhysics(),
           ),
           slivers: [
+            const SliverToBoxAdapter(child: ScrollHeaderSpacer()),
             SliverToBoxAdapter(
               child: Center(
                 child: ConstrainedBox(

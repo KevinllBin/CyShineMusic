@@ -40,11 +40,11 @@ class AlbumPage extends ConsumerWidget {
       settingsProvider.select((settings) => settings.squareAlbumCoverEnabled),
     );
     final track = player.track;
-    final showMiniLyrics =
-        !wide &&
-        onOpenLyrics != null &&
-        miniLyricsEnabled &&
-        player.miniLyricsReady;
+    // Reserve the mini-lyric space before loading finishes. Otherwise its
+    // arrival moves the real cover 36dp away from the captured flight endpoint.
+    final reserveMiniLyrics =
+        !wide && onOpenLyrics != null && miniLyricsEnabled;
+    final showMiniLyrics = reserveMiniLyrics && player.miniLyricsReady;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -75,7 +75,7 @@ class AlbumPage extends ConsumerWidget {
               child: Transform.translate(
                 offset: Offset(
                   0,
-                  showMiniLyrics ? -_compactAlbumContentLift : 0,
+                  reserveMiniLyrics ? -_compactAlbumContentLift : 0,
                 ),
                 child: SingleChildScrollView(
                   physics: const BouncingScrollPhysics(),

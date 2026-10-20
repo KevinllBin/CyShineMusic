@@ -120,6 +120,9 @@ class _PlaybackQueueSheet extends ConsumerWidget {
     final count = vm.queue.isNotEmpty
         ? vm.queue.length
         : (vm.track == null ? 0 : 1);
+    final currentPosition = vm.queueIndex >= 0 && vm.queueIndex < count
+        ? vm.queueIndex + 1
+        : (vm.queue.isEmpty && vm.track != null ? 1 : null);
     final dark = Theme.of(context).brightness == Brightness.dark;
     final sheetColor = Color.alphaBlend(
       (dark ? Colors.black : Colors.white).withValues(alpha: 0.32),
@@ -165,7 +168,9 @@ class _PlaybackQueueSheet extends ConsumerWidget {
                           ),
                           const SizedBox(height: 5),
                           Text(
-                            '$count 首 · ${vm.mode.label}',
+                            currentPosition == null
+                                ? '$count 首 · ${vm.mode.label}'
+                                : '$currentPosition/$count首·${vm.mode.label}',
                             style: TextStyle(
                               color: playerMuted(context),
                               fontSize: 12.5,

@@ -9,6 +9,7 @@ import '../../core/models/playlist_info.dart';
 import '../../core/ui/app_toast.dart';
 import '../../core/ui/car_display_layout.dart';
 import '../shell/shell_bottom_area.dart';
+import '../shell/widgets/scrolling_page_header.dart';
 import '../downloads/download_progress.dart';
 import '../music_sources/music_source_action_guard.dart';
 import '../player/player_controller.dart';
@@ -76,6 +77,7 @@ class _OnlinePlaylistImportPageState
           parent: AlwaysScrollableScrollPhysics(),
         ),
         slivers: [
+          const SliverToBoxAdapter(child: ScrollHeaderSpacer()),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 2, 16, 0),
             sliver: SliverToBoxAdapter(

@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/dio_factory.dart';
@@ -16,6 +17,7 @@ export 'base_url.dart';
 
 const String _kDownloadDirKey = 'download_dir';
 const String _kLocalMusicDirKey = 'local_music_dir';
+const String _kLocalMusicDirsKey = 'local_music_dirs';
 const String _kUseBuiltInSourceFilePickerKey =
     'use_built_in_source_file_picker';
 const String _kThemeModeKey = 'theme_mode';
@@ -88,7 +90,7 @@ enum AppNavigationMode {
 class AppSettings {
   const AppSettings({
     required this.downloadDir,
-    required this.localMusicDir,
+    required this.localMusicDirs,
     this.useBuiltInSourceFilePicker = false,
     required this.themeMode,
     required this.themeSeed,
@@ -121,7 +123,8 @@ class AppSettings {
   });
 
   final String downloadDir;
-  final String localMusicDir;
+  final List<String> localMusicDirs;
+  String get localMusicDir => localMusicDirs.first;
   final bool useBuiltInSourceFilePicker;
   final ThemeMode themeMode;
   final Color themeSeed;
@@ -168,6 +171,7 @@ class AppSettings {
   AppSettings copyWith({
     String? downloadDir,
     String? localMusicDir,
+    List<String>? localMusicDirs,
     bool? useBuiltInSourceFilePicker,
     ThemeMode? themeMode,
     Color? themeSeed,
@@ -200,7 +204,9 @@ class AppSettings {
     bool? debugMode,
   }) => AppSettings(
     downloadDir: downloadDir ?? this.downloadDir,
-    localMusicDir: localMusicDir ?? this.localMusicDir,
+    localMusicDirs:
+        localMusicDirs ??
+        (localMusicDir != null ? [localMusicDir] : this.localMusicDirs),
     useBuiltInSourceFilePicker:
         useBuiltInSourceFilePicker ?? this.useBuiltInSourceFilePicker,
     themeMode: themeMode ?? this.themeMode,
@@ -245,7 +251,7 @@ class AppSettings {
 
   static const AppSettings fallback = AppSettings(
     downloadDir: kDefaultDownloadDir,
-    localMusicDir: kDefaultDownloadDir,
+    localMusicDirs: [kDefaultDownloadDir],
     themeMode: ThemeMode.system,
     themeSeed: SeedPalette.defaultSeed,
     colorStyle: AppColorStyle.fallback,
@@ -287,7 +293,11 @@ class SettingsNotifier extends Notifier<AppSettings> {
         _prefs.getString(_kDownloadDirKey) ?? kDefaultDownloadDir;
     return AppSettings(
       downloadDir: downloadDir,
-      localMusicDir: _prefs.getString(_kLocalMusicDirKey) ?? downloadDir,
+      localMusicDirs: _normalizeLocalMusicDirs(
+        _prefs.getStringList(_kLocalMusicDirsKey) ??
+            [_prefs.getString(_kLocalMusicDirKey) ?? downloadDir],
+        fallback: downloadDir,
+      ),
       useBuiltInSourceFilePicker:
           _prefs.getBool(_kUseBuiltInSourceFilePickerKey) ?? false,
       themeMode: _decodeThemeMode(_prefs.getString(_kThemeModeKey)),
@@ -367,20 +377,59 @@ class SettingsNotifier extends Notifier<AppSettings> {
 
   Future<void> setDownloadDir(String value) async {
     final localMusicFollowsDownload =
-        !_prefs.containsKey(_kLocalMusicDirKey) ||
-        state.localMusicDir == state.downloadDir;
+        state.localMusicDirs.length == 1 &&
+        p.equals(state.localMusicDir, state.downloadDir);
     await _prefs.setString(_kDownloadDirKey, value);
     if (localMusicFollowsDownload) {
-      await _prefs.setString(_kLocalMusicDirKey, value);
-      state = state.copyWith(downloadDir: value, localMusicDir: value);
+      final directories = _normalizeLocalMusicDirs([value], fallback: value);
+      await _persistLocalMusicDirs(directories);
+      state = state.copyWith(downloadDir: value, localMusicDirs: directories);
     } else {
       state = state.copyWith(downloadDir: value);
     }
   }
 
-  Future<void> setLocalMusicDir(String value) async {
-    await _prefs.setString(_kLocalMusicDirKey, value);
-    state = state.copyWith(localMusicDir: value);
+  Future<void> setLocalMusicDir(String value) => setLocalMusicDirs([value]);
+
+  Future<void> setLocalMusicDirs(List<String> values) async {
+    final directories = _normalizeLocalMusicDirs(
+      values,
+      fallback: state.downloadDir,
+    );
+    await _persistLocalMusicDirs(directories);
+    state = state.copyWith(localMusicDirs: directories);
+  }
+
+  Future<void> _persistLocalMusicDirs(List<String> directories) async {
+    await _prefs.setStringList(_kLocalMusicDirsKey, directories);
+    await _prefs.setString(_kLocalMusicDirKey, directories.first);
+  }
+
+  static List<String> _normalizeLocalMusicDirs(
+    List<String> values, {
+    required String fallback,
+  }) {
+    final directories = <String>[];
+    for (final value in values) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) continue;
+      final pathContext = trimmed.startsWith('/') ? p.posix : p.context;
+      final directory = pathContext.normalize(trimmed);
+      if (directories.any(
+        (existing) => pathContext.equals(existing, directory),
+      )) {
+        continue;
+      }
+      directories.add(directory);
+    }
+    if (directories.isEmpty) {
+      final path = fallback.trim().isEmpty
+          ? kDefaultDownloadDir
+          : fallback.trim();
+      final pathContext = path.startsWith('/') ? p.posix : p.context;
+      directories.add(pathContext.normalize(path));
+    }
+    return List.unmodifiable(directories);
   }
 
   Future<void> setUseBuiltInSourceFilePicker(bool value) async {

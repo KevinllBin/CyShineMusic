@@ -79,9 +79,6 @@ class _OnlinePlaylistDetailPageState
       ? '/discover/leaderboards/${widget.source.code}/${widget.playlistId}'
       : '/discover/playlists/${widget.source.code}/${widget.playlistId}';
 
-  String get _detailLabel =>
-      widget.kind == OnlineCollectionKind.leaderboard ? '榜单详情' : '歌单详情';
-
   @override
   void initState() {
     super.initState();
@@ -336,7 +333,7 @@ class _OnlinePlaylistDetailPageState
             body: wide
                 ? PlaylistWideBody(
                     topBar: ImmersivePlaylistTopBar(
-                      title: _detailLabel,
+                      title: playlist.name,
                       onImage: false,
                     ),
                     infoPane: PlaylistWideInfoPane(
@@ -368,46 +365,50 @@ class _OnlinePlaylistDetailPageState
                       ),
                     ),
                   )
-                : AppScrollbar(
-                    controller: _scrollController,
-                    child: AppRefreshIndicator(
-                      onRefresh: refresh,
-                      child: CustomScrollView(
-                        controller: _scrollController,
-                        key: PageStorageKey(
-                          'online-playlist-${playlist.source.code}-${playlist.id}',
-                        ),
-                        physics: const AlwaysScrollableScrollPhysics(
-                          parent: BouncingScrollPhysics(),
-                        ),
-                        slivers: [
-                          SliverToBoxAdapter(
-                            child: ImmersivePlaylistHeader(
-                              artworkProvider: artworkProvider,
-                              artworkHeroTag: onlinePlaylistArtworkHeroTag(
-                                playlist.source,
-                                playlist.id,
-                                kind: widget.kind,
+                : ScrollingImmersivePlaylistBody(
+                    title: playlist.name,
+                    child: AppScrollbar(
+                      controller: _scrollController,
+                      child: AppRefreshIndicator(
+                        onRefresh: refresh,
+                        child: CustomScrollView(
+                          controller: _scrollController,
+                          key: PageStorageKey(
+                            'online-playlist-${playlist.source.code}-${playlist.id}',
+                          ),
+                          physics: const AlwaysScrollableScrollPhysics(
+                            parent: BouncingScrollPhysics(),
+                          ),
+                          slivers: [
+                            SliverToBoxAdapter(
+                              child: ImmersivePlaylistHeader(
+                                artworkProvider: artworkProvider,
+                                artworkHeroTag: onlinePlaylistArtworkHeroTag(
+                                  playlist.source,
+                                  playlist.id,
+                                  kind: widget.kind,
+                                ),
+                                topBar: const ImmersivePlaylistTopBar(
+                                  title: '',
+                                ),
+                                showTopBar: false,
                               ),
-                              topBar: ImmersivePlaylistTopBar(
-                                title: _detailLabel,
+                            ),
+                            SliverToBoxAdapter(
+                              child: PlaylistDetailInfo(
+                                title: playlist.name,
+                                metadata: metadata,
+                                description: playlist.description,
                               ),
                             ),
-                          ),
-                          SliverToBoxAdapter(
-                            child: PlaylistDetailInfo(
-                              title: playlist.name,
-                              metadata: metadata,
-                              description: playlist.description,
+                            SliverToBoxAdapter(
+                              child: actionsWith(
+                                const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                              ),
                             ),
-                          ),
-                          SliverToBoxAdapter(
-                            child: actionsWith(
-                              const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                            ),
-                          ),
-                          ...trackSlivers,
-                        ],
+                            ...trackSlivers,
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -643,7 +644,7 @@ class _DetailLoading extends StatelessWidget {
             body: wide
                 ? PlaylistWideBody(
                     topBar: ImmersivePlaylistTopBar(
-                      title: detailLabel,
+                      title: title,
                       onImage: false,
                     ),
                     infoPane: PlaylistWideInfoPane(
@@ -677,39 +678,45 @@ class _DetailLoading extends StatelessWidget {
                       ],
                     ),
                   )
-                : CustomScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(
-                      parent: BouncingScrollPhysics(),
-                    ),
-                    slivers: [
-                      SliverToBoxAdapter(
-                        child: ImmersivePlaylistHeader(
-                          artworkProvider: artworkProvider,
-                          artworkLoading: artworkProvider == null,
-                          artworkHeroTag: onlinePlaylistArtworkHeroTag(
-                            source,
-                            playlistId,
-                            kind: kind,
+                : ScrollingImmersivePlaylistBody(
+                    title: item?.name.trim() ?? '',
+                    child: CustomScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(
+                        parent: BouncingScrollPhysics(),
+                      ),
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: ImmersivePlaylistHeader(
+                            artworkProvider: artworkProvider,
+                            artworkLoading: artworkProvider == null,
+                            artworkHeroTag: onlinePlaylistArtworkHeroTag(
+                              source,
+                              playlistId,
+                              kind: kind,
+                            ),
+                            topBar: const ImmersivePlaylistTopBar(title: ''),
+                            showTopBar: false,
                           ),
-                          topBar: ImmersivePlaylistTopBar(title: detailLabel),
                         ),
-                      ),
-                      SliverToBoxAdapter(
-                        child: PlaylistDetailInfo(
-                          title: title,
-                          metadata: metadata,
-                          description: item?.description,
-                          descriptionLoading: descriptionLoading,
+                        SliverToBoxAdapter(
+                          child: PlaylistDetailInfo(
+                            title: title,
+                            metadata: metadata,
+                            description: item?.description,
+                            descriptionLoading: descriptionLoading,
+                          ),
                         ),
-                      ),
-                      const SliverToBoxAdapter(
-                        child: PlaylistDetailActions(loading: true),
-                      ),
-                      SliverToBoxAdapter(
-                        child: _PlaylistTracksHeading(count: item?.trackCount),
-                      ),
-                      skeletonSliver,
-                    ],
+                        const SliverToBoxAdapter(
+                          child: PlaylistDetailActions(loading: true),
+                        ),
+                        SliverToBoxAdapter(
+                          child: _PlaylistTracksHeading(
+                            count: item?.trackCount,
+                          ),
+                        ),
+                        skeletonSliver,
+                      ],
+                    ),
                   ),
           );
         },
@@ -794,7 +801,7 @@ class _DetailError extends StatelessWidget {
             body: wide
                 ? PlaylistWideBody(
                     topBar: ImmersivePlaylistTopBar(
-                      title: detailLabel,
+                      title: title,
                       onImage: false,
                     ),
                     infoPane: PlaylistWideInfoPane(
@@ -810,34 +817,38 @@ class _DetailError extends StatelessWidget {
                     ),
                     right: errorContent,
                   )
-                : CustomScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(
-                      parent: BouncingScrollPhysics(),
-                    ),
-                    slivers: [
-                      SliverToBoxAdapter(
-                        child: ImmersivePlaylistHeader(
-                          artworkProvider: artworkProvider,
-                          artworkHeroTag: onlinePlaylistArtworkHeroTag(
-                            source,
-                            playlistId,
-                            kind: kind,
+                : ScrollingImmersivePlaylistBody(
+                    title: item?.name.trim() ?? '',
+                    child: CustomScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(
+                        parent: BouncingScrollPhysics(),
+                      ),
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: ImmersivePlaylistHeader(
+                            artworkProvider: artworkProvider,
+                            artworkHeroTag: onlinePlaylistArtworkHeroTag(
+                              source,
+                              playlistId,
+                              kind: kind,
+                            ),
+                            topBar: const ImmersivePlaylistTopBar(title: ''),
+                            showTopBar: false,
                           ),
-                          topBar: ImmersivePlaylistTopBar(title: detailLabel),
                         ),
-                      ),
-                      SliverToBoxAdapter(
-                        child: PlaylistDetailInfo(
-                          title: title,
-                          metadata: metadata,
-                          description: item?.description,
+                        SliverToBoxAdapter(
+                          child: PlaylistDetailInfo(
+                            title: title,
+                            metadata: metadata,
+                            description: item?.description,
+                          ),
                         ),
-                      ),
-                      SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: errorContent,
-                      ),
-                    ],
+                        SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: errorContent,
+                        ),
+                      ],
+                    ),
                   ),
           );
         },

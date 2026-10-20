@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -34,6 +36,19 @@ final playerArtworkProvider = Provider<ImageProvider<Object>?>((ref) {
 
 typedef _ArtworkColors = ({Color? accent, Color? lyricInk});
 const _emptyArtworkColors = (accent: null, lyricInk: null);
+typedef _ArtworkPixels = ({Uint8List rgba, int width, int height});
+
+// Only pixel bytes cross the isolate boundary; image handles stay on the UI
+// isolate. In particular, the lyric-ink histogram must not block reveal frames.
+_ArtworkColors _extractArtworkColors(_ArtworkPixels pixels) {
+  final palette = extractFlowPalette(pixels.rgba, pixels.width, pixels.height);
+  return (
+    accent: palette == FlowPalette.fallback
+        ? null
+        : Color(palette.accentsArgb.first),
+    lyricInk: extractLyricInk(pixels.rgba),
+  );
+}
 
 final _artworkColorsProvider = FutureProvider.autoDispose<_ArtworkColors>((
   ref,
@@ -55,16 +70,26 @@ final _artworkColorsProvider = FutureProvider.autoDispose<_ArtworkColors>((
       try {
         final image = info.image;
         final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
-        if (data != null) {
+        if (data != null && !result.isCompleted) {
           final pixels = data.buffer.asUint8List(
             data.offsetInBytes,
             data.lengthInBytes,
           );
-          final palette = extractFlowPalette(pixels, image.width, image.height);
-          if (palette != FlowPalette.fallback) {
-            accent = Color(palette.accentsArgb.first);
-          }
-          lyricInk = extractLyricInk(pixels);
+          final input = (
+            rgba: pixels,
+            width: image.width,
+            height: image.height,
+          );
+          // Tiny placeholders cost less to sample than to send to an isolate.
+          final colors = pixels.length <= 32 * 32 * 4
+              ? _extractArtworkColors(input)
+              : await compute(
+                  _extractArtworkColors,
+                  input,
+                  debugLabel: 'player-artwork-colors',
+                );
+          accent = colors.accent;
+          lyricInk = colors.lyricInk;
         }
       } catch (_) {
         // Artwork failures should leave playback controls usable.

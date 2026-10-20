@@ -92,12 +92,15 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
         ],
       );
     }
-    return TrackChangeSwitcher(
-      transitionKey: transitionKey,
-      incomingOffset: const Offset(0.10, 0.018),
-      scaleBegin: 0.985,
-      expand: true,
-      child: child,
+    // Progress controls and the backdrop repaint independently of the lyrics.
+    return RepaintBoundary(
+      child: TrackChangeSwitcher(
+        transitionKey: transitionKey,
+        incomingOffset: const Offset(0.10, 0.018),
+        scaleBegin: 0.985,
+        expand: true,
+        child: child,
+      ),
     );
   }
 }

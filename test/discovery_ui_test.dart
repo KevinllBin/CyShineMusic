@@ -1185,8 +1185,9 @@ class _RecordingPlayerController extends PlayerController {
   @override
   Future<void> playFromPlaylistQueue(
     DownloadHistoryEntry entry,
-    List<DownloadHistoryEntry> queue,
-  ) async {
+    List<DownloadHistoryEntry> queue, {
+    String? playlistId,
+  }) async {
     playedEntry = entry;
     playedQueue = List<DownloadHistoryEntry>.of(queue);
     events.add('play:${queue.length}');

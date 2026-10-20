@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../settings/settings_section.dart';
+
 // Pure route helpers shared by the AppShell state machine (app_shell.dart)
 // and the extracted shell widgets (widgets/). Kept in their own file so
 // widgets/ never has to import the page file.
@@ -51,6 +53,7 @@ bool isPlayerReturnLocation(String location) {
   final path = uri.path;
   if (isDiscoveryLocation(path)) return true;
   if (isPlaylistLocation(path)) return true;
+  if (SettingsSection.fromLocation(path) != null) return true;
   return switch (path) {
     '/' ||
     '/downloads' ||
