@@ -12,6 +12,12 @@
   </p>
 </div>
 
+<div align="center">
+  <img src="./screenshots/showcase-player.png" width="760" alt="栖弦播放器展示，蓝色与绿色封面取色界面">
+  <br>
+  <img src="./screenshots/showcase-lyrics.png" width="760" alt="栖弦逐字歌词展示，蓝色与粉色歌词界面">
+</div>
+
 ## 项目简介
 
 CyShineMusic 是一个使用 Flutter 构建的 Android 音乐客户端，提供自定义源管理、音乐检索、下载管理、本地歌曲库和播放器能力。项目重点放在移动端体验、本地媒体整理、歌词展示和 Material 3 界面。
@@ -23,7 +29,7 @@ CyShineMusic 是一个使用 Flutter 构建的 Android 音乐客户端，提供�
 欢迎加入 QQ 群交流使用问题、功能建议和开发想法：`949229928`。
 
 <div align="center">
-  <img src="./screenshots/qq-group.png" width="260" alt="CyShineMusic QQ 交流群二维码">
+  <img src="./screenshots/qq-group.jpg" width="260" alt="CyShineMusic QQ 交流群二维码">
   <br>
   <sub>QQ 群：949229928</sub>
 </div>
@@ -45,21 +51,31 @@ CyShineMusic 是一个使用 Flutter 构建的 Android 音乐客户端，提供�
 
 <table>
   <tr>
-    <td align="center"><img src="./screenshots/discovery.png" width="220" alt="发现页"><br>发现</td>
-    <td align="center"><img src="./screenshots/playlist-detail.png" width="220" alt="歌单详情"><br>歌单详情</td>
-    <td align="center"><img src="./screenshots/songs.png" width="220" alt="本地歌曲"><br>本地歌曲</td>
-  </tr>
-  <tr>
-    <td align="center"><img src="./screenshots/player-cover.png" width="220" alt="播放器封面"><br>播放器</td>
-    <td align="center"><img src="./screenshots/player-lyrics.png" width="220" alt="逐字歌词"><br>逐字歌词</td>
-    <td align="center"><img src="./screenshots/settings-network.png" width="220" alt="设置"><br>设置</td>
-  </tr>
-  <tr>
-    <td align="center"><img src="./screenshots/settings-appearance.png" width="220" alt="浅色外观设置"><br>浅色外观</td>
-    <td align="center"><img src="./screenshots/settings-dark.png" width="220" alt="深色外观设置"><br>深色外观</td>
-    <td align="center"><img src="./screenshots/online-playlist-detail.jpg" width="220" alt="在线歌单详情"><br>在线歌单</td>
+    <td align="center"><img src="./screenshots/discovery.jpg" width="180" alt="发现页"><br>发现</td>
+    <td align="center"><img src="./screenshots/rankings.jpg" width="180" alt="排行榜列表"><br>排行榜</td>
+    <td align="center"><img src="./screenshots/online-playlist-detail.jpg" width="180" alt="在线榜单详情"><br>榜单详情</td>
+    <td align="center"><img src="./screenshots/playlist-detail.jpg" width="180" alt="歌单歌曲列表"><br>歌单歌曲</td>
   </tr>
 </table>
+
+<table>
+  <tr>
+    <td align="center"><img src="./screenshots/player-disc.jpg" width="220" alt="粉色播放器圆形封面"><br>圆形封面</td>
+    <td align="center"><img src="./screenshots/player-cover.jpg" width="220" alt="蓝色播放器方形封面"><br>方形封面</td>
+    <td align="center"><img src="./screenshots/player-cover-green.jpg" width="220" alt="绿色播放器方形封面"><br>封面取色</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="./screenshots/player-lyrics.jpg" width="220" alt="蓝色逐字歌词与翻译"><br>逐字歌词</td>
+    <td align="center"><img src="./screenshots/player-lyrics-pink.jpg" width="220" alt="粉色逐字歌词与翻译"><br>歌词取色</td>
+    <td align="center"><img src="./screenshots/settings.jpg" width="220" alt="浅色主题设置页"><br>设置</td>
+  </tr>
+</table>
+
+### 平板视图
+
+<div align="center">
+  <img src="./screenshots/player-tablet.jpg" width="760" alt="平板横屏播放器，左侧封面与播放控制，右侧歌词与翻译">
+</div>
 
 ## 开发环境
 
