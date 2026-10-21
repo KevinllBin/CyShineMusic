@@ -17,7 +17,6 @@ import '../search/widgets/quality_picker_sheet.dart';
 import '../search/widgets/search_result_tile.dart';
 import 'playlist_cover_image.dart';
 import 'playlist_store.dart';
-import '../shell/shell_navigation.dart';
 
 class _OnlinePlaylistDraft {
   const _OnlinePlaylistDraft({
@@ -241,7 +240,6 @@ class _OnlinePlaylistImportPageState
       music.source,
     ]);
     if (!available || !mounted) return;
-    openPlayer(context, returnLocation: '/playlists/import');
     await ref.read(playerControllerProvider.notifier).playFromMusic(music);
   }
 

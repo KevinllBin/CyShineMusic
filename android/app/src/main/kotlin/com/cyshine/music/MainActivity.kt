@@ -92,6 +92,9 @@ class MainActivity : AudioServiceActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        if (!flutterEngine.plugins.has(ArtworkColorsPlugin::class.java)) {
+            flutterEngine.plugins.add(ArtworkColorsPlugin())
+        }
         val appIcons = AppIconManager(applicationContext)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "cy_shine_music/app_icon")
             .setMethodCallHandler { call, result ->

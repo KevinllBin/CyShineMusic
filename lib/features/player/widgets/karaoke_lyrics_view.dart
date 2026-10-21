@@ -27,6 +27,23 @@ const double _kLyricEdgeFadeExtent = 48;
 const Duration _kLyricLineLayoutDuration = Duration(milliseconds: 380);
 const Duration _kLyricBlurRestoreDelay = Duration(seconds: 3);
 
+class LyricDocumentScope extends InheritedWidget {
+  const LyricDocumentScope({
+    super.key,
+    required this.live,
+    required super.child,
+  });
+
+  final bool live;
+
+  static LyricDocumentScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<LyricDocumentScope>();
+
+  @override
+  bool updateShouldNotify(LyricDocumentScope oldWidget) =>
+      live != oldWidget.live;
+}
+
 class KaraokeLyricsView extends ConsumerStatefulWidget {
   const KaraokeLyricsView({
     super.key,
@@ -84,6 +101,13 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
   Timer? _lyricStaggerResetTimer;
   Timer? _lineAdvanceTimer;
   final Stopwatch _anchorAge = Stopwatch();
+  bool _hasDocumentScope = false;
+  bool _documentLive = true;
+
+  bool get _acceptDocumentUpdates =>
+      _documentLive &&
+      (!_hasDocumentScope ||
+          identical(ref.read(playerControllerProvider).lyrics, widget.lyrics));
 
   @override
   void initState() {
@@ -101,6 +125,7 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
     ref.listenManual(
       settingsProvider.select((s) => (s.lyricFontWeight, s.lyricFontSize)),
       (previous, next) {
+        if (!_acceptDocumentUpdates) return;
         _beginTranslationLayoutAnchor(
           duration: const Duration(milliseconds: 700),
         );
@@ -110,6 +135,7 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
       previous,
       next,
     ) {
+      if (!_acceptDocumentUpdates) return;
       _reanchorPlaybackClock(next);
       _syncActiveLine(
         next,
@@ -127,6 +153,7 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
       previous,
       next,
     ) {
+      if (!_acceptDocumentUpdates) return;
       final current = ref.read(playerControllerProvider);
       _reanchorPlaybackClock(current.position, playing: next);
       _playing.value = next;
@@ -136,6 +163,7 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
       previous,
       next,
     ) {
+      if (!_acceptDocumentUpdates) return;
       _buffering.value = next;
       final current = ref.read(playerControllerProvider);
       _reanchorPlaybackClock(current.position, buffering: next);
@@ -144,8 +172,51 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final scope = LyricDocumentScope.maybeOf(context);
+    _hasDocumentScope = scope != null;
+    final wasLive = _documentLive;
+    _documentLive = scope?.live ?? true;
+    if (!_documentLive) {
+      _freezeDocument();
+    } else if (!wasLive) {
+      final current = ref.read(playerControllerProvider);
+      _playing.value = current.playing;
+      _buffering.value = current.buffering;
+      _reanchorPlaybackClock(current.position);
+      _syncActiveLine(current.position);
+      _scheduleScrollToActive(retriesLeft: 1);
+      _scheduleLineAdvance();
+      if (_selectedIndex case final selected?) _selectLine(selected);
+      if (_userScrollLocked) {
+        _releaseAutoScrollAfterUserScroll();
+      } else {
+        _scheduleSelectionBlurRestore();
+      }
+    }
+    _syncBlurSuppression();
+  }
+
+  void _freezeDocument() {
+    _selectedLineTimer?.cancel();
+    _autoScrollResumeTimer?.cancel();
+    _blurRestoreTimer?.cancel();
+    _manualBlurRestoreTimer?.cancel();
+    _lyricStaggerResetTimer?.cancel();
+    _lineAdvanceTimer?.cancel();
+    _stopTranslationLayoutAnchor();
+    _stopLyricScroll(resetVelocity: true);
+    _lineLayoutStopwatch.stop();
+    _anchorAge.stop();
+    _playing.value = false;
+    _buffering.value = true;
+  }
+
+  @override
   void didUpdateWidget(covariant KaraokeLyricsView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!_documentLive) return;
     if (!identical(widget.lyrics, oldWidget.lyrics)) {
       _stopTranslationLayoutAnchor();
       _stopLyricScroll(resetVelocity: true);
@@ -194,6 +265,7 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
   }
 
   void _selectLine(int index) {
+    if (!_documentLive) return;
     _cancelLyricStagger();
     _skipNextLineStagger = true;
     _suppressBlurForSelection();
@@ -202,12 +274,13 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
     }
     _selectedLineTimer?.cancel();
     _selectedLineTimer = Timer(const Duration(milliseconds: 1200), () {
-      if (!mounted || _selectedIndex != index) return;
+      if (!mounted || !_documentLive || _selectedIndex != index) return;
       setState(() => _selectedIndex = null);
     });
   }
 
   void _syncActiveLine(Duration position, {bool allowBackward = true}) {
+    if (!_documentLive) return;
     final next = widget.lyrics.activeIndex(position);
     if (!allowBackward && next < _activeIndex) return;
     if (next == _activeIndex) return;
@@ -239,14 +312,14 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
   /// and fire a one-shot timer exactly at the next line boundary.
   void _scheduleLineAdvance() {
     _lineAdvanceTimer?.cancel();
-    if (!_playing.value || _buffering.value) return;
+    if (!_documentLive || !_playing.value || _buffering.value) return;
     final lines = widget.lyrics.lines;
     final nextIndex = _activeIndex + 1;
     if (_activeIndex < 0 || nextIndex >= lines.length) return;
     final nowMs = _anchorMs.value + _anchorAge.elapsedMilliseconds;
     final waitMs = math.max(0, lines[nextIndex].startMs - nowMs);
     _lineAdvanceTimer = Timer(Duration(milliseconds: waitMs), () {
-      if (!mounted) return;
+      if (!mounted || !_documentLive) return;
       if (_buffering.value) {
         // Playback is stalled, so extrapolated time is running ahead of the
         // real position. Advancing now would flip the line early and snap
@@ -267,6 +340,7 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
     bool? playing,
     bool? buffering,
   }) {
+    if (!_documentLive) return;
     _anchorAge
       ..stop()
       ..reset();
@@ -277,7 +351,7 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
   }
 
   bool _handleScrollNotification(ScrollNotification notification) {
-    if (notification.depth != 0) return false;
+    if (!_documentLive || notification.depth != 0) return false;
     final userDriven =
         (notification is ScrollStartNotification &&
             notification.dragDetails != null) ||
@@ -294,6 +368,7 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
   }
 
   void _holdAutoScrollForUser() {
+    if (!_documentLive) return;
     _autoScrollResumeTimer?.cancel();
     _manualBlurRestoreTimer?.cancel();
     _stopTranslationLayoutAnchor();
@@ -305,25 +380,31 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
   }
 
   void _releaseAutoScrollAfterUserScroll() {
-    if (!_userScrollLocked) return;
+    if (!_documentLive || !_userScrollLocked) return;
     _manualBlurRestoreTimer?.cancel();
     _manualBlurRestoreTimer = Timer(_kLyricBlurRestoreDelay, () {
-      if (!mounted) return;
+      if (!mounted || !_documentLive) return;
       _manualBlurSuppressed = false;
       _syncBlurSuppression();
     });
     _autoScrollResumeTimer?.cancel();
     _autoScrollResumeTimer = Timer(const Duration(milliseconds: 1800), () {
-      if (!mounted) return;
+      if (!mounted || !_documentLive) return;
       _userScrollLocked = false;
       _scheduleScrollToActive(retriesLeft: 1);
     });
   }
 
   void _scheduleScrollToActive({required int retriesLeft}) {
-    if (_userScrollLocked || _translationLayoutTicker.isActive) return;
+    if (!_documentLive ||
+        _userScrollLocked ||
+        _translationLayoutTicker.isActive) {
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _activeIndex < 0 || _userScrollLocked) return;
+      if (!mounted || !_documentLive || _activeIndex < 0 || _userScrollLocked) {
+        return;
+      }
       if (!_controller.hasClients) {
         if (retriesLeft > 0) {
           _scheduleScrollToActive(retriesLeft: retriesLeft - 1);
@@ -348,9 +429,12 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
   }
 
   void _scheduleLineStaggerToActive({required int retriesLeft}) {
+    if (!_documentLive) return;
     _stopLyricScroll(resetVelocity: true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _activeIndex < 0 || _userScrollLocked) return;
+      if (!mounted || !_documentLive || _activeIndex < 0 || _userScrollLocked) {
+        return;
+      }
       if (!_controller.hasClients) {
         if (retriesLeft > 0) {
           _scheduleLineStaggerToActive(retriesLeft: retriesLeft - 1);
@@ -389,10 +473,13 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
   /// state, while rows materialized later by ordinary scrolling must not
   /// pick up a stale initial shift in initState.
   void _scheduleLyricStaggerReset() {
+    if (!_documentLive) return;
     _lyricStaggerResetTimer?.cancel();
     final generation = _lyricStaggerGeneration;
     _lyricStaggerResetTimer = Timer(const Duration(milliseconds: 1400), () {
-      if (!mounted || _lyricStaggerGeneration != generation) return;
+      if (!mounted || !_documentLive || _lyricStaggerGeneration != generation) {
+        return;
+      }
       _lyricStaggerShiftPx = 0;
     });
   }
@@ -431,7 +518,7 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
   }
 
   void _refreshLyricScrollTarget() {
-    if (!_controller.hasClients || _activeIndex < 0) return;
+    if (!_documentLive || !_controller.hasClients || _activeIndex < 0) return;
 
     final currentY = _activeLineCenterInViewport();
     final viewportObject = _viewportKey.currentContext?.findRenderObject();
@@ -464,7 +551,9 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
   }
 
   void _startLyricScroll() {
-    if (_lyricScrollTarget == null || _userScrollLocked) return;
+    if (!_documentLive || _lyricScrollTarget == null || _userScrollLocked) {
+      return;
+    }
     _lyricScrollLastElapsed = null;
     if (!_lyricScrollTicker.isActive) {
       _lyricScrollTicker.start();
@@ -472,7 +561,10 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
   }
 
   void _handleLyricScrollTick(Duration elapsed) {
-    if (!mounted || !_controller.hasClients || _userScrollLocked) {
+    if (!mounted ||
+        !_documentLive ||
+        !_controller.hasClients ||
+        _userScrollLocked) {
       _stopLyricScroll(resetVelocity: true);
       return;
     }
@@ -539,6 +631,7 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
   }
 
   void _suppressBlurForSelection() {
+    if (!_documentLive) return;
     _blurRestoreTimer?.cancel();
     _selectionBlurSuppressed = true;
     _syncBlurSuppression();
@@ -549,10 +642,10 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
   void _scheduleSelectionBlurRestore({
     Duration delay = _kLyricBlurRestoreDelay,
   }) {
-    if (!_selectionBlurSuppressed) return;
+    if (!_documentLive || !_selectionBlurSuppressed) return;
     _blurRestoreTimer?.cancel();
     _blurRestoreTimer = Timer(delay, () {
-      if (!mounted) return;
+      if (!mounted || !_documentLive) return;
       _selectionBlurSuppressed = false;
       _syncBlurSuppression();
     });
@@ -572,6 +665,7 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
   }
 
   void _beginTranslationLayoutAnchor({Duration duration = AppMotion.medium}) {
+    if (!_documentLive) return;
     _stopTranslationLayoutAnchor();
     _stopLyricScroll(resetVelocity: true);
     if (_userScrollLocked) return;
@@ -586,7 +680,11 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
     _translationAnchorY = anchorY;
     if (MediaQuery.disableAnimationsOf(context)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || generation != _translationAnchorGeneration) return;
+        if (!mounted ||
+            !_documentLive ||
+            generation != _translationAnchorGeneration) {
+          return;
+        }
         _correctTranslationLayoutAnchor();
         _translationAnchorY = null;
       });
@@ -606,11 +704,14 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
   }
 
   void _scheduleTranslationAnchorCorrection() {
-    if (_translationCorrectionScheduled) return;
+    if (!_documentLive || _translationCorrectionScheduled) return;
     _translationCorrectionScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _translationCorrectionScheduled = false;
-      if (!mounted || !_translationLayoutTicker.isActive || _userScrollLocked) {
+      if (!mounted ||
+          !_documentLive ||
+          !_translationLayoutTicker.isActive ||
+          _userScrollLocked) {
         return;
       }
       _correctTranslationLayoutAnchor();
@@ -618,7 +719,11 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
   }
 
   void _finishTranslationLayoutAnchor(int generation) {
-    if (!mounted || generation != _translationAnchorGeneration) return;
+    if (!mounted ||
+        !_documentLive ||
+        generation != _translationAnchorGeneration) {
+      return;
+    }
     _translationAnchorTimer?.cancel();
     _translationAnchorTimer = null;
     if (_translationLayoutTicker.isActive) {
@@ -626,6 +731,7 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted ||
+          !_documentLive ||
           generation != _translationAnchorGeneration ||
           _userScrollLocked) {
         return;
@@ -667,6 +773,7 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
   }
 
   void _correctTranslationLayoutAnchor() {
+    if (!_documentLive) return;
     final anchorY = _translationAnchorY;
     final currentY = _activeLineCenterInViewport();
     if (anchorY == null || currentY == null || !_controller.hasClients) {
@@ -731,6 +838,7 @@ class _KaraokeLyricsViewState extends ConsumerState<KaraokeLyricsView>
                 buffering: _buffering,
                 onSelect: () => _selectLine(index),
                 onSeek: () {
+                  if (!_documentLive) return;
                   _selectLine(index);
                   controller.seek(Duration(milliseconds: line.startMs));
                 },

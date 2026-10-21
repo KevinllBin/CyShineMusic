@@ -188,6 +188,19 @@ class KaraokeLineTextState extends State<KaraokeLineText>
   @override
   Widget build(BuildContext context) {
     final style = DefaultTextStyle.of(context).style;
+    // The paragraph and both textures are color masks. Artwork ink can tween
+    // every frame without reshaping text or recreating either GPU image.
+    // Native color emoji keep their original pixels. Those uncommon lines
+    // retain styled textures; ordinary lyrics use the reusable tint mask.
+    final tintMask = !widget.line.text.runes.any(
+      (rune) =>
+          (rune >= 0x1F000 && rune <= 0x1FAFF) ||
+          (rune >= 0x2600 && rune <= 0x27BF) ||
+          rune == 0xFE0F ||
+          rune == 0x20E3,
+    );
+    final maskStyle = tintMask ? style.copyWith(color: Colors.white) : style;
+    final ink = style.color ?? Colors.black;
     final scaler = MediaQuery.textScalerOf(context);
     final pixelRatio = MediaQuery.devicePixelRatioOf(context);
     final direction = Directionality.of(context);
@@ -199,7 +212,7 @@ class KaraokeLineTextState extends State<KaraokeLineText>
           var paragraph = _paragraph;
           if (paragraph == null ||
               !identical(paragraph.line, widget.line) ||
-              paragraph.style != style ||
+              paragraph.style != maskStyle ||
               paragraph.scaler != scaler ||
               paragraph.pixelRatio != pixelRatio ||
               paragraph.direction != direction ||
@@ -208,7 +221,7 @@ class KaraokeLineTextState extends State<KaraokeLineText>
             paragraph?.dispose();
             paragraph = _paragraph = _LyricParagraph(
               widget.line,
-              style,
+              maskStyle,
               scaler,
               pixelRatio,
               direction,
@@ -230,6 +243,8 @@ class KaraokeLineTextState extends State<KaraokeLineText>
               _position,
               _emphasis,
               _repaint,
+              ink: ink,
+              tintMask: tintMask,
               active: widget.active,
               reduceMotion: _reduceMotion,
             ),
@@ -467,6 +482,8 @@ class _LyricParagraph {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
     for (final row in visualLines) {
+      if (row.glyphs.isEmpty) continue;
+      final rowText = _textForAtlasRow(row);
       final rects = row.atlasRects = Float32List(row.glyphs.length * 4);
       final transforms = row.atlasTransforms = Float32List(
         row.glyphs.length * 4,
@@ -500,13 +517,14 @@ class _LyricParagraph {
         canvas.clipRect(rect);
         canvas.translate(rect.left - origin.dx, rect.top - origin.dy);
         canvas.scale(pixelRatio);
-        text.paint(canvas, Offset.zero);
+        rowText.paint(canvas, Offset.zero);
         canvas.restore();
         left += width + gutter * 2;
         rowHeight = math.max(rowHeight, height + gutter * 2);
       }
       atlasWidth = math.max(atlasWidth, left);
       atlasHeight += rowHeight;
+      if (!identical(rowText, text)) rowText.dispose();
     }
     final picture = recorder.endRecording();
     try {
@@ -516,6 +534,33 @@ class _LyricParagraph {
     } finally {
       picture.dispose();
     }
+  }
+
+  TextPainter _textForAtlasRow(_VisualLine row) {
+    if (visualLines.length == 1) return text;
+    final content = text.text!.toPlainText();
+    final range = text.getLineBoundary(
+      TextPosition(offset: row.glyphs.first.from),
+    );
+    final hidden = style.copyWith(color: Colors.transparent);
+    // Tight selection boxes can overlap adjacent rows with mixed fonts or
+    // compact line height. Keep the whole paragraph's shaping and layout, but
+    // hide other rows so their descenders cannot enter this row's glyph slots.
+    return TextPainter(
+      text: TextSpan(
+        style: style,
+        children: [
+          if (range.start > 0)
+            TextSpan(text: content.substring(0, range.start), style: hidden),
+          TextSpan(text: content.substring(range.start, range.end)),
+          if (range.end < content.length)
+            TextSpan(text: content.substring(range.end), style: hidden),
+        ],
+      ),
+      textDirection: direction,
+      textScaler: scaler,
+      locale: locale,
+    )..layout(maxWidth: width);
   }
 
   void dispose() {
@@ -531,6 +576,8 @@ class _KaraokePainter extends CustomPainter {
     this.position,
     this.emphasis,
     Listenable repaint, {
+    required this.ink,
+    required this.tintMask,
     required this.active,
     required this.reduceMotion,
   }) : super(repaint: repaint);
@@ -538,20 +585,26 @@ class _KaraokePainter extends CustomPainter {
   final _LyricParagraph paragraph;
   final ValueListenable<double> position;
   final Animation<double> emphasis;
+  final Color ink;
+  final bool tintMask;
   final bool active;
   final bool reduceMotion;
   final _imagePaint = Paint()..filterQuality = FilterQuality.low;
+  late final _inkFilter = ColorFilter.mode(ink, BlendMode.srcIn);
 
   @override
   void paint(Canvas canvas, Size size) {
     final p = paragraph;
     final ms = position.value;
     final peak = _dimAlpha + (1 - _dimAlpha) * emphasis.value;
+    final tint = tintMask ? _inkFilter : null;
     if (!active) {
       final dy = !reduceMotion && ms < p.line.startMs ? p.lift : 0.0;
       final image = p.staticImage;
       if (image != null && !reduceMotion) {
-        _imagePaint.color = Colors.white.withValues(alpha: peak);
+        _imagePaint
+          ..color = Colors.white.withValues(alpha: peak)
+          ..colorFilter = tint;
         canvas.save();
         canvas.translate(p.staticImageOrigin.dx, p.staticImageOrigin.dy + dy);
         canvas.scale(1 / p.pixelRatio);
@@ -561,7 +614,9 @@ class _KaraokePainter extends CustomPainter {
       }
       canvas.saveLayer(
         Offset.zero & size,
-        Paint()..color = Colors.white.withValues(alpha: peak),
+        Paint()
+          ..color = Colors.white.withValues(alpha: peak)
+          ..colorFilter = tint,
       );
       p.text.paint(canvas, Offset(0, dy));
       canvas.restore();
@@ -575,7 +630,9 @@ class _KaraokePainter extends CustomPainter {
         size.width,
         row.rect.bottom + p.lift,
       );
-      canvas.saveLayer(bounds, Paint());
+      // Apply ink after the sweep mask, including its original alpha. This
+      // reuses the row layer already needed for the per-word fade.
+      canvas.saveLayer(bounds, Paint()..colorFilter = tint);
       final atlas = p.glyphAtlas;
       final transforms = row.atlasTransforms;
       if (atlas != null && transforms != null && !reduceMotion) {
@@ -623,6 +680,8 @@ class _KaraokePainter extends CustomPainter {
       paragraph != oldDelegate.paragraph ||
       position != oldDelegate.position ||
       emphasis != oldDelegate.emphasis ||
+      ink != oldDelegate.ink ||
+      tintMask != oldDelegate.tintMask ||
       active != oldDelegate.active ||
       reduceMotion != oldDelegate.reduceMotion;
 }

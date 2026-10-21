@@ -119,6 +119,77 @@ void main() {
     expect(item?.artHeaders, contains('User-Agent'));
   });
 
+  test('selected artwork is published before audio finishes loading', () async {
+    final harness = await _Harness.create(loadFailures: 0);
+    addTearDown(harness.dispose);
+    final loadGate = Completer<void>();
+    harness.audio.loadGate = loadGate;
+    final music = _neteaseMusic();
+
+    final loading = harness.controller.playFromMusic(music);
+    final selected = harness.container.read(playerControllerProvider);
+    expect(selected.track?.id, 'wy:netease-song:remote');
+    expect(selected.track?.coverUrl, music.meta.picUrl);
+    expect(selected.loading, isTrue);
+    expect(selected.track?.remoteUrl, isEmpty);
+
+    await _waitUntil(() => harness.audio.loadedUris.isNotEmpty);
+    expect(harness.container.read(playerControllerProvider).loading, isTrue);
+    expect(
+      harness.container.read(playerControllerProvider).track?.coverUrl,
+      music.meta.picUrl,
+    );
+
+    loadGate.complete();
+    await loading;
+    expect(harness.container.read(playerControllerProvider).loading, isFalse);
+  });
+
+  test(
+    'resolved artwork publishes while loading and ignores stale cover responses',
+    () async {
+      final harness = await _Harness.create(loadFailures: 0);
+      addTearDown(harness.dispose);
+      final loadGate = Completer<void>();
+      harness.audio.loadGate = loadGate;
+      final oldCover = Completer<String?>();
+      final currentCover = Completer<String?>();
+      harness.api.coverResponses['song-1'] = oldCover;
+      harness.api.coverResponses['netease-song'] = currentCover;
+
+      final oldLoading = harness.controller.playFromMusic(_music());
+      await _waitUntil(() => harness.audio.loadedUris.length == 1);
+      final currentLoading = harness.controller.playFromMusic(_neteaseMusic());
+      await _waitUntil(() => harness.audio.loadedUris.length == 2);
+
+      const currentCoverUrl = 'https://artwork.test/current-cover.jpg';
+      currentCover.complete(currentCoverUrl);
+      await _waitUntil(
+        () =>
+            harness.container.read(playerControllerProvider).track?.coverUrl ==
+            currentCoverUrl,
+      );
+      final current = harness.container.read(playerControllerProvider);
+      expect(current.track?.id, 'wy:netease-song:remote');
+      expect(current.loading, isTrue);
+      expect(current.track?.remoteUrl, isEmpty);
+
+      oldCover.complete('https://artwork.test/stale-cover.jpg');
+      await Future<void>.delayed(Duration.zero);
+      final afterStaleCover = harness.container.read(playerControllerProvider);
+      expect(afterStaleCover.track?.id, current.track?.id);
+      expect(afterStaleCover.track?.coverUrl, currentCoverUrl);
+      expect(afterStaleCover.loading, isTrue);
+
+      loadGate.complete();
+      await Future.wait([oldLoading, currentLoading]);
+      final loaded = harness.container.read(playerControllerProvider);
+      expect(loaded.track?.id, current.track?.id);
+      expect(loaded.track?.coverUrl, currentCoverUrl);
+      expect(loaded.loading, isFalse);
+    },
+  );
+
   test('all source load failures keep the current track paused', () async {
     final harness = await _Harness.create(loadFailures: 2);
     addTearDown(harness.dispose);
@@ -790,6 +861,7 @@ class _FakeAudioHandler extends PlayerAudioHandler {
 
 class _FakeMusicApi extends MusicApi {
   int lyricLoadCount = 0;
+  final coverResponses = <String, Completer<String?>>{};
 
   @override
   Future<LyricInfo> getLyric({required MusicInfo musicInfo}) async {
@@ -801,7 +873,7 @@ class _FakeMusicApi extends MusicApi {
   Future<String?> getPicUrl({
     required MusicInfo musicInfo,
     bool preferCached = true,
-  }) async => null;
+  }) async => await coverResponses[musicInfo.id]?.future;
 }
 
 Future<void> _waitUntil(bool Function() predicate) async {

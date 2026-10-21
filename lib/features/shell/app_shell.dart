@@ -11,6 +11,7 @@ import '../../core/ui/app_toast.dart';
 import '../../core/ui/cover_image_source.dart';
 import '../../theme/app_motion.dart';
 import '../player/player_page.dart';
+import '../player/widgets/player_control_color.dart';
 import '../player/widgets/spinning_cover_art.dart';
 import '../player/player_controller.dart';
 import '../playlists/playlist_detail_toolbar_state.dart';
@@ -563,6 +564,9 @@ class _AppShellState extends ConsumerState<AppShell>
 
   @override
   Widget build(BuildContext context) {
+    // Keep artwork sampling tied to song selection, including before the
+    // lazily mounted player is first opened. Listening also retains its result.
+    ref.listen(playerArtworkColorsProvider, (_, _) {});
     final contentLocation = _contentLocation;
     final contentRoute = widget.location == '/player'
         ? _playerReturnLocation
@@ -881,7 +885,6 @@ class _AppShellState extends ConsumerState<AppShell>
                     size: 700,
                   ),
                   bytes: track?.coverBytes,
-                  animate: false,
                   placeholder: ColoredBox(
                     color: scheme.surfaceContainerHighest,
                     child: const Center(child: Icon(Icons.album_rounded)),
@@ -892,34 +895,44 @@ class _AppShellState extends ConsumerState<AppShell>
             builder: (context, child) {
               final flight = track == null ? null : _transition.coverRect;
               final destination = _transition.fullCover;
+              final visible = flight != null && destination != null;
+              final artworkRect = destination ?? Rect.zero;
               return Stack(
                 children: [
-                  if (flight != null && destination != null)
-                    // Keep the decoded artwork and its clip at the final size.
-                    // The flight only changes paint transforms, not layout and
-                    // raster-cache dimensions on every animation frame.
-                    Positioned.fromRect(
-                      rect: destination,
-                      child: Transform.translate(
-                        offset: flight.topLeft - destination.topLeft,
-                        child: Transform.scale(
-                          scale: flight.width / destination.width,
-                          alignment: Alignment.topLeft,
-                          child: RepaintBoundary(
-                            key: const ValueKey('player-shared-cover'),
-                            child: square
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(
-                                      destination.width *
-                                          kSquareCoverRadiusFactor,
-                                    ),
-                                    child: child,
-                                  )
-                                : ClipOval(child: child),
+                  // Keep this image subscribed between flights so it retains
+                  // the same ready artwork as the mini and full player covers.
+                  Positioned.fromRect(
+                    rect: artworkRect,
+                    child: Offstage(
+                      offstage: !visible,
+                      child: TickerMode(
+                        enabled: true,
+                        child: Transform.translate(
+                          offset: visible
+                              ? flight.topLeft - artworkRect.topLeft
+                              : Offset.zero,
+                          child: Transform.scale(
+                            scale: visible
+                                ? flight.width / artworkRect.width
+                                : 1,
+                            alignment: Alignment.topLeft,
+                            child: RepaintBoundary(
+                              key: const ValueKey('player-shared-cover'),
+                              child: square
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(
+                                        artworkRect.width *
+                                            kSquareCoverRadiusFactor,
+                                      ),
+                                      child: child,
+                                    )
+                                  : ClipOval(child: child),
+                            ),
                           ),
                         ),
                       ),
                     ),
+                  ),
                 ],
               );
             },

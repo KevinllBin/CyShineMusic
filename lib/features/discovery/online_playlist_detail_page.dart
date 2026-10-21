@@ -29,7 +29,6 @@ import '../playlists/widgets/playlist_wide_layout.dart';
 import '../search/widgets/quality_picker_sheet.dart';
 import '../search/widgets/search_result_tile.dart';
 import 'discovery_controller.dart';
-import '../shell/shell_navigation.dart';
 
 class OnlinePlaylistDetailPage extends ConsumerStatefulWidget {
   const OnlinePlaylistDetailPage({
@@ -74,10 +73,6 @@ class _OnlinePlaylistDetailPageState
     kind: widget.kind,
     maxTracks: _trackLimit,
   );
-
-  String get _returnLocation => widget.kind == OnlineCollectionKind.leaderboard
-      ? '/discover/leaderboards/${widget.source.code}/${widget.playlistId}'
-      : '/discover/playlists/${widget.source.code}/${widget.playlistId}';
 
   @override
   void initState() {
@@ -434,7 +429,6 @@ class _OnlinePlaylistDetailPageState
     final player = ref.read(playerControllerProvider.notifier);
     final api = ref.read(musicApiProvider);
 
-    openPlayer(context, returnLocation: _returnLocation);
     final playback = player.playFromPlaylistQueue(entry, queue);
     if (playlist.tracks.length < playlist.totalTracks) {
       unawaited(

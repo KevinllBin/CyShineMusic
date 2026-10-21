@@ -30,51 +30,55 @@ class TopChromeRow extends ConsumerWidget {
         child: Row(
           children: [
             Expanded(
-              child: TrackChangeSwitcher(
-                transitionKey:
-                    'top-title:${trackMetadata.id ?? 'loading'}:'
-                    '${trackMetadata.title ?? ''}:'
-                    '${trackMetadata.artist ?? ''}',
-                alignment: Alignment.centerLeft,
-                child:
-                    trackMetadata.title != null &&
-                        trackMetadata.title!.trim().isNotEmpty
-                    ? Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            key: const ValueKey('player-header-title'),
-                            trackMetadata.title!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: playerInk(context),
-                              fontSize: 18,
-                              fontWeight: FontWeight.w500,
-                              height: 1.05,
+              child: ClipRect(
+                child: TrackChangeSwitcher(
+                  transitionKey:
+                      'top-title:${trackMetadata.id ?? 'loading'}:'
+                      '${trackMetadata.title ?? ''}:'
+                      '${trackMetadata.artist ?? ''}',
+                  alignment: Alignment.centerLeft,
+                  incomingOffset: const Offset(1, 0),
+                  fade: false,
+                  child:
+                      trackMetadata.title != null &&
+                          trackMetadata.title!.trim().isNotEmpty
+                      ? Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              key: const ValueKey('player-header-title'),
+                              trackMetadata.title!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: playerInk(context),
+                                fontSize: 18,
+                                fontWeight: FontWeight.w500,
+                                height: 1.05,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            key: const ValueKey('player-header-artist'),
-                            trackMetadata.artist?.trim().isNotEmpty == true
-                                ? trackMetadata.artist!.trim()
-                                : '未知歌手',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: playerMuted(
-                                context,
-                              ).withValues(alpha: 0.78),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w400,
-                              height: 1.05,
+                            const SizedBox(height: 2),
+                            Text(
+                              key: const ValueKey('player-header-artist'),
+                              trackMetadata.artist?.trim().isNotEmpty == true
+                                  ? trackMetadata.artist!.trim()
+                                  : '未知歌手',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: playerMuted(
+                                  context,
+                                ).withValues(alpha: 0.78),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w400,
+                                height: 1.05,
+                              ),
                             ),
-                          ),
-                        ],
-                      )
-                    : const SizedBox(height: 36),
+                          ],
+                        )
+                      : const SizedBox(height: 36),
+                ),
               ),
             ),
             const SizedBox(width: 12),

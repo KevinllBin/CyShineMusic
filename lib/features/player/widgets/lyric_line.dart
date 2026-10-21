@@ -224,7 +224,7 @@ class LyricLineTile extends ConsumerWidget {
         ),
         if (hasTranslationLine)
           TweenAnimationBuilder<double>(
-            tween: Tween<double>(begin: 0, end: showTranslationLine ? 1 : 0),
+            tween: Tween<double>(end: showTranslationLine ? 1 : 0),
             duration: duration,
             curve: AppMotion.emphasized,
             child: Padding(
@@ -254,7 +254,7 @@ class LyricLineTile extends ConsumerWidget {
           ),
         if (hasRomanLine)
           TweenAnimationBuilder<double>(
-            tween: Tween<double>(begin: 0, end: showRomanLine ? 1 : 0),
+            tween: Tween<double>(end: showRomanLine ? 1 : 0),
             duration: duration,
             curve: AppMotion.emphasized,
             child: Padding(
@@ -427,9 +427,15 @@ class _LyricFocusScaleState extends State<_LyricFocusScale>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    value: widget.active ? 1 : 0,
+    value: widget.active && widget.disableAnimations ? 1 : 0,
   );
   Timer? _delayTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.active && !widget.disableAnimations) _driveToTarget();
+  }
 
   @override
   void didUpdateWidget(covariant _LyricFocusScale oldWidget) {

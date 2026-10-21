@@ -13,7 +13,6 @@ import '../player/player_controller.dart';
 import '../playlists/playlist_store.dart';
 import 'download_history_store.dart';
 import 'download_progress.dart';
-import '../shell/shell_navigation.dart';
 import '../shell/widgets/scrolling_page_header.dart';
 
 class DownloadHistoryPage extends ConsumerStatefulWidget {
@@ -133,7 +132,6 @@ class _DownloadHistoryPageState extends ConsumerState<DownloadHistoryPage> {
       showAppToast(context, '文件不存在', type: AppToastType.warning);
       return;
     }
-    openPlayer(context, returnLocation: '/downloads');
     await ref.read(playerControllerProvider.notifier).playFromHistory(entry);
   }
 

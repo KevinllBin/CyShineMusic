@@ -24,11 +24,12 @@ import '../playlists/playlist_models.dart';
 import '../playlists/playlist_store.dart';
 import '../shell/widgets/shell_header.dart';
 import 'search_controller.dart';
+import 'search_history_store.dart';
 import 'search_toolbar_state.dart';
 import 'widgets/quality_picker_sheet.dart';
+import 'widgets/search_history_suggestions.dart';
 import 'widgets/search_result_tile.dart';
 import 'widgets/source_filter_chips.dart';
-import '../shell/shell_navigation.dart';
 
 class SearchPage extends ConsumerStatefulWidget {
   const SearchPage({super.key});
@@ -68,7 +69,11 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     final query = controller.text.trim();
     if (query.isEmpty) {
       _tipRequest = null;
-      _lastSuggestionWidgets = const <Widget>[];
+      _lastSuggestionWidgets = [
+        SearchHistorySuggestions(
+          onSelected: (keyword) => _runSearch(keyword: keyword),
+        ),
+      ];
       return _lastSuggestionWidgets;
     }
 
@@ -117,6 +122,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     String? keyword,
     int page = 1,
     bool scrollToTopOnSuccess = false,
+    bool recordHistory = true,
   }) async {
     DebugPaintGuard.disableNow();
     final query = (keyword ?? _controller.text).trim();
@@ -131,6 +137,10 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     }
     _dismissTransientRoutes();
     _releaseSearchFocus();
+
+    if (recordHistory) {
+      ref.read(searchHistoryProvider.notifier).add(query);
+    }
 
     final requestedSource = _sourceForSearchRequest(
       ref.read(searchControllerProvider),
@@ -239,7 +249,6 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       for (final result in results)
         ?PlaylistTrack.fromMusicInfo(result).toQueueEntry(playlistId: 'search'),
     ];
-    openPlayer(context, returnLocation: '/');
     await ref
         .read(playerControllerProvider.notifier)
         .playFromPlaylistQueue(entry, queue);
@@ -310,10 +319,16 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         loading: state.loading,
         canPrev: hasResults && state.page > 1,
         canNext: canNext,
-        onPrev: () =>
-            _runSearch(page: state.page - 1, scrollToTopOnSuccess: true),
-        onNext: () =>
-            _runSearch(page: state.page + 1, scrollToTopOnSuccess: true),
+        onPrev: () => _runSearch(
+          page: state.page - 1,
+          scrollToTopOnSuccess: true,
+          recordHistory: false,
+        ),
+        onNext: () => _runSearch(
+          page: state.page + 1,
+          scrollToTopOnSuccess: true,
+          recordHistory: false,
+        ),
       );
       // Always refresh the callbacks as well as the visible paging values.
       // They close over the current SearchState page; keeping an older state
@@ -556,7 +571,7 @@ class _SuggestionTile extends StatelessWidget {
           shape: BoxShape.circle,
         ),
         child: Icon(
-          Icons.history_rounded,
+          Icons.search_rounded,
           color: scheme.onSurfaceVariant,
           size: 18,
         ),

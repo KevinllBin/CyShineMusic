@@ -36,7 +36,6 @@ import 'widgets/playlist_detail_placeholders.dart';
 import 'widgets/immersive_playlist_chrome.dart';
 import 'widgets/playlist_track_tile.dart';
 import 'widgets/playlist_wide_layout.dart';
-import '../shell/shell_navigation.dart';
 
 class PlaylistDetailPage extends ConsumerStatefulWidget {
   const PlaylistDetailPage({
@@ -78,13 +77,6 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
   EmbeddedArtworkRequest? _artworkRequest;
   Uint8List? _artworkBytes;
   String? _artworkPath;
-
-  String get _resolvedReturnLocation {
-    final location = widget.returnLocation?.trim();
-    return location == null || location.isEmpty
-        ? '/playlists/${widget.playlistId}'
-        : location;
-  }
 
   @override
   void initState() {
@@ -983,7 +975,6 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
       first,
     );
     if (!available || !mounted) return;
-    openPlayer(context, returnLocation: _resolvedReturnLocation);
     await ref
         .read(playerControllerProvider.notifier)
         .playFromPlaylistQueue(first, queue, playlistId: widget.playlistId);
@@ -1045,7 +1036,6 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
       _batchMode = false;
     });
     _restoreToolbarAfterSearchFocus();
-    openPlayer(context, returnLocation: _resolvedReturnLocation);
     await ref
         .read(playerControllerProvider.notifier)
         .playFromPlaylistQueue(
@@ -1112,7 +1102,6 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
     ref
         .read(playerControllerProvider.notifier)
         .setPlaybackMode(PlayerPlaybackMode.shuffle);
-    openPlayer(context, returnLocation: _resolvedReturnLocation);
     unawaited(
       ref
           .read(playerControllerProvider.notifier)
@@ -1136,7 +1125,6 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
       entry,
     );
     if (!available || !context.mounted) return;
-    openPlayer(context, returnLocation: _resolvedReturnLocation);
     await ref
         .read(playerControllerProvider.notifier)
         .playFromPlaylistQueue(entry, queue, playlistId: widget.playlistId);

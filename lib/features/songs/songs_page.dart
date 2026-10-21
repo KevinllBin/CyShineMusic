@@ -26,7 +26,6 @@ import '../playlists/resolved_playlist_track.dart';
 import '../playlists/playlist_store.dart';
 import '../shell/shell_toolbar_visibility.dart';
 import '../shell/shell_bottom_area.dart';
-import '../shell/shell_navigation.dart';
 import '../shell/widgets/scrolling_page_header.dart';
 import 'local_song_scan_cache.dart';
 import 'scanned_song_file.dart';
@@ -525,10 +524,6 @@ class _SongsPageState extends ConsumerState<SongsPage> {
       _searchFocusNode.unfocus();
       _restoreToolbarAfterSearchFocus();
     }
-    openPlayer(
-      context,
-      returnLocation: widget.searchMode ? '/songs/search' : '/songs',
-    );
     final player = ref.read(playerControllerProvider.notifier);
     if (playlistMode) {
       await player.playFromPlaylistQueue(entry, queue, playlistId: playlistId);

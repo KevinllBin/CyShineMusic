@@ -61,10 +61,6 @@ class AlbumPage extends ConsumerWidget {
         final resolvedCoverSize = coverSize
             .clamp(160.0, maxCoverSize)
             .toDouble();
-        final artworkKey = track == null
-            ? 'album-artwork:loading'
-            : 'album-artwork:${track.id}:${track.coverUrl ?? ''}:'
-                  '${identityHashCode(track.coverBytes)}';
         final metadataKey = track == null
             ? 'album-metadata:loading'
             : 'album-metadata:${track.id}:${track.album}';
@@ -106,41 +102,35 @@ class AlbumPage extends ConsumerWidget {
                                     ),
                               child: PlayerCoverAnchor(
                                 expanded: true,
-                                child: TrackChangeSwitcher(
-                                  transitionKey: artworkKey,
-                                  incomingOffset: Offset.zero,
-                                  scaleBegin: 0.88,
-                                  expand: true,
-                                  child: track == null
-                                      ? _LoadingAlbumArtwork(
-                                          size: resolvedCoverSize,
-                                        )
-                                      : SpinningCoverArt(
-                                          track: track,
-                                          size: resolvedCoverSize,
-                                          placeholder: ColoredBox(
-                                            color: Colors.white.withValues(
-                                              alpha: 0.34,
-                                            ),
-                                            child: Center(
-                                              child: Icon(
-                                                Icons.album_rounded,
-                                                size: 56,
-                                                color: playerMuted(context),
-                                              ),
+                                child: track == null
+                                    ? _LoadingAlbumArtwork(
+                                        size: resolvedCoverSize,
+                                      )
+                                    : SpinningCoverArt(
+                                        track: track,
+                                        size: resolvedCoverSize,
+                                        placeholder: ColoredBox(
+                                          color: Colors.white.withValues(
+                                            alpha: 0.34,
+                                          ),
+                                          child: Center(
+                                            child: Icon(
+                                              Icons.album_rounded,
+                                              size: 56,
+                                              color: playerMuted(context),
                                             ),
                                           ),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Colors.black.withValues(
-                                                alpha: 0.16,
-                                              ),
-                                              blurRadius: 28,
-                                              offset: const Offset(0, 18),
-                                            ),
-                                          ],
                                         ),
-                                ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(
+                                              alpha: 0.16,
+                                            ),
+                                            blurRadius: 28,
+                                            offset: const Offset(0, 18),
+                                          ),
+                                        ],
+                                      ),
                               ),
                             ),
                           ),

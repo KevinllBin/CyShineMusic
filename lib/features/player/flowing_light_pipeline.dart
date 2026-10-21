@@ -120,38 +120,6 @@ void paintFlowingLightFrame(
   );
 }
 
-Future<Color> sampleFlowingLightBaseColor(ui.Image source) async {
-  if (source.width <= 0 || source.height <= 0) return const Color(0xFF000000);
-  final data = await source.toByteData(format: ui.ImageByteFormat.rawRgba);
-  if (data == null) return const Color(0xFF000000);
-
-  final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-  var red = 0;
-  var green = 0;
-  var blue = 0;
-  var count = 0;
-  for (var row = 0; row < 5; row++) {
-    final y = (((row + 0.5) * source.height) / 5).floor().clamp(
-      0,
-      source.height - 1,
-    );
-    for (var column = 0; column < 5; column++) {
-      final x = (((column + 0.5) * source.width) / 5).floor().clamp(
-        0,
-        source.width - 1,
-      );
-      final offset = (y * source.width + x) * 4;
-      final alpha = bytes[offset + 3];
-      red += bytes[offset] * alpha ~/ 255;
-      green += bytes[offset + 1] * alpha ~/ 255;
-      blue += bytes[offset + 2] * alpha ~/ 255;
-      count++;
-    }
-  }
-  if (count == 0) return const Color(0xFF000000);
-  return Color.fromARGB(255, red ~/ count, green ~/ count, blue ~/ count);
-}
-
 void _drawCopy(
   Canvas canvas,
   ui.Image artwork,

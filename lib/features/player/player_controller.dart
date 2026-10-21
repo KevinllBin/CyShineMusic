@@ -246,7 +246,7 @@ class PlayerController extends StateNotifier<PlayerState>
       );
     } else {
       state = state.beginTrackLoading(
-        nextTrack: restoredTrack,
+        nextTrack: restoredTrack ?? transitionTrack,
         canPlayPrevious: _canPlayPrevious,
         canPlayNext: _canPlayNext,
         queue: List<DownloadHistoryEntry>.unmodifiable(_queue),
@@ -275,11 +275,32 @@ class PlayerController extends StateNotifier<PlayerState>
     try {
       final api = _ref.read(musicApiProvider);
       Future<String?> fetchCover() async {
+        final String? coverUrl;
         try {
-          return await api.getPicUrl(musicInfo: music);
+          coverUrl = await api.getPicUrl(musicInfo: music);
         } catch (_) {
           return music.meta.picUrl;
         }
+        // Artwork can finish before source resolution. Publish it while the
+        // track is still loading so list playback can prepare its colors too.
+        if (mounted &&
+            identical(_requestToken, token) &&
+            !preservePresentation &&
+            state.loading &&
+            state.track?.id == transitionTrack.id &&
+            coverUrl != null &&
+            coverUrl.isNotEmpty &&
+            coverUrl != state.track?.coverUrl) {
+          state = state.copyWith(
+            track: PlayerTrack.fromMusic(
+              music: music,
+              quality: selectedQuality,
+              url: '',
+              coverUrl: coverUrl,
+            ),
+          );
+        }
+        return coverUrl;
       }
 
       final coverFuture = fetchCover();

@@ -1175,7 +1175,10 @@ void main() {
     expect(player.expandedQueue, hasLength(65));
     expect(player.expandedQueue.last.musicId, 'kw_65');
     expect(player.playedEntry?.musicId, 'kw_1');
-    expect(router.routeInformationProvider.value.uri.path, '/player');
+    expect(
+      router.routeInformationProvider.value.uri.path,
+      '/discover/playlists/kw/1',
+    );
     expect(tester.takeException(), isNull);
   });
 }

@@ -92,14 +92,36 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
         ],
       );
     }
-    // Progress controls and the backdrop repaint independently of the lyrics.
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final contentKey = ValueKey(transitionKey);
+    // A document change only fades. Moving/scaling the whole masked viewport
+    // made the outgoing and incoming blurred lyric lists expensive to draw.
     return RepaintBoundary(
-      child: TrackChangeSwitcher(
-        transitionKey: transitionKey,
-        incomingOffset: const Offset(0.10, 0.018),
-        scaleBegin: 0.985,
-        expand: true,
-        child: child,
+      child: AnimatedSwitcher(
+        duration: reduceMotion
+            ? Duration.zero
+            : const Duration(milliseconds: 500),
+        reverseDuration: reduceMotion
+            ? Duration.zero
+            : const Duration(milliseconds: 200),
+        switchInCurve: const Cubic(0.4, 0, 0.2, 1),
+        switchOutCurve: const Cubic(0.4, 0, 0.2, 1),
+        layoutBuilder: (currentChild, previousChildren) => TrackChangeLayout(
+          expand: true,
+          currentChild: currentChild,
+          previousChildren: previousChildren,
+        ),
+        transitionBuilder: (transitionChild, animation) {
+          final incoming = transitionChild.key == contentKey;
+          return FadeTransition(
+            opacity: animation,
+            child: LyricDocumentScope(
+              live: incoming,
+              child: RepaintBoundary(child: transitionChild),
+            ),
+          );
+        },
+        child: KeyedSubtree(key: contentKey, child: child),
       ),
     );
   }

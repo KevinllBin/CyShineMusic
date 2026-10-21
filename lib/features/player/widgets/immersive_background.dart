@@ -19,6 +19,7 @@ class ImmersiveBackground extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final imageProvider = ref.watch(playerArtworkProvider);
+    final artworkColors = ref.watch(playerArtworkColorsProvider);
     final hasTrack = ref.watch(
       playerControllerProvider.select((s) => s.track != null),
     );
@@ -42,12 +43,19 @@ class ImmersiveBackground extends ConsumerWidget {
           // the length of the transition.
           transitionKey: imageProvider != null,
           incomingOffset: Offset.zero,
-          duration: const Duration(milliseconds: 500),
+          duration:
+              TickerMode.valuesOf(context).enabled &&
+                  (revealProgress?.value ?? 1) >= 1
+              ? const Duration(milliseconds: 500)
+              : Duration.zero,
           expand: true,
           child: imageProvider == null
               ? const SizedBox.expand()
               : FlowingLightBackground(
                   imageProvider: imageProvider,
+                  artworkColors: artworkColors.isLoading
+                      ? null
+                      : artworkColors.valueOrNull,
                   backgroundColor: baseSurface,
                   brightness: scheme.brightness,
                   running: flowingLightEnabled && playing,
