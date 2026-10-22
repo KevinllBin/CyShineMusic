@@ -21,7 +21,8 @@ const _kugouPlaylistCategories = <PlaylistCatalogCategory>[
 ];
 
 const _qqPlaylistCategories = <PlaylistCatalogCategory>[
-  PlaylistCatalogCategory(id: '5', label: '最热'),
+  PlaylistCatalogCategory(id: '-1', label: '推荐'),
+  PlaylistCatalogCategory(id: '3', label: '最热'),
   PlaylistCatalogCategory(id: '2', label: '最新'),
 ];
 

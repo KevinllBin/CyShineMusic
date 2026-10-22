@@ -114,7 +114,7 @@ void main() {
               as Map<String, dynamic>;
       expect(
         (qqRequest['playlist'] as Map<String, dynamic>)['param'],
-        containsPair('order', 2),
+        containsPair('category_id', 2),
       );
     });
 
@@ -129,11 +129,104 @@ void main() {
       );
       expect(
         playlistCatalogCategoriesFor(MusicSource.tx).map((item) => item.label),
-        ['最热', '最新'],
+        ['推荐', '最热', '最新'],
       );
       expect(playlistCatalogCategoriesFor(MusicSource.wy), hasLength(1));
       expect(playlistCatalogCategoriesFor(MusicSource.mg), hasLength(1));
     });
+
+    test(
+      'loads QQ recommendations with feed offsets and decoded metadata',
+      () async {
+        final items = await PlaylistCatalogSdk.featured(
+          MusicSource.tx,
+          page: 3,
+          limit: 10,
+          jsonLoader: (url, {headers}) {
+            final request = jsonDecode(Uri.parse(url).queryParameters['data']!);
+            expect(
+              request['playlist']['module'],
+              'music.playlist.PlaylistSquare',
+            );
+            expect(request['playlist']['method'], 'GetRecommendWhole');
+            expect(request['playlist']['param'], {
+              'IsReqFeed': true,
+              'FeedReq': {'From': 20, 'Size': 10},
+            });
+            return _catalogFixture(url, headers: headers);
+          },
+        );
+
+        expect(items.single.name, 'QQ & recommendations');
+        expect(items.single.creator, 'Editor & friend');
+        expect(items.single.description, 'First\nSecond');
+        expect(items.single.coverUrl, 'https://img.test/qq.jpg');
+        expect(items.single.trackCount, 2);
+        expect(items.single.playCount, 7003);
+      },
+    );
+
+    test('loads QQ hot and latest categories with zero-based pages', () async {
+      for (final category in ['3', '2']) {
+        final items = await PlaylistCatalogSdk.featured(
+          MusicSource.tx,
+          categoryId: category,
+          page: 2,
+          limit: 12,
+          jsonLoader: (url, {headers}) {
+            final request = jsonDecode(Uri.parse(url).queryParameters['data']!);
+            expect(
+              request['playlist']['module'],
+              'playlist.PlayListCategoryServer',
+            );
+            expect(request['playlist']['method'], 'get_category_content');
+            expect(request['playlist']['param'], {
+              'titleid': int.parse(category),
+              'caller': '0',
+              'category_id': int.parse(category),
+              'size': 12,
+              'page': 1,
+              'use_page': 1,
+            });
+            return _catalogFixture(url, headers: headers);
+          },
+        );
+        expect(items.single.id, '3001');
+        expect(items.single.name, 'QQ & recommendations');
+      }
+    });
+
+    test('treats an exhausted QQ recommendation feed as empty', () async {
+      final items = await PlaylistCatalogSdk.featured(
+        MusicSource.tx,
+        jsonLoader: (_, {headers}) async => {
+          'code': 0,
+          'playlist': {
+            'code': 0,
+            'data': {
+              'FeedRsp': {'List': null},
+            },
+          },
+        },
+      );
+      expect(items, isEmpty);
+    });
+
+    test(
+      'rejects QQ playlist service errors instead of showing an empty list',
+      () async {
+        await expectLater(
+          PlaylistCatalogSdk.featured(
+            MusicSource.tx,
+            jsonLoader: (_, {headers}) async => {
+              'code': 0,
+              'playlist': {'code': 1, 'data': {}},
+            },
+          ),
+          throwsException,
+        );
+      },
+    );
   });
 
   group('LeaderboardSdk', () {
@@ -826,22 +919,35 @@ Future<dynamic> _catalogFixture(
     };
   }
   if (url.contains('y.qq.com')) {
+    final request = jsonDecode(Uri.parse(url).queryParameters['data']!);
+    final basic = {
+      'tid': 3001,
+      'title': 'QQ &amp; recommendations',
+      'cover': {'medium_url': '', 'default_url': 'http://img.test/qq.jpg'},
+      'creator': {'nick': 'Editor &amp; friend'},
+      'desc': 'First<br>Second',
+      'song_cnt': 2,
+      'play_cnt': 7003,
+    };
     return {
       'code': 0,
       'playlist': {
         'code': 0,
         'data': {
-          'v_playlist': [
-            {
-              'tid': 3001,
-              'title': 'QQ 广场',
-              'cover_url_medium': 'https://img.test/qq.jpg',
-              'creator_info': {'nick': 'QQ 编辑'},
-              'desc': 'QQ 简介',
-              'song_ids': [1, 2],
-              'access_num': 7003,
+          if (request['playlist']['method'] == 'GetRecommendWhole')
+            'FeedRsp': {
+              'List': [
+                {
+                  'Playlist': {'basic': basic},
+                },
+              ],
+            }
+          else
+            'content': {
+              'v_item': [
+                {'basic': basic},
+              ],
             },
-          ],
         },
       },
     };

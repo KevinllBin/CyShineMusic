@@ -46,9 +46,21 @@ class KgPlaylistAdapter {
     final post = jsonPoster ?? _postJson;
     final target = id.trim();
     if (target.startsWith(_globalPrefix)) {
-      final globalId = target.substring(_globalPrefix.length).trim();
+      final globalTarget = target.substring(_globalPrefix.length).trim();
+      final queryIndex = globalTarget.indexOf('?');
+      final globalId = queryIndex < 0
+          ? globalTarget
+          : globalTarget.substring(0, queryIndex);
+      final chain = queryIndex < 0
+          ? null
+          : _text(
+              Uri.splitQueryString(
+                globalTarget.substring(queryIndex + 1),
+              )['chain'],
+            );
       return _parseGlobalCollection(
         globalId,
+        chain: chain,
         load: load,
         post: post,
         maxTracks: maxTracks,
@@ -156,19 +168,38 @@ class KgPlaylistAdapter {
 
   static Future<PlaylistInfo> _parseGlobalCollection(
     String id, {
+    String? chain,
     required SdkJsonLoader load,
     required KgJsonPoster post,
     int? maxTracks,
   }) async {
     if (id.isEmpty) throw Exception('酷狗歌单 ID 无效');
-    final info = await _loadGlobalInfo(id, load);
+    Map? sharedInfo;
+    List<Map>? sharedSongs;
+    if (chain != null) {
+      try {
+        final shared = await _loadSharedCollection(
+          id,
+          chain: chain,
+          load: load,
+          maxTracks: maxTracks,
+        );
+        sharedInfo = shared.info;
+        sharedSongs = shared.songs;
+      } catch (_) {
+        // Older collections may only support the global detail API.
+      }
+    }
+    final info = sharedInfo ?? await _loadGlobalInfo(id, load);
     final expected = _int(info['songcount']) ?? 0;
-    final rawSongs = await _loadGlobalSongs(
-      id,
-      expected: expected,
-      load: load,
-      maxTracks: maxTracks,
-    );
+    final rawSongs =
+        sharedSongs ??
+        await _loadGlobalSongs(
+          id,
+          expected: expected,
+          load: load,
+          maxTracks: maxTracks,
+        );
     final songs = await _completeSongs(rawSongs, post);
     final tracks = songs
         .take(expected > 0 ? expected : rawSongs.length)
@@ -176,7 +207,10 @@ class KgPlaylistAdapter {
         .whereType<MusicInfo>()
         .toList(growable: false);
     return PlaylistInfo(
-      id: _text(info['global_specialid']) ?? id,
+      // Retain the share token so refreshing an imported playlist uses it too.
+      id: chain == null
+          ? _text(info['global_specialid']) ?? id
+          : 'global:$id?chain=${Uri.encodeQueryComponent(chain)}',
       name: info['specialname']?.toString() ?? '酷狗歌单 $id',
       source: MusicSource.kg,
       coverUrl: _image(info['imgurl']),
@@ -195,10 +229,42 @@ class KgPlaylistAdapter {
     int? maxTracks,
   }) async {
     if (chain.isEmpty) throw Exception('酷狗分享链接无效');
+    String? transferredGlobalId;
+    try {
+      final transfer = await load(
+        Uri.https('m.kugou.com', '/schain/transfer', {
+          'pagesize': '50',
+          'chain': chain,
+          'su': '1',
+          'page': '1',
+        }).toString(),
+        headers: _globalHeaders('1586163263991'),
+      );
+      if (transfer is Map) {
+        final data = transfer['data'];
+        final payload = data is Map ? data : transfer;
+        final info = payload['info'];
+        transferredGlobalId =
+            _text(payload['global_collection_id']) ??
+            (info is Map ? _text(info['global_collection_id']) : null);
+      }
+    } catch (_) {
+      // Some share links only expose their collection ID in the HTML page.
+    }
+    if (transferredGlobalId != null) {
+      return _parseGlobalCollection(
+        transferredGlobalId,
+        chain: chain,
+        load: load,
+        post: post,
+        maxTracks: maxTracks,
+      );
+    }
     if (chain.startsWith('gcid_')) {
       final globalId = await _decodeGcid(chain, post);
       return _parseGlobalCollection(
         globalId,
+        chain: chain,
         load: load,
         post: post,
         maxTracks: maxTracks,
@@ -221,12 +287,88 @@ class KgPlaylistAdapter {
     if (globalId != null) {
       return _parseGlobalCollection(
         globalId,
+        chain: chain,
         load: load,
         post: post,
         maxTracks: maxTracks,
       );
     }
     throw Exception('酷狗分享链接不是可导入的歌单');
+  }
+
+  static Future<({Map info, List<Map> songs})> _loadSharedCollection(
+    String id, {
+    required String chain,
+    required SdkJsonLoader load,
+    int? maxTracks,
+  }) async {
+    final hardLimit = _trackLimit(maxTracks);
+    final pageSize = hardLimit < 50 ? hardLimit : 50;
+    final clientTime = DateTime.now().millisecondsSinceEpoch.toString();
+    final songs = <Map>[];
+    Map? info;
+    var total = 0;
+    for (var page = 1; songs.length < hardLimit; page++) {
+      final body = await load(
+        _signedGlobalUrl('/v2/zlist/list', [
+          const MapEntry('srcappid', '2919'),
+          const MapEntry('clientver', '20000'),
+          MapEntry('clienttime', clientTime),
+          MapEntry('mid', clientTime),
+          MapEntry('uuid', clientTime),
+          const MapEntry('dfid', '-'),
+          const MapEntry('listid', '15'),
+          const MapEntry('type', '0'),
+          MapEntry('pagesize', '$pageSize'),
+          MapEntry('global_collection_id', id),
+          MapEntry('page', '$page'),
+          const MapEntry('share_type', 'collect'),
+          const MapEntry('appid', '1058'),
+          MapEntry('chain', chain),
+        ], host: 'm3ws.kugou.com'),
+        headers: _globalHeaders(clientTime),
+      );
+      final data = body is Map ? body['data'] : null;
+      final payload = data is Map ? data : body;
+      final infos = payload is Map ? payload['info'] : null;
+      final list = payload is Map ? payload['list'] : null;
+      final items = list is Map ? list['info'] : null;
+      final errorCode = body is Map
+          ? _int(body['error_code'] ?? body['errcode'] ?? body['err_code'])
+          : null;
+      if (body is! Map ||
+          (body['status'] != null && _int(body['status']) != 1) ||
+          (errorCode != null && errorCode != 0) ||
+          items is! List) {
+        throw Exception('酷狗分享歌单加载失败');
+      }
+      if (page == 1) {
+        if (infos is! List || infos.isEmpty || infos.first is! Map) {
+          throw Exception('酷狗分享歌单信息加载失败');
+        }
+        info = infos.first as Map;
+        total = _int(info['count']) ?? 0;
+      }
+      final pageSongs = items.whereType<Map>().toList(growable: false);
+      songs.addAll(pageSongs.take(hardLimit - songs.length));
+      if (total > 0 && songs.length >= _targetCount(total, hardLimit)) break;
+      if (pageSongs.isEmpty) {
+        if (total > songs.length) throw Exception('酷狗分享歌单歌曲不完整');
+        break;
+      }
+      if (total <= 0 && pageSongs.length < pageSize) break;
+    }
+    return (
+      info: {
+        'specialname': info?['name'],
+        'songcount': total,
+        'imgurl': info?['pic'],
+        'intro': info?['intro'],
+        'nickname': info?['list_create_username'],
+        'playcount': info?['playcount'],
+      },
+      songs: songs,
+    );
   }
 
   static Future<String> _decodeGcid(String gcid, KgJsonPoster post) async {
@@ -336,7 +478,7 @@ class KgPlaylistAdapter {
       songs.addAll(pageSongs.take(hardLimit - songs.length));
       if (pageSongs.isEmpty) break;
       if (total > 0 && songs.length >= _targetCount(total, hardLimit)) break;
-      if (pageSongs.length < pageSize) break;
+      if (total <= 0 && pageSongs.length < pageSize) break;
     }
     return songs;
   }
@@ -570,8 +712,9 @@ class KgPlaylistAdapter {
 
   static String _signedGlobalUrl(
     String path,
-    List<MapEntry<String, String>> parameters,
-  ) {
+    List<MapEntry<String, String>> parameters, {
+    String host = 'mobiles.kugou.com',
+  }) {
     final signText =
         parameters.map((entry) => '${entry.key}=${entry.value}').toList()
           ..sort();
@@ -584,7 +727,7 @@ class KgPlaylistAdapter {
             '${Uri.encodeQueryComponent(entry.value)}',
       'signature=$signature',
     ].join('&');
-    return 'https://mobiles.kugou.com$path?$query';
+    return 'https://$host$path?$query';
   }
 
   static String _signedAndroidRequest(String params, String body) {

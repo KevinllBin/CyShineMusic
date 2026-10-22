@@ -247,11 +247,14 @@ class PlaylistSdk {
         'global_specialid',
         'global_collection_id',
       });
+      final chain = _queryValue(uri, const {'chain'});
       if (global != null && global.trim().isNotEmpty) {
-        return 'global:${global.trim()}';
+        final suffix = chain != null && chain.trim().isNotEmpty
+            ? '?chain=${Uri.encodeQueryComponent(chain.trim())}'
+            : '';
+        return 'global:${global.trim()}$suffix';
       }
 
-      final chain = _queryValue(uri, const {'chain'});
       if (chain != null && chain.trim().isNotEmpty) {
         return 'chain:${chain.trim()}';
       }
@@ -282,12 +285,14 @@ class PlaylistSdk {
       r'(?:global_specialid|global_collection_id)=([A-Za-z0-9_]+)',
       caseSensitive: false,
     ).firstMatch(text);
-    if (global != null) return 'global:${global.group(1)}';
-
     final chain = RegExp(
       r'(?:^|[?&])chain=([A-Za-z0-9_]+)',
       caseSensitive: false,
     ).firstMatch(text);
+    if (global != null) {
+      final suffix = chain == null ? '' : '?chain=${chain.group(1)}';
+      return 'global:${global.group(1)}$suffix';
+    }
     if (chain != null) return 'chain:${chain.group(1)}';
 
     final gcid = RegExp(r'gcid_\w+', caseSensitive: false).firstMatch(text);

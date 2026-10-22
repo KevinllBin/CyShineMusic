@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../models/enums.dart';
 import '../models/playlist_category.dart';
 import '../models/playlist_summary.dart';
+import 'internal/format.dart';
 import 'internal/sdk_http.dart';
 
 class PlaylistCatalogSdk {
@@ -143,19 +144,31 @@ class PlaylistCatalogSdk {
     String categoryId,
     SdkJsonLoader load,
   ) async {
+    final category = int.tryParse(categoryId) ?? -1;
+    final recommend = category == -1;
     final request = {
       'comm': {'cv': 1602, 'ct': 20},
-      'playlist': {
-        'method': 'get_playlist_by_tag',
-        'param': {
-          'id': 10000000,
-          'sin': (page - 1) * limit,
-          'size': limit,
-          'order': int.tryParse(categoryId) ?? 5,
-          'cur_page': page,
-        },
-        'module': 'playlist.PlayListPlazaServer',
-      },
+      'playlist': recommend
+          ? {
+              'module': 'music.playlist.PlaylistSquare',
+              'method': 'GetRecommendWhole',
+              'param': {
+                'IsReqFeed': true,
+                'FeedReq': {'From': (page - 1) * limit, 'Size': limit},
+              },
+            }
+          : {
+              'module': 'playlist.PlayListCategoryServer',
+              'method': 'get_category_content',
+              'param': {
+                'titleid': category,
+                'caller': '0',
+                'category_id': category,
+                'size': limit,
+                'page': page - 1,
+                'use_page': 1,
+              },
+            },
     };
     final uri = Uri.https('u.y.qq.com', '/cgi-bin/musicu.fcg', {
       'loginUin': '0',
@@ -171,7 +184,12 @@ class PlaylistCatalogSdk {
     final body = await load(uri.toString(), headers: _desktopHeaders);
     final playlist = body is Map ? body['playlist'] : null;
     final data = playlist is Map ? playlist['data'] : null;
-    final items = data is Map ? data['v_playlist'] : null;
+    final content = data is Map
+        ? data[recommend ? 'FeedRsp' : 'content']
+        : null;
+    final items = content is Map
+        ? content[recommend ? 'List' : 'v_item'] ?? const []
+        : null;
     if (body is! Map ||
         body['code'] != 0 ||
         playlist is! Map ||
@@ -179,19 +197,30 @@ class PlaylistCatalogSdk {
         items is! List) {
       throw Exception('QQ 精选歌单加载失败');
     }
-    return [
-      for (final item in items.whereType<Map>())
+    final out = <PlaylistSummary>[];
+    for (final item in items.whereType<Map>()) {
+      final entry = recommend ? item['Playlist'] : item;
+      final basic = entry is Map ? entry['basic'] : null;
+      if (basic is! Map) continue;
+      final cover = basic['cover'] as Map?;
+      out.add(
         PlaylistSummary(
-          id: item['tid']?.toString() ?? '',
-          name: item['title']?.toString() ?? '',
+          id: basic['tid']?.toString() ?? '',
+          name: decodeName(basic['title']),
           source: MusicSource.tx,
-          coverUrl: _image(item['cover_url_medium']),
-          creator: _text((item['creator_info'] as Map?)?['nick']),
-          description: _text(item['desc']),
-          trackCount: (item['song_ids'] as List?)?.length,
-          playCount: _int(item['access_num']),
+          coverUrl: _image(
+            _text(cover?['medium_url']) ?? cover?['default_url'],
+          ),
+          creator: _text(decodeName((basic['creator'] as Map?)?['nick'])),
+          description: _text(
+            decodeName(basic['desc']).replaceAll(RegExp(r'<br\s*/?>'), '\n'),
+          ),
+          trackCount: _int(basic['song_cnt']),
+          playCount: _int(basic['play_cnt']),
         ),
-    ];
+      );
+    }
+    return out;
   }
 
   static Future<List<PlaylistSummary>> _featuredWy(
