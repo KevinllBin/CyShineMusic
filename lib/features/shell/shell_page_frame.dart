@@ -37,7 +37,7 @@ class ShellPageFrame extends ConsumerWidget {
         isDiscoveryLocation(location) ||
         isImmersivePlaylistDetailLocation(location);
     final batchMode =
-        location == '/songs' &&
+        isSongsLibraryLocation(location) &&
         ref.watch(songsToolbarStateProvider.select((state) => state.batchMode));
     return Padding(
       padding: EdgeInsets.only(bottom: bottomPadding),

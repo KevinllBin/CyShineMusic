@@ -377,7 +377,7 @@ class PlaylistSdk {
         ? _takePlaylistMaps(songs, maxTracks)
         : await _completeWySongs(limitedTrackIds, songs);
     final tracks = completedSongs
-        .map(_parseWySong)
+        .map(parseWySong)
         .whereType<MusicInfo>()
         .toList();
     return PlaylistInfo(
@@ -452,7 +452,7 @@ class PlaylistSdk {
     return out;
   }
 
-  static MusicInfo? _parseWySong(Map item) {
+  static MusicInfo? parseWySong(Map item) {
     final id = item['id'];
     if (id == null) return null;
     final qualities = <QualityOption>[];
@@ -462,8 +462,8 @@ class PlaylistSdk {
       qualities.add(QualityOption(type: type, size: fmt));
     }
 
-    add(Quality.flac24bit, (item['hr'] as Map?)?['size']);
-    add(Quality.flac, (item['sq'] as Map?)?['size']);
+    add(Quality.flac24bit, ((item['hr'] ?? item['hrMusic']) as Map?)?['size']);
+    add(Quality.flac, ((item['sq'] ?? item['sqMusic']) as Map?)?['size']);
     add(
       Quality.k320,
       (item['h'] as Map?)?['size'] ?? (item['hMusic'] as Map?)?['size'],
@@ -591,7 +591,7 @@ class PlaylistSdk {
     final targetCount = _playlistTargetCount(expectedCount, hardLimit);
     final tracks = songs
         .take(targetCount)
-        .map(_parseTxSong)
+        .map(parseTxSong)
         .whereType<MusicInfo>()
         .toList();
     final creator = dirInfo['creator'] as Map?;
@@ -636,7 +636,7 @@ class PlaylistSdk {
     final tracks = _takePlaylistMaps(
       rawSongs,
       maxTracks,
-    ).whereType<Map>().map(_parseTxSong).whereType<MusicInfo>().toList();
+    ).whereType<Map>().map(parseTxSong).whereType<MusicInfo>().toList();
     return PlaylistInfo(
       id: id,
       name: cd['dissname']?.toString() ?? 'QQ 歌单 $id',
@@ -669,7 +669,7 @@ class PlaylistSdk {
     return values.take(maxTracks).toList();
   }
 
-  static MusicInfo? _parseTxSong(Map item) {
+  static MusicInfo? parseTxSong(Map item) {
     final file = item['file'] is Map ? item['file'] as Map : item;
     final mediaMid = file['media_mid'] ?? item['strMediaMid'];
     if (mediaMid == null) return null;

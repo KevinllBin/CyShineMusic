@@ -5,6 +5,7 @@ import '../../../core/models/playlist_category.dart';
 import '../../../core/storage/settings_store.dart';
 import '../../../theme/app_motion.dart';
 import '../../discovery/discovery_controller.dart';
+import '../../search/search_controller.dart';
 import '../../search/search_toolbar_state.dart';
 import '../shell_bottom_area.dart';
 import 'shell_fab_menu_action.dart';
@@ -40,7 +41,10 @@ class _DiscoveryCategoryFabLayerState
     final searchVisible = ref.watch(
       searchToolbarStateProvider.select((state) => state.visible),
     );
-    if (categories.length <= 1 || searchVisible) {
+    final searchActive = ref.watch(
+      searchControllerProvider.select((state) => state.isSearchActive),
+    );
+    if (categories.length <= 1 || searchActive || searchVisible) {
       if (_expanded) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _setExpanded(false);

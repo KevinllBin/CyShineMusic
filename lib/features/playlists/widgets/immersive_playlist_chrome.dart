@@ -314,11 +314,19 @@ class ScrollingImmersivePlaylistBody extends StatelessWidget {
     required this.child,
     this.title = '',
     this.onBack,
+    this.topBarBuilder,
   });
 
   final Widget child;
   final String title;
   final VoidCallback? onBack;
+  final Widget Function(
+    BuildContext context,
+    bool onImage,
+    bool statusBarOnImage,
+    double revealProgress,
+  )?
+  topBarBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -353,6 +361,14 @@ class ScrollingImmersivePlaylistBody extends StatelessWidget {
             final revealProgress = Curves.easeOut.transform(
               ((scrollOffset - titleRevealStart) / 32).clamp(0.0, 1.0),
             );
+            if (topBarBuilder != null) {
+              return topBarBuilder!(
+                context,
+                scrollOffset < imageEnd,
+                scrollOffset < headerHeight,
+                revealProgress,
+              );
+            }
             return ImmersivePlaylistTopBar(
               title: title,
               titleOpacity: title.trim().isEmpty ? 0 : revealProgress,
@@ -524,6 +540,7 @@ class ImmersivePlaylistTopBar extends StatelessWidget {
     this.blurSigma = 0,
     this.backdropOpacity = 1,
     this.statusBarOnImage,
+    this.titleContent,
   });
 
   final String title;
@@ -536,6 +553,7 @@ class ImmersivePlaylistTopBar extends StatelessWidget {
   final double blurSigma;
   final double backdropOpacity;
   final bool? statusBarOnImage;
+  final Widget? titleContent;
 
   /// true = 压在头图上（白字 + 阴影）；false = 直接放在 surface 上，
   /// 前景跟随主题（宽屏分栏没有头图，白字在浅色主题下不可见）。
@@ -626,30 +644,34 @@ class ImmersivePlaylistTopBar extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 12),
-                      Expanded(
-                        child: IgnorePointer(
-                          child: Opacity(
-                            opacity: titleOpacity,
-                            child: Text(
-                              title,
-                              maxLines: 1,
-                              textAlign: TextAlign.center,
-                              overflow: TextOverflow.ellipsis,
+                      if (titleContent != null)
+                        Expanded(child: titleContent!)
+                      else ...[
+                        Expanded(
+                          child: IgnorePointer(
+                            child: Opacity(
+                              opacity: titleOpacity,
+                              child: Text(
+                                title,
+                                maxLines: 1,
+                                textAlign: TextAlign.center,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      if (actions.isEmpty)
-                        const SizedBox(width: 44)
-                      else
-                        FloatingHeaderSurface(
-                          onImage: onImage,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: actions,
+                        const SizedBox(width: 12),
+                        if (actions.isEmpty)
+                          const SizedBox(width: 44)
+                        else
+                          FloatingHeaderSurface(
+                            onImage: onImage,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: actions,
+                            ),
                           ),
-                        ),
+                      ],
                     ],
                   ),
                 ),

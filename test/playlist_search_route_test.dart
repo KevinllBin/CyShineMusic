@@ -12,7 +12,6 @@ import 'package:cy_shine_music/core/storage/settings_store.dart';
 import 'package:cy_shine_music/features/player/player_audio_handler.dart';
 import 'package:cy_shine_music/features/playlists/playlist_models.dart';
 import 'package:cy_shine_music/features/playlists/playlist_store.dart';
-import 'package:cy_shine_music/features/songs/widgets/songs_placeholders.dart';
 import 'package:cy_shine_music/router.dart';
 
 void main() {
@@ -60,13 +59,13 @@ void main() {
     await tester.tap(find.byTooltip('搜索歌单歌曲'));
     await _pumpUi(tester);
     expect(router.routeInformationProvider.value.uri.path, '/playlists/night');
-    expect(find.byType(SongsSearchBar), findsOneWidget);
+    expect(find.byKey(const ValueKey('header-search-field')), findsOneWidget);
     expect(find.byTooltip('退出搜索'), findsOneWidget);
 
     // 第一次返回键：关闭搜索，仍在歌单页。
     expect(await tester.binding.handlePopRoute(), isTrue);
     await _pumpUi(tester);
-    expect(find.byType(SongsSearchBar), findsNothing);
+    expect(find.byKey(const ValueKey('header-search-field')), findsNothing);
     expect(router.routeInformationProvider.value.uri.path, '/playlists/night');
 
     // 第二次返回键：离开歌单页回歌曲首页。
@@ -97,15 +96,15 @@ Future<void> _usePhoneViewport(
 
 Future<SharedPreferences> _prefsWithPlaylist() async {
   final tracks = [
-    PlaylistTrack.fromMusicInfo(_playlistMusic('track-1', '第一首')),
-    PlaylistTrack.fromMusicInfo(_playlistMusic('track-2', '第二首')),
+    PlaylistTrack.fromMusicInfo(_playlistMusic('track-1', 'First song')),
+    PlaylistTrack.fromMusicInfo(_playlistMusic('track-2', 'Second song')),
   ];
   SharedPreferences.setMockInitialValues({
     localPlaylistsStorageKey: [
       jsonEncode(
         LocalPlaylist(
           id: 'night',
-          name: '夜晚循环',
+          name: 'Night playlist',
           tracks: tracks,
           createdAt: DateTime.utc(2026, 7, 31),
           updatedAt: DateTime.utc(2026, 7, 31),
@@ -120,12 +119,12 @@ MusicInfo _playlistMusic(String id, String name) {
   return MusicInfo.fromJson({
     'id': id,
     'name': name,
-    'singer': '在线歌手',
+    'singer': 'Online artist',
     'source': MusicSource.wy.code,
     'interval': '03:30',
     'meta': {
       'songId': id,
-      'albumName': '在线专辑',
+      'albumName': 'Online album',
       'qualitys': [
         {'type': Quality.k320.code, 'size': '1024'},
       ],

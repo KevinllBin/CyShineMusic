@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../theme/app_motion.dart';
 import '../../settings/settings_section.dart';
 import '../../songs/songs_toolbar_state.dart';
+import '../../playlists/widgets/expanding_header_search.dart';
 import '../shell_route_utils.dart';
 import 'library_view_menu.dart';
 import 'scrolling_page_header.dart';
@@ -49,11 +50,14 @@ class ShellHeader extends ConsumerWidget {
           _ => null,
         };
 
-    if (location == '/songs') {
-      final songsToolbar = ref.watch(songsToolbarStateProvider);
+    final songsToolbar = isSongsLibraryLocation(location)
+        ? ref.watch(songsToolbarStateProvider)
+        : null;
+    if (location == '/songs' ||
+        (location == '/songs/search' && songsToolbar?.attached == true)) {
       final header = Padding(
         padding: EdgeInsets.fromLTRB(16, top + 10, 16, 8),
-        child: SongsHeader(state: songsToolbar, scheme: scheme),
+        child: SongsHeader(state: songsToolbar!, scheme: scheme),
       );
       if (floating) {
         return _FloatingHeaderBackdrop(
@@ -138,6 +142,7 @@ class ShellSectionHeader extends StatelessWidget {
     this.compact = false,
     this.fontSize,
     this.leading,
+    this.trailing,
     this.scrollOffset = 0,
     this.floating = false,
   });
@@ -151,6 +156,7 @@ class ShellSectionHeader extends StatelessWidget {
   final double? fontSize;
 
   final Widget? leading;
+  final Widget? trailing;
   final double scrollOffset;
   final bool floating;
 
@@ -230,6 +236,7 @@ class ShellSectionHeader extends StatelessWidget {
               ),
             ),
           ),
+          ?trailing,
         ],
       ),
     );
@@ -358,38 +365,64 @@ class SongsHeader extends StatelessWidget {
       );
     }
 
+    final controls = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: FloatingHeaderSurface(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: LibraryViewMenu(
+              title: state.libraryTitle,
+              activePlaylistId: state.activePlaylistId,
+              scheme: scheme,
+              onSelected: state.onSelectLibraryPlaylist ?? (_) {},
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        _SongsHeaderIconButton(
+          tooltip: '歌单',
+          icon: Icons.queue_music_rounded,
+          onPressed: state.onOpenPlaylists,
+        ),
+      ],
+    );
+    final controller = state.searchController;
+    final focusNode = state.searchFocusNode;
     return SizedBox(
       key: const ValueKey('songs-header-normal'),
       height: 44,
       child: Row(
         children: [
           Expanded(
-            child: Row(
-              children: [
-                Flexible(
-                  child: FloatingHeaderSurface(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    child: LibraryViewMenu(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: controller == null || focusNode == null
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(child: controls),
+                        const SizedBox(width: 6),
+                        _SongsHeaderIconButton(
+                          tooltip: state.searchLabel,
+                          icon: Icons.search_rounded,
+                          onPressed: state.onSearch,
+                        ),
+                      ],
+                    )
+                  : ExpandingHeaderSearch(
                       title: state.libraryTitle,
-                      activePlaylistId: state.activePlaylistId,
-                      scheme: scheme,
-                      onSelected: state.onSelectLibraryPlaylist ?? (_) {},
+                      collapsedContent: controls,
+                      shrinkWrap: true,
+                      controller: controller,
+                      focusNode: focusNode,
+                      expanded: state.searchMode,
+                      autoFocus: state.searchAutoFocus,
+                      tooltip: state.searchLabel,
+                      onOpen: state.onSearch ?? () {},
+                      onClose: state.onCloseSearch ?? () {},
+                      onChanged: state.onSearchChanged ?? (_) {},
                     ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                _SongsHeaderIconButton(
-                  tooltip: '歌单',
-                  icon: Icons.queue_music_rounded,
-                  onPressed: state.onOpenPlaylists,
-                ),
-                const SizedBox(width: 6),
-                _SongsHeaderIconButton(
-                  tooltip: state.searchLabel,
-                  icon: Icons.search_rounded,
-                  onPressed: state.onSearch,
-                ),
-              ],
             ),
           ),
           const SizedBox(width: 6),

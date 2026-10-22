@@ -18,6 +18,7 @@ class PlaylistDetailActions extends StatelessWidget {
     this.saved = false,
     this.loading = false,
     this.favoriteLabel,
+    this.playLabel = '播放全部',
     this.padding = const EdgeInsets.fromLTRB(16, 4, 16, 8),
   });
 
@@ -32,6 +33,7 @@ class PlaylistDetailActions extends StatelessWidget {
   /// 覆盖收藏按钮的静态文案（本地导入歌单传「取消收藏」）；
   /// saving 期间仍显示「收藏中/取消中」。
   final String? favoriteLabel;
+  final String playLabel;
   final EdgeInsetsGeometry padding;
 
   @override
@@ -49,7 +51,7 @@ class PlaylistDetailActions extends StatelessWidget {
               )
             : null,
         icon: const Icon(Icons.play_arrow_rounded),
-        label: const Text('播放全部'),
+        label: Text(playLabel),
       ),
     );
     final favoriteButton = SizedBox(

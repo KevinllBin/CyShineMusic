@@ -8,6 +8,10 @@ import '../models/music_info.dart';
 import '../models/playlist_info.dart';
 import '../models/playlist_summary.dart';
 import '../models/search_response.dart';
+import '../models/catalog_result.dart';
+import '../models/search_category.dart';
+import '../models/online_collection_kind.dart';
+import '../sdk/catalog_sdk.dart';
 import '../sdk/leaderboard_sdk.dart';
 import '../sdk/music_sdk.dart' as sdk;
 import '../sdk/playlist_catalog_sdk.dart';
@@ -69,13 +73,170 @@ class MusicApi {
     );
   }
 
+  Future<SearchResponse> searchContent({
+    required String keyword,
+    required MusicSource source,
+    required SearchCategory category,
+    int page = 1,
+    int limit = 30,
+  }) async {
+    if (category == SearchCategory.songs) {
+      return searchMusic(
+        keyword: keyword,
+        source: source,
+        page: page,
+        limit: limit,
+      );
+    }
+    final categories = category == SearchCategory.all
+        ? [
+            SearchCategory.artists,
+            SearchCategory.songs,
+            SearchCategory.playlists,
+            SearchCategory.albums,
+          ]
+        : [category];
+    final sources = source == MusicSource.all
+        ? {
+            ..._searchSourceOrder,
+            ..._enabledSearchSources,
+          }.where(_enabledSearchSources.contains).toList()
+        : _enabledSearchSources.contains(source)
+        ? [source]
+        : <MusicSource>[];
+    final notices = <String>[];
+    if (category == SearchCategory.all &&
+        !sources.any((s) => CatalogSdk.supports(s, SearchCategory.artists))) {
+      notices.add('当前平台仅支持歌曲搜索，可切换平台查找艺人、歌单和专辑');
+    }
+    final catalog = <SearchCategory, List<CatalogItem>>{};
+    SearchResponse? songs;
+    var total = 0;
+    var hasMore = false;
+    final pageSize = category == SearchCategory.all ? 6 : limit;
+    await Future.wait(
+      categories.map((type) async {
+        if (type == SearchCategory.songs) {
+          try {
+            songs = await searchMusic(
+              keyword: keyword,
+              source: source,
+              page: page,
+              limit: pageSize,
+            );
+          } catch (_) {
+            notices.add('歌曲暂时加载失败，请在歌曲分类中重试');
+          }
+          return;
+        }
+        final targets = sources
+            .where((s) => CatalogSdk.supports(s, type))
+            .toList();
+        if (targets.isEmpty) {
+          if (category == SearchCategory.all) return;
+          notices.add(
+            '${source == MusicSource.all ? '已启用的平台' : source.label}暂不支持${type.label}搜索',
+          );
+          return;
+        }
+        final results = await Future.wait(
+          targets.map((s) async {
+            try {
+              return await CatalogSdk.search(
+                keyword,
+                s,
+                type,
+                page,
+                pageSize,
+              ).timeout(const Duration(seconds: 25));
+            } catch (_) {
+              notices.add('${s.label}${type.label}加载失败，可切换平台或重试');
+              return null;
+            }
+          }),
+        );
+        // Interleave sources so that the overview isn't occupied by one platform.
+        final merged = <CatalogItem>[];
+        final seen = <String>{};
+        for (var index = 0; index < pageSize; index++) {
+          for (final result in results.whereType<CatalogResult>()) {
+            if (index < result.items.length &&
+                seen.add(result.items[index].key)) {
+              merged.add(result.items[index]);
+            }
+          }
+        }
+        catalog[type] = merged;
+        for (final result in results.whereType<CatalogResult>()) {
+          total += result.total;
+          hasMore = hasMore || result.hasMore;
+        }
+      }),
+    );
+    return SearchResponse(
+      list: songs?.list ?? const [],
+      catalog: catalog,
+      notices: notices,
+      page: page,
+      limit: pageSize,
+      allPage: hasMore && category != SearchCategory.all ? page + 1 : page,
+      total: total,
+      source: source,
+    );
+  }
+
+  Future<PlaylistInfo> getCollection({
+    required MusicSource source,
+    required String id,
+    required OnlineCollectionKind kind,
+    int? maxTracks,
+  }) => switch (kind) {
+    OnlineCollectionKind.playlist => parsePlaylist(
+      input: id,
+      source: source,
+      maxTracks: maxTracks,
+    ),
+    OnlineCollectionKind.leaderboard => getLeaderboard(
+      source: source,
+      boardId: id,
+      maxTracks: maxTracks,
+    ),
+    OnlineCollectionKind.artist ||
+    OnlineCollectionKind.album => CatalogSdk.detail(
+      source,
+      id,
+      artist: kind == OnlineCollectionKind.artist,
+      maxTracks: maxTracks,
+    ),
+  };
+
   // Local: parses public playlists from all five platforms on-device.
   // Playback and download URL resolution are handled by MusicUrlResolver.
   Future<PlaylistInfo> parsePlaylist({
     required String input,
     MusicSource source = MusicSource.all,
     int? maxTracks,
-  }) {
+  }) async {
+    // Saved artist/album collections retain a typed origin, so refresh never
+    // treats an album ID as a playlist ID from the same platform.
+    if (input.startsWith('artist:') || input.startsWith('album:')) {
+      final result = await CatalogSdk.detail(
+        source,
+        input.substring(input.indexOf(':') + 1),
+        artist: input.startsWith('artist:'),
+        maxTracks: maxTracks,
+      );
+      return PlaylistInfo(
+        id: input,
+        name: result.name,
+        source: result.source,
+        tracks: result.tracks,
+        coverUrl: result.coverUrl,
+        creator: result.creator,
+        description: result.description,
+        trackCount: result.trackCount,
+      );
+    }
     return PlaylistSdk.parse(
       input: input,
       source: source,

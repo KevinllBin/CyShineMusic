@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cy_shine_music/core/models/enums.dart';
 import 'package:cy_shine_music/core/models/music_info.dart';
 import 'package:cy_shine_music/core/models/search_response.dart';
+import 'package:cy_shine_music/core/models/search_category.dart';
 import 'package:cy_shine_music/core/storage/settings_store.dart';
 import 'package:cy_shine_music/core/ui/app_toast.dart';
 import 'package:cy_shine_music/core/ui/expressive_download_button.dart';
@@ -165,7 +166,7 @@ void main() {
       addTearDown(container.dispose);
       final playlist = await container
           .read(localPlaylistsProvider.notifier)
-          .create('在线收藏');
+          .create('Online favorites');
 
       await tester.pumpWidget(
         _testAppWithContainer(container, const SearchPage()),
@@ -179,7 +180,7 @@ void main() {
       await _pumpUi(tester);
       expect(find.text('添加歌曲到'), findsOneWidget);
 
-      await tester.tap(find.text('在线收藏'));
+      await tester.tap(find.text('Online favorites'));
       await _pumpUi(tester);
 
       var stored = container
@@ -191,20 +192,20 @@ void main() {
       expect(track.source, MusicSource.wy);
       expect(track.localPath, isNull);
       expect(track.musicInfo?.id, 'page-1-song-01');
-      expect(find.text('已添加到「在线收藏」'), findsOneWidget);
+      expect(find.text('已添加到「Online favorites」'), findsOneWidget);
       await tester.pump(const Duration(seconds: 4));
 
       await tester.tap(addToPlaylistButton);
       await _pumpUi(tester);
       expect(find.text('添加歌曲到'), findsOneWidget);
-      await tester.tap(find.text('在线收藏'));
+      await tester.tap(find.text('Online favorites'));
       await _pumpUi(tester);
 
       stored = container
           .read(localPlaylistsProvider)
           .singleWhere((item) => item.id == playlist.id);
       expect(stored.tracks, hasLength(1));
-      expect(find.text('歌曲已在「在线收藏」中'), findsOneWidget);
+      expect(find.text('歌曲已在「Online favorites」中'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pump(const Duration(seconds: 4));
     },
@@ -285,7 +286,7 @@ void main() {
     await _pumpUi(tester);
     expect(container.read(searchControllerProvider).page, 2);
     expect(position.pixels, position.minScrollExtent);
-    expect(find.text('第 2 页歌曲 01'), findsOneWidget);
+    expect(find.text('Page 2 song 01'), findsOneWidget);
 
     position.jumpTo(position.maxScrollExtent);
     await tester.pump();
@@ -295,7 +296,7 @@ void main() {
     await _pumpUi(tester);
     expect(container.read(searchControllerProvider).page, 1);
     expect(position.pixels, position.minScrollExtent);
-    expect(find.text('第 1 页歌曲 01'), findsOneWidget);
+    expect(find.text('Page 1 song 01'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -385,7 +386,7 @@ ThemeData _testTheme() => ThemeData(
 class _TestSearchController extends SearchController {
   @override
   SearchState build() =>
-      _stateForPage(keyword: '搜索测试', source: MusicSource.all, page: 1);
+      _stateForPage(keyword: 'Search test', source: MusicSource.all, page: 1);
 
   @override
   Future<void> search({
@@ -421,6 +422,7 @@ SearchState _stateForPage({
 }) {
   const limit = 30;
   return SearchState(
+    category: SearchCategory.songs,
     keyword: keyword,
     source: source,
     page: page,
@@ -443,13 +445,13 @@ MusicInfo _music({required int page, required int index}) {
   final id = 'page-$page-song-$paddedIndex';
   return MusicInfo.fromJson({
     'id': id,
-    'name': '第 $page 页歌曲 $paddedIndex',
-    'singer': '测试歌手 $paddedIndex',
+    'name': 'Page $page song $paddedIndex',
+    'singer': 'Test artist $paddedIndex',
     'source': MusicSource.wy.code,
     'interval': '03:30',
     'meta': {
       'songId': id,
-      'albumName': '测试专辑',
+      'albumName': 'Test album',
       'qualitys': [
         {'type': Quality.k320.code},
       ],

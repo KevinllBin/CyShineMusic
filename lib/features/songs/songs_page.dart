@@ -45,6 +45,7 @@ const _songSortAscendingKey = 'songs_sort_ascending_v1';
 class SongsPage extends ConsumerStatefulWidget {
   const SongsPage({super.key, this.searchMode = false});
 
+  /// Initial state for restored /songs/search routes. Header searches open in place.
   final bool searchMode;
 
   @override
@@ -56,6 +57,8 @@ class _SongsPageState extends ConsumerState<SongsPage> {
   bool _ascending = true;
   bool _batchMode = false;
   String _searchQuery = '';
+  bool _searchMode = false;
+  double? _preSearchScrollOffset;
   final Object _toolbarOwner = Object();
   final ScrollController _scrollController = ScrollController();
   final GlobalKey _songsListKey = GlobalKey(debugLabel: 'songs-list');
@@ -84,6 +87,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
   @override
   void initState() {
     super.initState();
+    _searchMode = widget.searchMode;
     final prefs = ref.read(sharedPreferencesProvider);
     _sortMode = SongSortMode.fromCode(prefs.getString(_songSortModeKey));
     _ascending = prefs.getBool(_songSortAscendingKey) ?? true;
@@ -92,7 +96,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     _scanCache = ref.read(localSongScanCacheProvider);
     _seedFromScanCache();
     _scanCache.addListener(_handleScanCacheChanged);
-    if (widget.searchMode) _enableSearchFocusHandling();
+    if (_searchMode) _enableSearchFocusHandling();
     _firstRouteTransitionSettled = _waitForFirstRouteTransition();
     _localMusicDirSubscription = ref.listenManual(
       settingsProvider.select((settings) => settings.localMusicDirs),
@@ -129,7 +133,8 @@ class _SongsPageState extends ConsumerState<SongsPage> {
   void didUpdateWidget(covariant SongsPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.searchMode == widget.searchMode) return;
-    if (widget.searchMode) {
+    _searchMode = widget.searchMode;
+    if (_searchMode) {
       _enableSearchFocusHandling();
     } else {
       _disableSearchFocusHandling();
@@ -190,25 +195,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
 
   void _enableSearchFocusHandling() {
     _searchFocusNode.addListener(_handleSearchFocusChanged);
-    if (!ref.read(songsSearchAutoFocusProvider)) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted ||
-            !widget.searchMode ||
-            !TickerMode.valuesOf(context).enabled) {
-          return;
-        }
-        final toolbar = ref.read(shellToolbarVisibleProvider.notifier);
-        if (toolbar.mounted) toolbar.state = true;
-      });
-      return;
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted &&
-          widget.searchMode &&
-          TickerMode.valuesOf(context).enabled) {
-        _searchFocusNode.requestFocus();
-      }
-    });
+    // The shared header requests focus after its opening animation completes.
   }
 
   void _disableSearchFocusHandling({bool deferRestore = false}) {
@@ -217,7 +204,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
   }
 
   void _handleSearchFocusChanged() {
-    if (!mounted || !widget.searchMode) return;
+    if (!mounted || !_searchMode) return;
     if (!_searchFocusNode.hasFocus) {
       _restoreToolbarAfterSearchFocus();
       return;
@@ -519,7 +506,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
       entry,
     );
     if (!available || !mounted) return;
-    if (widget.searchMode) {
+    if (_searchMode) {
       ref.read(songsSearchAutoFocusProvider.notifier).state = false;
       _searchFocusNode.unfocus();
       _restoreToolbarAfterSearchFocus();
@@ -552,7 +539,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     }
     final playlistId = destination.playlistId;
     _selectLibraryPlaylist(playlistId);
-    if (widget.searchMode) _clearSearch();
+    if (_searchMode) _clearSearch();
     // Selecting a library replaces the keyed list. Wait until its rows and
     // scroll dimensions are ready before finding the playing song.
     await WidgetsBinding.instance.endOfFrame;
@@ -831,8 +818,42 @@ class _SongsPageState extends ConsumerState<SongsPage> {
   }
 
   void _openSearch() {
+    if (_searchMode) return;
+    _preSearchScrollOffset = _scrollController.hasClients
+        ? _scrollController.offset
+        : null;
     ref.read(songsSearchAutoFocusProvider.notifier).state = true;
-    context.go('/songs/search');
+    _enableSearchFocusHandling();
+    setState(() {
+      _searchMode = true;
+      _batchMode = false;
+      _selectedIds.clear();
+    });
+  }
+
+  void _closeSearch() {
+    if (!_searchMode) return;
+    _disableSearchFocusHandling();
+    _searchFocusNode.unfocus();
+    _searchController.clear();
+    setState(() {
+      _searchMode = false;
+      _searchQuery = '';
+      _selectedIds.clear();
+    });
+    final previousOffset = _preSearchScrollOffset;
+    _preSearchScrollOffset = null;
+    if (previousOffset != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_searchMode && _scrollController.hasClients) {
+          _scrollController.jumpTo(
+            previousOffset.clamp(0, _scrollController.position.maxScrollExtent),
+          );
+        }
+      });
+    }
+    // Keep old links/restored search routes working; new searches stay in place.
+    if (widget.searchMode) context.go('/songs');
   }
 
   Future<void> _updatePlaylist(LocalPlaylist playlist) async {
@@ -864,6 +885,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     final nextId = normalized == null || normalized.isEmpty ? null : normalized;
     if (ref.read(songsLibraryPlaylistIdProvider) == nextId) return;
     ref.read(songsLibraryPlaylistIdProvider.notifier).select(nextId);
+    if (_searchMode) _preSearchScrollOffset = 0;
     setState(() {
       _selectedIds.clear();
       _batchMode = false;
@@ -901,6 +923,11 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     setState(() {
       _searchQuery = query;
       if (_batchMode) _selectedIds.clear();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _searchMode && _scrollController.hasClients) {
+        _scrollController.jumpTo(0);
+      }
     });
   }
 
@@ -1078,6 +1105,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     required int songCount,
     required int selectedCount,
     required LocalPlaylist? activePlaylist,
+    required bool searchAutoFocus,
   }) {
     if (!TickerMode.valuesOf(context).enabled ||
         ModalRoute.of(context)?.isCurrent == false) {
@@ -1103,6 +1131,8 @@ class _SongsPageState extends ConsumerState<SongsPage> {
         selectedCount: selectedCount,
         allSelected: allSelected,
         batchMode: _batchMode,
+        searchMode: _searchMode,
+        searchAutoFocus: searchAutoFocus,
         canUpdatePlaylist: canUpdatePlaylist,
         updatingPlaylist: updatingPlaylist,
       )) {
@@ -1116,9 +1146,15 @@ class _SongsPageState extends ConsumerState<SongsPage> {
         selectedCount: selectedCount,
         allSelected: allSelected,
         batchMode: _batchMode,
+        searchMode: _searchMode,
+        searchAutoFocus: searchAutoFocus,
         onSelectLibraryPlaylist: _selectLibraryPlaylist,
         onOpenPlaylists: _openPlaylists,
         onSearch: _openSearch,
+        onCloseSearch: _closeSearch,
+        onSearchChanged: _updateSearchQuery,
+        searchController: _searchController,
+        searchFocusNode: _searchFocusNode,
         onShuffle: _shuffleVisibleSongs,
         onOpenHistory: _openHistory,
         onUpdatePlaylist: canUpdatePlaylist
@@ -1160,7 +1196,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
         : _songsForPlaylist(selectedPlaylist, history);
     final allSongs = playlistSongs?.songs ?? _songs(history);
     _visiblePlaylistTracks = playlistSongs?.tracksByEntryId ?? const {};
-    final songs = widget.searchMode
+    final songs = _searchMode
         ? filterSongsByQuery(allSongs, _searchQuery)
         : allSongs;
     final scanning = !playlistMode && _scannedFiles == null;
@@ -1192,6 +1228,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
       songCount: songs.length,
       selectedCount: selectedCount,
       activePlaylist: selectedPlaylist,
+      searchAutoFocus: ref.watch(songsSearchAutoFocusProvider),
     );
 
     final libraryView = AppScrollbar(
@@ -1207,20 +1244,6 @@ class _SongsPageState extends ConsumerState<SongsPage> {
         ),
         slivers: [
           const SliverToBoxAdapter(child: ScrollHeaderSpacer()),
-          if (widget.searchMode)
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(14, 2, 14, 0),
-              sliver: SliverToBoxAdapter(
-                child: SongsSearchBar(
-                  controller: _searchController,
-                  focusNode: _searchFocusNode,
-                  query: _searchQuery,
-                  autofocus: ref.watch(songsSearchAutoFocusProvider),
-                  onChanged: _updateSearchQuery,
-                  onClear: _clearSearch,
-                ),
-              ),
-            ),
           if (allSongs.isNotEmpty)
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(14, 0, 14, 2),
@@ -1228,8 +1251,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
                 child: SongsListSummary(
                   count: songs.length,
                   totalCount: allSongs.length,
-                  searching:
-                      widget.searchMode && _searchQuery.trim().isNotEmpty,
+                  searching: _searchMode && _searchQuery.trim().isNotEmpty,
                   sortMode: _sortMode,
                   ascending: _ascending,
                   batchMode: _batchMode,

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +8,9 @@ import '../../core/api/music_api.dart';
 import '../shell/shell_bottom_area.dart';
 import '../../core/models/enums.dart';
 import '../../core/models/music_info.dart';
+import '../../core/models/music_query.dart';
+import 'widgets/collection_search_status.dart';
+import '../playlists/widgets/expanding_header_search.dart';
 import '../../core/models/online_collection_kind.dart';
 import '../../core/models/playlist_info.dart';
 import '../../core/models/playlist_summary.dart';
@@ -59,6 +63,12 @@ class _OnlinePlaylistDetailPageState
   bool _saving = false;
   bool _removingFavorite = false;
   final ScrollController _scrollController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode(
+    debugLabel: 'online-collection-search',
+  );
+  bool _searchMode = false;
+  LocalHistoryEntry? _searchHistory;
 
   OnlinePlaylistIdentity get _identity =>
       (source: widget.source, id: widget.playlistId, kind: widget.kind);
@@ -94,6 +104,7 @@ class _OnlinePlaylistDetailPageState
     if (identityChanged) {
       _trackLimit = _savedTrackLimit;
       _lastPlaylist = null;
+      _closeSearch();
       _summary =
           widget.summary ??
           ref.read(onlinePlaylistSummaryCacheProvider)[_identity];
@@ -116,8 +127,79 @@ class _OnlinePlaylistDetailPageState
 
   @override
   void dispose() {
+    _searchMode = false;
+    _searchHistory?.remove();
+    _searchFocusNode.dispose();
+    _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _openSearch() {
+    if (_searchMode) return;
+    setState(() => _searchMode = true);
+    _searchHistory = LocalHistoryEntry(
+      onRemove: () {
+        _searchHistory = null;
+        if (mounted && _searchMode) _closeSearch();
+      },
+    );
+    ModalRoute.of(context)?.addLocalHistoryEntry(_searchHistory!);
+  }
+
+  void _closeSearch() {
+    if (_searchHistory != null) {
+      _searchHistory!.remove();
+      return;
+    }
+    _searchFocusNode.unfocus();
+    _searchController.clear();
+    if (mounted) setState(() => _searchMode = false);
+  }
+
+  Widget _buildSearchTopBar(
+    PlaylistInfo playlist,
+    LocalPlaylist? saved, {
+    bool onImage = false,
+    bool? statusBarOnImage,
+    double progress = 1,
+  }) {
+    return ImmersivePlaylistTopBar(
+      title: playlist.name,
+      onImage: onImage,
+      statusBarOnImage: statusBarOnImage,
+      titleOpacity: progress,
+      showGradient: progress > 0,
+      backdropOpacity: progress,
+      blurSigma: 24 * progress,
+      onBack: _searchMode ? _closeSearch : null,
+      titleContent: ExpandingHeaderSearch(
+        title: playlist.name,
+        titleOpacity: progress,
+        onImage: onImage,
+        controller: _searchController,
+        focusNode: _searchFocusNode,
+        expanded: _searchMode,
+        onOpen: _openSearch,
+        onClose: _closeSearch,
+        onChanged: (_) => setState(() {}),
+        hint: widget.kind == OnlineCollectionKind.artist
+            ? '搜索这位艺人的热门歌曲'
+            : '搜索${widget.kind.label}中的歌曲',
+        tooltip: '搜索${widget.kind.label}歌曲',
+        actions: [
+          if (saved != null && widget.kind == OnlineCollectionKind.playlist)
+            ImmersiveTopIconButton(
+              tooltip: '随机播放',
+              icon: Icons.shuffle_rounded,
+              onImage: onImage,
+              onPressed: saved.tracks.length < 2
+                  ? null
+                  : () => _shuffleSavedPlaylist(saved),
+            ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -177,14 +259,16 @@ class _OnlinePlaylistDetailPageState
     if (summary == null) return playlist;
     return PlaylistInfo(
       id: playlist.id,
-      name: playlist.name,
+      name: playlist.name.isEmpty ? summary.name : playlist.name,
       source: playlist.source,
       tracks: playlist.tracks,
       coverUrl: summary.coverUrl?.trim().isNotEmpty == true
           ? summary.coverUrl
           : playlist.coverUrl,
       creator: playlist.creator,
-      description: playlist.description,
+      description: playlist.description?.trim().isNotEmpty == true
+          ? playlist.description
+          : summary.description,
       playCount: playlist.playCount,
       trackCount: playlist.trackCount,
     );
@@ -200,8 +284,24 @@ class _OnlinePlaylistDetailPageState
     final local = _findSavedPlaylist(
       ref.watch(localPlaylistsProvider),
       playlist,
+      kind: widget.kind,
     );
-    final queue = _onlinePlaylistQueue(playlist);
+    final searching = _searchController.text.trim().isNotEmpty;
+    final visibleTracks = filterMusicByQuery(
+      playlist.tracks,
+      _searchController.text,
+    );
+    final playbackPlaylist = searching
+        ? PlaylistInfo(
+            id: playlist.id,
+            name: playlist.name,
+            source: playlist.source,
+            tracks: visibleTracks,
+            coverUrl: playlist.coverUrl,
+            trackCount: visibleTracks.length,
+          )
+        : playlist;
+    final queue = _onlinePlaylistQueue(playbackPlaylist, kind: widget.kind);
 
     final artworkProvider = networkPlaylistArtworkProvider(
       playlist.coverUrl,
@@ -213,6 +313,7 @@ class _OnlinePlaylistDetailPageState
     );
     final metadata = [
       playlist.source.label,
+      if (widget.kind.isCatalog) widget.kind.label,
       if (playlist.creator?.trim().isNotEmpty == true) playlist.creator!.trim(),
       '${playlist.totalTracks} 首',
       if (playlist.playCount != null)
@@ -237,18 +338,21 @@ class _OnlinePlaylistDetailPageState
 
           PlaylistDetailActions actionsWith(EdgeInsetsGeometry padding) {
             return PlaylistDetailActions(
+              playLabel: searching ? '播放结果' : '播放全部',
               onPlay: queue.isEmpty
                   ? null
-                  : () => _playQueue(playlist, queue.first),
+                  : () => _playQueue(playbackPlaylist, queue.first),
               onFavorite: _saving
                   ? null
                   : () => _toggleFavorite(playlist, local),
               saving: _saving,
               removingFavorite: _removingFavorite,
               saved: local != null,
-              favoriteLabel: widget.kind == OnlineCollectionKind.leaderboard
-                  ? (local != null ? '已收藏' : '收藏榜单')
-                  : null,
+              favoriteLabel: local != null
+                  ? '已收藏'
+                  : widget.kind == OnlineCollectionKind.artist
+                  ? '收藏歌曲'
+                  : '收藏${widget.kind.label}',
               padding: padding,
             );
           }
@@ -258,20 +362,38 @@ class _OnlinePlaylistDetailPageState
               (loadMoreError != null &&
                   playlist.tracks.length < playlist.totalTracks);
           final trackSlivers = <Widget>[
+            if (searching)
+              SliverToBoxAdapter(
+                child: CollectionSearchStatus(
+                  caption:
+                      '找到 ${visibleTracks.length} 首${playlist.tracks.length < playlist.totalTracks ? ' · 已搜索 ${playlist.tracks.length} / ${playlist.totalTracks} 首' : ''}',
+                  loading: loadingMore,
+                  onSearchAll: playlist.tracks.length < playlist.totalTracks
+                      ? () {
+                          if (_trackLimit == playlist.totalTracks) {
+                            ref.invalidate(onlinePlaylistDetailProvider(_key));
+                          } else {
+                            setState(() => _trackLimit = playlist.totalTracks);
+                          }
+                        }
+                      : null,
+                ),
+              ),
             SliverToBoxAdapter(
               child: _PlaylistTracksHeading(
-                count: playlist.tracks.length,
-                total: playlist.totalTracks,
+                count: visibleTracks.length,
+                total: searching ? visibleTracks.length : playlist.totalTracks,
+                title: widget.kind == OnlineCollectionKind.artist
+                    ? '热门歌曲'
+                    : '歌曲',
               ),
             ),
-            if (playlist.tracks.isEmpty)
+            if (visibleTracks.isEmpty)
               SliverFillRemaining(
                 hasScrollBody: false,
                 child: Center(
                   child: Text(
-                    widget.kind == OnlineCollectionKind.leaderboard
-                        ? '这个榜单暂时没有可用歌曲'
-                        : '这个歌单暂时没有可用歌曲',
+                    searching ? '没有匹配的歌曲' : '这个${widget.kind.label}暂时没有可用歌曲',
                   ),
                 ),
               )
@@ -284,12 +406,12 @@ class _OnlinePlaylistDetailPageState
                   hasTrackFooter ? 0 : 156,
                 ),
                 sliver: SliverList.separated(
-                  itemCount: playlist.tracks.length,
+                  itemCount: visibleTracks.length,
                   separatorBuilder: (_, _) =>
                       _trackListDivider(context, scheme),
                   itemBuilder: (context, index) {
-                    _requestMoreTracksIfNeeded(playlist, index);
-                    final music = playlist.tracks[index];
+                    if (!searching) _requestMoreTracksIfNeeded(playlist, index);
+                    final music = visibleTracks[index];
                     final entry = queue.where((item) {
                       final json = item.musicJson;
                       return json != null && json['id'] == music.id;
@@ -304,7 +426,7 @@ class _OnlinePlaylistDetailPageState
                           music: music,
                           onPlay: entry == null
                               ? null
-                              : () => _playQueue(playlist, entry),
+                              : () => _playQueue(playbackPlaylist, entry),
                         ),
                       ),
                     );
@@ -318,7 +440,8 @@ class _OnlinePlaylistDetailPageState
               SliverToBoxAdapter(
                 child: _LoadMoreTracksError(
                   message: loadMoreError,
-                  onRetry: () => _loadMoreTracks(playlist),
+                  onRetry: () =>
+                      ref.invalidate(onlinePlaylistDetailProvider(_key)),
                 ),
               ),
           ];
@@ -327,10 +450,7 @@ class _OnlinePlaylistDetailPageState
             backgroundColor: scheme.surface,
             body: wide
                 ? PlaylistWideBody(
-                    topBar: ImmersivePlaylistTopBar(
-                      title: playlist.name,
-                      onImage: false,
-                    ),
+                    topBar: _buildSearchTopBar(playbackPlaylist, local),
                     infoPane: PlaylistWideInfoPane(
                       artworkProvider: artworkProvider,
                       artworkHeroTag: onlinePlaylistArtworkHeroTag(
@@ -362,6 +482,15 @@ class _OnlinePlaylistDetailPageState
                   )
                 : ScrollingImmersivePlaylistBody(
                     title: playlist.name,
+                    topBarBuilder:
+                        (context, onImage, statusBarOnImage, progress) =>
+                            _buildSearchTopBar(
+                              playbackPlaylist,
+                              local,
+                              onImage: onImage,
+                              statusBarOnImage: statusBarOnImage,
+                              progress: progress,
+                            ),
                     child: AppScrollbar(
                       controller: _scrollController,
                       child: AppRefreshIndicator(
@@ -413,6 +542,21 @@ class _OnlinePlaylistDetailPageState
     );
   }
 
+  Future<void> _shuffleSavedPlaylist(LocalPlaylist playlist) async {
+    final queue = [
+      for (final track in playlist.tracks)
+        ?track.toQueueEntry(playlistId: playlist.id),
+    ];
+    if (queue.length < 2) return;
+    final entry = queue[math.Random().nextInt(queue.length)];
+    if (!await ensureQueueEntryMusicSourceAvailable(context, entry) || !mounted) {
+      return;
+    }
+    final player = ref.read(playerControllerProvider.notifier);
+    player.setPlaybackMode(PlayerPlaybackMode.shuffle);
+    await player.playFromPlaylistQueue(entry, queue, playlistId: playlist.id);
+  }
+
   Future<void> _playQueue(
     PlaylistInfo playlist,
     DownloadHistoryEntry selectedEntry,
@@ -423,7 +567,7 @@ class _OnlinePlaylistDetailPageState
     );
     if (!available || !mounted) return;
 
-    final queue = _onlinePlaylistQueue(playlist);
+    final queue = _onlinePlaylistQueue(playlist, kind: widget.kind);
     final entry = _matchingQueueEntry(queue, selectedEntry);
     if (entry == null) return;
     final player = ref.read(playerControllerProvider.notifier);
@@ -458,17 +602,26 @@ class _OnlinePlaylistDetailPageState
       final notifier = ref.read(localPlaylistsProvider.notifier);
       if (savedPlaylist == null) {
         final api = ref.read(musicApiProvider);
-        final loaded = widget.kind == OnlineCollectionKind.leaderboard
-            ? await api.getLeaderboard(
-                source: playlist.source,
-                boardId: playlist.id,
-              )
-            : await api.parsePlaylist(
-                input: playlist.id,
-                source: playlist.source,
-              );
+        final loaded = await api.getCollection(
+          source: playlist.source,
+          id: playlist.id,
+          kind: widget.kind,
+        );
         final fullPlaylist = _withDiscoveryArtwork(loaded);
-        await notifier.importOnline(fullPlaylist);
+        await notifier.importOnline(
+          widget.kind.isCatalog
+              ? PlaylistInfo(
+                  id: '${widget.kind.name}:${fullPlaylist.id}',
+                  name: fullPlaylist.name,
+                  source: fullPlaylist.source,
+                  tracks: fullPlaylist.tracks,
+                  coverUrl: fullPlaylist.coverUrl,
+                  creator: fullPlaylist.creator,
+                  description: fullPlaylist.description,
+                  trackCount: fullPlaylist.trackCount,
+                )
+              : fullPlaylist,
+        );
       } else {
         await notifier.delete(savedPlaylist.id);
       }
@@ -600,12 +753,10 @@ class _DetailLoading extends StatelessWidget {
       context,
       carPadModeEnabled: carPadModeEnabled,
     );
-    final detailLabel = kind == OnlineCollectionKind.leaderboard
-        ? '榜单详情'
-        : '歌单详情';
+    final detailLabel = '${kind.label}详情';
     final title = item?.name ?? detailLabel;
     final metadata = item == null
-        ? '正在读取${kind == OnlineCollectionKind.leaderboard ? '榜单' : '歌单'}信息'
+        ? '正在读取${kind.label}信息'
         : _summaryMetadata(item);
     final descriptionLoading = item?.description?.trim().isEmpty ?? true;
     return PlaylistArtworkTheme(
@@ -749,9 +900,7 @@ class _DetailError extends StatelessWidget {
       context,
       carPadModeEnabled: carPadModeEnabled,
     );
-    final detailLabel = kind == OnlineCollectionKind.leaderboard
-        ? '榜单详情'
-        : '歌单详情';
+    final detailLabel = '${kind.label}详情';
     final title = item?.name ?? detailLabel;
     final metadata = item == null ? source.label : _summaryMetadata(item);
     final errorContent = Center(
@@ -852,17 +1001,18 @@ class _DetailError extends StatelessWidget {
 }
 
 class _PlaylistTracksHeading extends StatelessWidget {
-  const _PlaylistTracksHeading({this.count, this.total});
+  const _PlaylistTracksHeading({this.count, this.total, this.title = '歌曲'});
 
+  final String title;
   final int? count;
   final int? total;
 
   String get _label {
     final loaded = count;
     final all = total;
-    if (loaded == null) return '歌曲';
-    if (all != null && all > loaded) return '歌曲  $loaded/$all';
-    return '歌曲  $loaded';
+    if (loaded == null) return title;
+    if (all != null && all > loaded) return '$title  $loaded/$all';
+    return '$title  $loaded';
   }
 
   @override
@@ -1063,8 +1213,11 @@ String _onlineArtworkCacheKey(
       '${coverUrl?.trim() ?? ''}';
 }
 
-List<DownloadHistoryEntry> _onlinePlaylistQueue(PlaylistInfo playlist) {
-  final queueId = 'online:${playlist.source.code}:${playlist.id}';
+List<DownloadHistoryEntry> _onlinePlaylistQueue(
+  PlaylistInfo playlist, {
+  OnlineCollectionKind kind = OnlineCollectionKind.playlist,
+}) {
+  final queueId = 'online:${kind.name}:${playlist.source.code}:${playlist.id}';
   final queue = <DownloadHistoryEntry>[];
   for (final music in playlist.tracks) {
     final entry = PlaylistTrack.fromMusicInfo(
@@ -1097,13 +1250,12 @@ Future<void> _expandOnlinePlaylistQueue({
   required List<DownloadHistoryEntry> initialQueue,
 }) async {
   try {
-    final fullPlaylist = kind == OnlineCollectionKind.leaderboard
-        ? await api.getLeaderboard(
-            source: playlist.source,
-            boardId: playlist.id,
-          )
-        : await api.parsePlaylist(input: playlist.id, source: playlist.source);
-    final fullQueue = _onlinePlaylistQueue(fullPlaylist);
+    final fullPlaylist = await api.getCollection(
+      source: playlist.source,
+      id: playlist.id,
+      kind: kind,
+    );
+    final fullQueue = _onlinePlaylistQueue(fullPlaylist, kind: kind);
     player.expandPlaylistQueue(
       expectedQueue: initialQueue,
       expandedQueue: fullQueue,
@@ -1118,11 +1270,13 @@ Future<void> _expandOnlinePlaylistQueue({
 
 LocalPlaylist? _findSavedPlaylist(
   List<LocalPlaylist> playlists,
-  PlaylistInfo online,
-) {
+  PlaylistInfo online, {
+  OnlineCollectionKind kind = OnlineCollectionKind.playlist,
+}) {
   for (final playlist in playlists) {
     if (playlist.originSourceCode == online.source.code &&
-        playlist.originPlaylistId == online.id) {
+        playlist.originPlaylistId ==
+            (kind.isCatalog ? '${kind.name}:${online.id}' : online.id)) {
       return playlist;
     }
   }

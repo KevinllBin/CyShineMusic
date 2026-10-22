@@ -101,6 +101,32 @@ GoRouter createAppRouter({
                       );
                     },
                   ),
+                  for (final kind in [
+                    OnlineCollectionKind.artist,
+                    OnlineCollectionKind.album,
+                  ])
+                    GoRoute(
+                      path:
+                          '/discover/${kind == OnlineCollectionKind.artist ? 'artists' : 'albums'}/:source/:id',
+                      pageBuilder: (context, state) => _containerTransformPage(
+                        context,
+                        key: state.pageKey,
+                        extra: state.extra,
+                        child: _shellPageContent(
+                          state,
+                          child: OnlinePlaylistDetailPage(
+                            source: MusicSource.fromCode(
+                              state.pathParameters['source'] ?? '',
+                            ),
+                            playlistId: state.pathParameters['id'] ?? '',
+                            kind: kind,
+                            summary: _routePayload<PlaylistSummary>(
+                              state.extra,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   GoRoute(
                     path: '/discover/leaderboards/:source',
                     pageBuilder: (context, state) {

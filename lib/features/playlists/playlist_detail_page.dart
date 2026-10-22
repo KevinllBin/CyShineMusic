@@ -34,6 +34,7 @@ import 'widgets/playlist_artwork.dart';
 import 'widgets/playlist_detail_actions.dart';
 import 'widgets/playlist_detail_placeholders.dart';
 import 'widgets/immersive_playlist_chrome.dart';
+import 'widgets/expanding_header_search.dart';
 import 'widgets/playlist_track_tile.dart';
 import 'widgets/playlist_wide_layout.dart';
 
@@ -241,11 +242,16 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
   }) {
     return ScrollingImmersivePlaylistBody(
       title: playlist.name,
-      onBack: _searchMode
-          ? _closeSearch
-          : _batchMode
-          ? _toggleBatchMode
-          : null,
+      topBarBuilder: (context, onImage, statusBarOnImage, progress) =>
+          _buildImmersiveTopBar(
+            title: playlist.name,
+            queue: queue,
+            selectedCount: selectedCount,
+            visibleCount: filtered.length,
+            onImage: onImage,
+            statusBarOnImage: statusBarOnImage,
+            revealProgress: progress,
+          ),
       child: AppScrollbar(
         controller: _scrollController,
         child: CustomScrollView(
@@ -258,13 +264,8 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
             SliverToBoxAdapter(
               child: ImmersivePlaylistHeader(
                 artworkProvider: artworkProvider,
-                topBar: _buildImmersiveTopBar(
-                  title: playlist.name,
-                  queue: queue,
-                  selectedCount: selectedCount,
-                  visibleCount: filtered.length,
-                  showBack: false,
-                ),
+                topBar: const ImmersivePlaylistTopBar(title: ''),
+                showTopBar: false,
               ),
             ),
             SliverToBoxAdapter(
@@ -363,29 +364,6 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
     required List<DownloadHistoryEntry> queue,
   }) {
     return [
-      if (_searchMode)
-        SliverPadding(
-          key: const ValueKey('playlist-search-bar-sliver'),
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-          sliver: SliverToBoxAdapter(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: CarDisplayLayout.contentConstraints(
-                  context,
-                  maxWidth: 900,
-                ),
-                child: SongsSearchBar(
-                  controller: _searchController,
-                  focusNode: _searchFocusNode,
-                  query: _searchQuery,
-                  autofocus: true,
-                  onChanged: _updateSearchQuery,
-                  onClear: _clearSearch,
-                ),
-              ),
-            ),
-          ),
-        ),
       if (resolved.isNotEmpty)
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(14, 2, 14, 0),
@@ -488,24 +466,9 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
     required int visibleCount,
     bool onImage = true,
     bool showBack = true,
+    bool? statusBarOnImage,
+    double revealProgress = 1,
   }) {
-    if (_searchMode) {
-      return ImmersivePlaylistTopBar(
-        title: '搜索歌单歌曲',
-        onImage: onImage,
-        showBack: showBack,
-        showGradient: !onImage,
-        onBack: _closeSearch,
-        actions: [
-          ImmersiveTopIconButton(
-            tooltip: '退出搜索',
-            icon: Icons.close_rounded,
-            onPressed: _closeSearch,
-            onImage: onImage,
-          ),
-        ],
-      );
-    }
     if (_batchMode) {
       final allSelected = visibleCount > 0 && selectedCount == visibleCount;
       return ImmersivePlaylistTopBar(
@@ -536,25 +499,35 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
       );
     }
     return ImmersivePlaylistTopBar(
-      title: onImage ? '' : title,
+      title: title,
       onImage: onImage,
       showBack: showBack,
-      showGradient: !onImage,
-      actions: [
-        ImmersiveTopIconButton(
-          tooltip: '搜索歌单歌曲',
-          icon: Icons.search_rounded,
-          onPressed: _openSearch,
-          onImage: onImage,
-        ),
-        const SizedBox(width: 4),
-        ImmersiveTopIconButton(
-          tooltip: '随机播放',
-          icon: Icons.shuffle_rounded,
-          onPressed: queue.length >= 2 ? _shuffleVisible : null,
-          onImage: onImage,
-        ),
-      ],
+      titleOpacity: revealProgress,
+      showGradient: revealProgress > 0,
+      backdropOpacity: revealProgress,
+      blurSigma: 24 * revealProgress,
+      statusBarOnImage: statusBarOnImage,
+      onBack: _searchMode ? _closeSearch : null,
+      titleContent: ExpandingHeaderSearch(
+        title: title,
+        titleOpacity: revealProgress,
+        onImage: onImage,
+        controller: _searchController,
+        focusNode: _searchFocusNode,
+        expanded: _searchMode,
+        onOpen: _openSearch,
+        onClose: _closeSearch,
+        onChanged: _updateSearchQuery,
+        tooltip: '搜索歌单歌曲',
+        actions: [
+          ImmersiveTopIconButton(
+            tooltip: '随机播放',
+            icon: Icons.shuffle_rounded,
+            onPressed: queue.length >= 2 ? _shuffleVisible : null,
+            onImage: onImage,
+          ),
+        ],
+      ),
     );
   }
 
@@ -779,11 +752,6 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
       _selectedTrackIds.clear();
     });
     _searchFocusNode.addListener(_handleSearchFocusChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _searchMode && TickerMode.valuesOf(context).enabled) {
-        _searchFocusNode.requestFocus();
-      }
-    });
   }
 
   void _closeSearch() {
@@ -827,12 +795,6 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
   void _updateSearchQuery(String query) {
     if (_searchQuery == query) return;
     setState(() => _searchQuery = query);
-  }
-
-  void _clearSearch() {
-    _searchController.clear();
-    _updateSearchQuery('');
-    FocusManager.instance.primaryFocus?.unfocus();
   }
 
   void _toggleSelection(ResolvedPlaylistTrack item) {

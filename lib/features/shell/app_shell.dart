@@ -383,6 +383,10 @@ class _AppShellState extends ConsumerState<AppShell>
         songsToolbar.onToggleBatch!();
         return true;
       }
+      if (songsToolbar.searchMode && songsToolbar.onCloseSearch != null) {
+        songsToolbar.onCloseSearch!();
+        return true;
+      }
     }
     if (isPlaylistDetailLocation(widget.location)) {
       final playlistToolbar = ref.read(playlistDetailToolbarStateProvider);

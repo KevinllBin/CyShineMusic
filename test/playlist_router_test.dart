@@ -34,7 +34,9 @@ void main() {
     'songs playlist entry preserves management source through player return',
     (tester) async {
       await _usePhoneViewport(tester);
-      final prefs = await _prefsWith([_playlist(id: 'night', name: '夜晚循环')]);
+      final prefs = await _prefsWith([
+        _playlist(id: 'night', name: 'Night playlist'),
+      ]);
       final audioHandler = PlayerAudioHandler();
       final router = createAppRouter(initialLocation: '/songs');
       addTearDown(() {
@@ -69,10 +71,10 @@ void main() {
       await _pumpUi(tester);
       expect(find.byType(DraggableScrollableSheet), findsNothing);
       expect(router.routeInformationProvider.value.uri.path, '/playlists');
-      expect(find.text('夜晚循环'), findsOneWidget);
+      expect(find.text('Night playlist'), findsOneWidget);
       expect(find.byTooltip('返回上一页'), findsOneWidget);
 
-      await tester.tap(find.text('夜晚循环'));
+      await tester.tap(find.text('Night playlist'));
       await _pumpUi(tester);
       expect(
         router.routeInformationProvider.value.uri.toString(),
@@ -114,7 +116,7 @@ void main() {
       expect(await tester.binding.handlePopRoute(), isTrue);
       await _pumpUi(tester);
       expect(router.routeInformationProvider.value.uri.path, '/playlists');
-      expect(find.text('夜晚循环'), findsOneWidget);
+      expect(find.text('Night playlist'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -126,13 +128,13 @@ void main() {
       final prefs = await _prefsWith([
         _playlist(
           id: 'night',
-          name: '夜晚循环',
+          name: 'Night playlist',
           tracks: const [
             PlaylistTrack(
               musicId: 'track-1',
-              name: '夜曲',
-              singer: '周杰伦',
-              albumName: '十一月的萧邦',
+              name: 'Nocturne',
+              singer: 'Jay Chou',
+              albumName: 'November album',
               sourceCode: 'wy',
               qualityCode: 'flac',
             ),
@@ -168,13 +170,13 @@ void main() {
       await tester.tap(find.byIcon(Icons.arrow_drop_down_rounded));
       await _pumpUi(tester);
       expect(find.text('本地歌曲'), findsOneWidget);
-      expect(find.text('夜晚循环'), findsOneWidget);
+      expect(find.text('Night playlist'), findsOneWidget);
 
       // 选歌单只在 Songs 页原地换入歌单曲目。
-      await tester.tap(find.text('夜晚循环'));
+      await tester.tap(find.text('Night playlist'));
       await _pumpUi(tester);
       expect(router.routeInformationProvider.value.uri.path, '/songs');
-      expect(find.text('夜曲'), findsOneWidget);
+      expect(find.text('Nocturne'), findsOneWidget);
       expect(find.text('1 首歌单歌曲'), findsOneWidget);
       expect(
         find.byKey(
@@ -192,8 +194,8 @@ void main() {
       expect(find.byTooltip('搜索本地歌曲'), findsNothing);
       await tester.tap(find.byTooltip('搜索歌单歌曲'));
       await _pumpUi(tester);
-      expect(router.routeInformationProvider.value.uri.path, '/songs/search');
-      expect(find.text('搜索歌单歌曲'), findsOneWidget);
+      expect(router.routeInformationProvider.value.uri.path, '/songs');
+      expect(find.byKey(const ValueKey('header-search-field')), findsOneWidget);
       expect(await tester.binding.handlePopRoute(), isTrue);
       await _pumpUi(tester);
       expect(router.routeInformationProvider.value.uri.path, '/songs');

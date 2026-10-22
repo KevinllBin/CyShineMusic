@@ -35,7 +35,11 @@ void main() {
     tester,
   ) async {
     await _useViewport(tester, const Size(1024, 600));
-    await _pumpLocalDetail(tester, playlist: _localPlaylist(), carPadMode: true);
+    await _pumpLocalDetail(
+      tester,
+      playlist: _localPlaylist(),
+      carPadMode: true,
+    );
 
     expect(find.byKey(_wideLayoutKey), findsOneWidget);
     expect(find.byKey(_infoPaneKey), findsOneWidget);
@@ -43,7 +47,7 @@ void main() {
     expect(find.byKey(_playAllKey), findsOneWidget);
     // 非在线导入歌单没有「取消收藏」。
     expect(find.byKey(_favoriteKey), findsNothing);
-    expect(find.text('第一首'), findsOneWidget);
+    expect(find.text('First song'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -74,7 +78,7 @@ void main() {
       routes: [
         GoRoute(
           path: '/playlists',
-          builder: (_, _) => const Scaffold(body: Text('歌单列表桩')),
+          builder: (_, _) => const Scaffold(body: Text('Playlist list stub')),
         ),
         GoRoute(
           path: '/playlists/:id',
@@ -116,7 +120,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(container.read(localPlaylistsProvider), isEmpty);
     expect(router.routeInformationProvider.value.uri.path, '/playlists');
-    expect(find.text('歌单列表桩'), findsOneWidget);
+    expect(find.text('Playlist list stub'), findsOneWidget);
     await tester.pump(const Duration(seconds: 4));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
@@ -156,7 +160,7 @@ void main() {
 
     expect(find.byKey(_wideLayoutKey), findsOneWidget);
     expect(find.byKey(_skeletonKey), findsNothing);
-    expect(find.text('在线曲目'), findsOneWidget);
+    expect(find.text('Online track'), findsOneWidget);
     expect(find.byKey(_favoriteKey), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -317,7 +321,7 @@ LocalPlaylist _localPlaylist({bool online = false}) {
     id: online ? 'fav' : 'plain',
     name: online ? '收藏的歌单' : '本地歌单',
     tracks: [
-      PlaylistTrack.fromMusicInfo(_music('track-1', '第一首')),
+      PlaylistTrack.fromMusicInfo(_music('track-1', 'First song')),
       PlaylistTrack.fromMusicInfo(_music('track-2', '第二首')),
     ],
     createdAt: DateTime.utc(2026, 8, 1),
@@ -331,12 +335,12 @@ MusicInfo _music(String id, String name) {
   return MusicInfo.fromJson({
     'id': id,
     'name': name,
-    'singer': '测试歌手',
+    'singer': 'Test artist',
     'source': MusicSource.kw.code,
     'interval': '03:30',
     'meta': {
       'songId': id,
-      'albumName': '测试专辑',
+      'albumName': 'Test album',
       'qualitys': [
         {'type': Quality.k320.code, 'size': '1024'},
       ],
@@ -358,7 +362,7 @@ class _FakePlaylistApi extends MusicApi {
     description: '在线歌单简介',
     playCount: 1200,
     trackCount: 1,
-    tracks: [_music('online-1', '在线曲目')],
+    tracks: [_music('online-1', 'Online track')],
   );
 
   void completeDetail() => _detail.complete(_playlist);

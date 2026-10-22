@@ -10,7 +10,6 @@ import 'package:cy_shine_music/features/player/player_audio_handler.dart';
 import 'package:cy_shine_music/features/shell/shell_toolbar_visibility.dart';
 import 'package:cy_shine_music/features/songs/songs_page.dart';
 import 'package:cy_shine_music/features/songs/songs_toolbar_state.dart';
-import 'package:cy_shine_music/features/songs/widgets/songs_placeholders.dart';
 import 'package:cy_shine_music/router.dart';
 
 void main() {
@@ -18,9 +17,7 @@ void main() {
 
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  testWidgets('songs header opens the dedicated local search page', (
-    tester,
-  ) async {
+  testWidgets('songs header opens local search in place', (tester) async {
     _useNarrowPhone(tester);
     final prefs = await SharedPreferences.getInstance();
     final audioHandler = PlayerAudioHandler();
@@ -47,20 +44,28 @@ void main() {
     );
     await _pumpUi(tester);
 
-    expect(find.byType(SongsSearchBar), findsNothing);
+    expect(find.byKey(const ValueKey('header-search-field')), findsNothing);
     expect(find.byTooltip('搜索本地歌曲'), findsOneWidget);
     await tester.tap(find.byTooltip('搜索本地歌曲'));
     await _pumpUi(tester);
-    expect(router.routeInformationProvider.value.uri.path, '/songs/search');
-    expect(find.byType(SongsSearchBar), findsOneWidget);
-    expect(tester.widget<SongsPage>(find.byType(SongsPage)).searchMode, isTrue);
+    expect(router.routeInformationProvider.value.uri.path, '/songs');
+    expect(find.byKey(const ValueKey('header-search-field')), findsOneWidget);
+    expect(
+      ProviderScope.containerOf(
+        tester.element(find.byType(SongsPage)),
+      ).read(songsToolbarStateProvider).searchMode,
+      isTrue,
+    );
     expect(find.byTooltip('返回歌曲列表'), findsNothing);
-    expect(find.byIcon(Icons.arrow_back_ios_new_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.arrow_back_ios_new_rounded), findsNothing);
     final container = ProviderScope.containerOf(
       tester.element(find.byType(SongsPage)),
     );
     expect(
-      tester.widget<SearchBar>(find.byType(SearchBar)).focusNode?.hasFocus,
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('header-search-field')))
+          .focusNode
+          ?.hasFocus,
       isTrue,
     );
     expect(container.read(shellToolbarVisibleProvider), isFalse);
@@ -68,20 +73,19 @@ void main() {
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pump();
     expect(container.read(shellToolbarVisibleProvider), isTrue);
-    await tester.tap(find.byType(SongsSearchBar));
+    await tester.tap(find.byKey(const ValueKey('header-search-field')));
     await tester.pump();
     expect(container.read(shellToolbarVisibleProvider), isFalse);
 
     expect(await tester.binding.handlePopRoute(), isTrue);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 120));
+    await _pumpUi(tester);
     expect(router.routeInformationProvider.value.uri.path, '/songs');
-    expect(find.byType(SongsSearchBar), findsNothing);
+    expect(find.byKey(const ValueKey('header-search-field')), findsNothing);
     expect(container.read(shellToolbarVisibleProvider), isTrue);
 
     await _pumpUi(tester);
     expect(router.routeInformationProvider.value.uri.path, '/songs');
-    expect(find.byType(SongsSearchBar), findsNothing);
+    expect(find.byKey(const ValueKey('header-search-field')), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -156,7 +160,12 @@ void main() {
       );
       expect(router.routeInformationProvider.value.uri.path, '/songs/search');
       expect(
-        tester.widget<SearchBar>(find.byType(SearchBar)).focusNode?.hasFocus,
+        tester
+            .widget<TextField>(
+              find.byKey(const ValueKey('header-search-field')),
+            )
+            .focusNode
+            ?.hasFocus,
         isFalse,
       );
       expect(container.read(shellToolbarVisibleProvider), isTrue);

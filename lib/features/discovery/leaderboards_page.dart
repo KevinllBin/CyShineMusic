@@ -10,19 +10,61 @@ import '../../core/ui/app_refresh_indicator.dart';
 import '../../core/ui/container_transform.dart';
 import '../../core/ui/car_display_layout.dart';
 import '../shell/widgets/scrolling_page_header.dart';
-import '../shell/widgets/shell_header.dart';
+import '../playlists/widgets/immersive_playlist_chrome.dart';
+import '../playlists/widgets/expanding_header_search.dart';
 import '../shell/shell_bottom_area.dart';
 import 'discovery_controller.dart';
 import 'widgets/discovery_placeholders.dart';
 import 'widgets/leaderboard_artwork.dart';
 
-class LeaderboardsPage extends ConsumerWidget {
+class LeaderboardsPage extends ConsumerStatefulWidget {
   const LeaderboardsPage({super.key, required this.source});
 
   final MusicSource source;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LeaderboardsPage> createState() => _LeaderboardsPageState();
+}
+
+class _LeaderboardsPageState extends ConsumerState<LeaderboardsPage> {
+  final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode(debugLabel: 'leaderboards-search');
+  bool _searchMode = false;
+  LocalHistoryEntry? _searchHistory;
+  MusicSource get source => widget.source;
+
+  @override
+  void dispose() {
+    _searchMode = false;
+    _searchHistory?.remove();
+    _searchFocusNode.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _openSearch() {
+    setState(() => _searchMode = true);
+    _searchHistory = LocalHistoryEntry(
+      onRemove: () {
+        _searchHistory = null;
+        if (mounted && _searchMode) _closeSearch();
+      },
+    );
+    ModalRoute.of(context)?.addLocalHistoryEntry(_searchHistory!);
+  }
+
+  void _closeSearch() {
+    if (_searchHistory != null) {
+      _searchHistory!.remove();
+      return;
+    }
+    _searchFocusNode.unfocus();
+    _searchController.clear();
+    if (mounted) setState(() => _searchMode = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final boards = ref.watch(leaderboardBoardsProvider(source));
     final carPadModeEnabled = ref.watch(
       settingsProvider.select((settings) => settings.carPadModeEnabled),
@@ -30,20 +72,20 @@ class LeaderboardsPage extends ConsumerWidget {
     return Scaffold(
       body: ScrollingPageHeader(
         topInset: MediaQuery.viewPaddingOf(context).top + 72,
-        headerBuilder: (context, scrollOffset) => ShellSectionHeader(
+        headerBuilder: (context, scrollOffset) => ImmersivePlaylistTopBar(
           title: '排行榜',
-          scrollOffset: scrollOffset,
-          floating: true,
-          leading: IconButton(
-            tooltip: '返回上一页',
-            onPressed: () {
-              if (context.canPop()) {
-                context.pop();
-              } else {
-                context.go('/');
-              }
-            },
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          onImage: false,
+          onBack: _searchMode ? _closeSearch : null,
+          titleContent: ExpandingHeaderSearch(
+            title: '排行榜',
+            controller: _searchController,
+            focusNode: _searchFocusNode,
+            expanded: _searchMode,
+            onOpen: _openSearch,
+            onClose: _closeSearch,
+            onChanged: (_) => setState(() {}),
+            hint: '搜索排行榜',
+            tooltip: '搜索排行榜',
           ),
         ),
         child: Builder(
@@ -70,113 +112,132 @@ class LeaderboardsPage extends ConsumerWidget {
         message: error.toString().replaceFirst('Exception: ', ''),
         onRetry: () => ref.invalidate(leaderboardBoardsProvider(source)),
       ),
-      data: (items) => AppRefreshIndicator(
-        onRefresh: () async {
-          ref.invalidate(leaderboardBoardsProvider(source));
-          await ref.read(leaderboardBoardsProvider(source).future);
-        },
-        child: CustomScrollView(
-          key: PageStorageKey('leaderboards-${source.code}-scroll'),
-          physics: const AlwaysScrollableScrollPhysics(
-            parent: BouncingScrollPhysics(),
-          ),
-          slivers: [
-            const SliverToBoxAdapter(child: ScrollHeaderSpacer()),
-            SliverToBoxAdapter(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: CarDisplayLayout.contentConstraints(
-                    context,
-                    maxWidth: 1040,
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 6, 14, 16),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.secondaryContainer,
-                            borderRadius: BorderRadius.circular(12),
+      data: (allItems) {
+        final terms = _searchController.text
+            .trim()
+            .toLowerCase()
+            .split(RegExp(r'\s+'))
+            .where((s) => s.isNotEmpty);
+        final items = allItems
+            .where((board) => terms.every(board.name.toLowerCase().contains))
+            .toList();
+        return AppRefreshIndicator(
+          onRefresh: () async {
+            ref.invalidate(leaderboardBoardsProvider(source));
+            await ref.read(leaderboardBoardsProvider(source).future);
+          },
+          child: CustomScrollView(
+            key: PageStorageKey('leaderboards-${source.code}-scroll'),
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
+            slivers: [
+              const SliverToBoxAdapter(child: ScrollHeaderSpacer()),
+              SliverToBoxAdapter(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: CarDisplayLayout.contentConstraints(
+                      context,
+                      maxWidth: 1040,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 6, 14, 16),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.secondaryContainer,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(
+                              Icons.leaderboard_rounded,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSecondaryContainer,
+                            ),
                           ),
-                          child: Icon(
-                            Icons.leaderboard_rounded,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSecondaryContainer,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${source.label}排行榜',
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.w700),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '收录 ${items.length} 个榜单 · 实时掌握流行趋势',
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                      ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '${source.label}排行榜',
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                '收录 ${items.length} 个榜单 · 实时掌握流行趋势',
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurfaceVariant,
-                                    ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            SliverLayoutBuilder(
-              builder: (context, constraints) {
-                final width = constraints.crossAxisExtent;
-                final columns = carPadModeEnabled
-                    ? (width >= 1000
-                          ? 5
-                          : width >= 720
-                          ? 4
-                          : 3)
-                    : switch (width) {
-                        >= 1000 => 5,
-                        >= 720 => 4,
-                        >= 500 => 3,
-                        _ => 2,
-                      };
-                return SliverPadding(
-                  padding: EdgeInsets.fromLTRB(
-                    12,
-                    0,
-                    12,
-                    ShellBottomArea.contentPadding(context, 156),
+              if (items.isEmpty)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.all(32),
+                    child: Center(child: Text('没有找到匹配的排行榜')),
                   ),
-                  sliver: SliverGrid.builder(
-                    itemCount: items.length,
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: columns,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      childAspectRatio: 0.82,
+                ),
+              SliverLayoutBuilder(
+                builder: (context, constraints) {
+                  final width = constraints.crossAxisExtent;
+                  final columns = carPadModeEnabled
+                      ? (width >= 1000
+                            ? 5
+                            : width >= 720
+                            ? 4
+                            : 3)
+                      : switch (width) {
+                          >= 1000 => 5,
+                          >= 720 => 4,
+                          >= 500 => 3,
+                          _ => 2,
+                        };
+                  return SliverPadding(
+                    padding: EdgeInsets.fromLTRB(
+                      12,
+                      0,
+                      12,
+                      ShellBottomArea.contentPadding(context, 156),
                     ),
-                    itemBuilder: (context, index) =>
-                        _LeaderboardGridCard(board: items[index], index: index),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
+                    sliver: SliverGrid.builder(
+                      itemCount: items.length,
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: columns,
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 12,
+                        childAspectRatio: 0.82,
+                      ),
+                      itemBuilder: (context, index) => _LeaderboardGridCard(
+                        board: items[index],
+                        index: index,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

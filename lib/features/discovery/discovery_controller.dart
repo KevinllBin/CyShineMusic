@@ -112,18 +112,12 @@ class OnlinePlaylistKey {
 final onlinePlaylistDetailProvider =
     FutureProvider.family<PlaylistInfo, OnlinePlaylistKey>((ref, key) {
       final api = ref.watch(musicApiProvider);
-      return switch (key.kind) {
-        OnlineCollectionKind.playlist => api.parsePlaylist(
-          input: key.id,
-          source: key.source,
-          maxTracks: key.maxTracks,
-        ),
-        OnlineCollectionKind.leaderboard => api.getLeaderboard(
-          source: key.source,
-          boardId: key.id,
-          maxTracks: key.maxTracks,
-        ),
-      };
+      return api.getCollection(
+        source: key.source,
+        id: key.id,
+        kind: key.kind,
+        maxTracks: key.maxTracks,
+      );
     });
 
 class OnlineTrackCoverKey {

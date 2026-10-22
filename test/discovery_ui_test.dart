@@ -635,9 +635,11 @@ void main() {
   );
 
   testWidgets('discovery category FAB yields to search paging', (tester) async {
+    final prefs = await _freshPreferences();
     final container = ProviderContainer(
       overrides: [
         discoverySourcesProvider.overrideWithValue(_testDiscoverySources),
+        sharedPreferencesProvider.overrideWithValue(prefs),
       ],
     );
     addTearDown(container.dispose);

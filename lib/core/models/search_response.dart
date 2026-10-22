@@ -1,5 +1,7 @@
 import 'enums.dart';
 import 'music_info.dart';
+import 'catalog_result.dart';
+import 'search_category.dart';
 
 class SearchResponse {
   const SearchResponse({
@@ -9,6 +11,8 @@ class SearchResponse {
     required this.allPage,
     required this.total,
     required this.source,
+    this.catalog = const {},
+    this.notices = const [],
   });
 
   final List<MusicInfo> list;
@@ -17,6 +21,12 @@ class SearchResponse {
   final int allPage;
   final int total;
   final MusicSource source;
+  final Map<SearchCategory, List<CatalogItem>> catalog;
+  final List<String> notices;
+  bool get hasResults =>
+      list.isNotEmpty || catalog.values.any((items) => items.isNotEmpty);
+  int get visibleCount =>
+      list.length + catalog.values.fold(0, (sum, items) => sum + items.length);
 
   factory SearchResponse.fromJson(Map<String, dynamic> json) {
     final listRaw = json['list'];

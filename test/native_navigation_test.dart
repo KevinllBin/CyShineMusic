@@ -578,11 +578,11 @@ void main() {
       await _pumpUi(tester);
       expect(_miniPlayer.hitTestable(), findsOneWidget);
 
-      await tester.tap(find.byType(SearchBar));
+      await tester.tap(find.byKey(const ValueKey('header-search-field')));
       await _pumpUi(tester);
       expect(_miniPlayer.hitTestable(), findsNothing);
       openPlayer(
-        tester.element(find.byType(SearchBar)),
+        tester.element(find.byKey(const ValueKey('header-search-field'))),
         returnLocation: '/songs/search',
       );
       await _pumpUi(tester);
@@ -590,7 +590,12 @@ void main() {
       await _pumpUi(tester);
       expect(harness.location, '/songs/search');
       expect(
-        tester.widget<SearchBar>(find.byType(SearchBar)).focusNode?.hasFocus,
+        tester
+            .widget<TextField>(
+              find.byKey(const ValueKey('header-search-field')),
+            )
+            .focusNode
+            ?.hasFocus,
         isFalse,
       );
       expect(_miniPlayer.hitTestable(), findsOneWidget);

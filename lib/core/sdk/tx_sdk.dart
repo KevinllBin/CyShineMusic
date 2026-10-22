@@ -75,6 +75,7 @@ class TxSdk {
     int page,
     int limit, [
     int retry = 0,
+    int searchType = 0,
   ]) async {
     final data = {
       'comm': {
@@ -110,7 +111,7 @@ class TxSdk {
         'module': 'music.search.SearchCgiService',
         'method': 'DoSearchForQQMusicMobile',
         'param': {
-          'search_type': 0,
+          'search_type': searchType,
           'searchid': Random().nextInt(1 << 32).toString(),
           'query': keyword,
           'page_num': page,
@@ -150,12 +151,19 @@ class TxSdk {
         await Future<void>.delayed(
           Duration(milliseconds: (250 * (retry + 1)).clamp(0, 1500)),
         );
-        return _doSearchRequest(keyword, page, limit, retry + 1);
+        return _doSearchRequest(keyword, page, limit, retry + 1, searchType);
       }
       throw Exception('tx search failed (http=${result.statusCode})');
     }
     return body['req']['data'] as Map;
   }
+
+  static Future<Map> searchCatalog(
+    String keyword,
+    int type,
+    int page,
+    int limit,
+  ) => _doSearchRequest(keyword, page, limit, 0, type);
 
   static Future<List<MusicInfo>> search(
     String keyword, {

@@ -31,29 +31,35 @@ void main() {
     final toolbar = container.read(playlistDetailToolbarStateProvider);
     expect(toolbar.attached, isTrue);
     expect(toolbar.searchMode, isFalse);
-    expect(find.byType(SongsSearchBar), findsNothing);
+    expect(find.byKey(const ValueKey('header-search-field')), findsNothing);
 
     toolbar.onToggleSearch!();
     await tester.pumpAndSettle();
-    expect(find.byType(SongsSearchBar), findsOneWidget);
+    expect(find.byKey(const ValueKey('header-search-field')), findsOneWidget);
     expect(
       container.read(playlistDetailToolbarStateProvider).searchMode,
       isTrue,
     );
 
-    await tester.enterText(find.byType(SongsSearchBar), '第一首');
+    await tester.enterText(
+      find.byKey(const ValueKey('header-search-field')),
+      'First song',
+    );
     await tester.pump();
-    expect(find.text('第二首'), findsNothing);
+    expect(find.text('Second song'), findsNothing);
 
-    await tester.enterText(find.byType(SongsSearchBar), '不存在的歌');
+    await tester.enterText(
+      find.byKey(const ValueKey('header-search-field')),
+      'Missing song',
+    );
     await tester.pump();
     expect(find.byType(EmptySongSearch), findsOneWidget);
 
     container.read(playlistDetailToolbarStateProvider).onToggleSearch!();
     await tester.pumpAndSettle();
-    expect(find.byType(SongsSearchBar), findsNothing);
-    expect(find.text('第一首'), findsOneWidget);
-    expect(find.text('第二首'), findsOneWidget);
+    expect(find.byKey(const ValueKey('header-search-field')), findsNothing);
+    expect(find.text('First song'), findsOneWidget);
+    expect(find.text('Second song'), findsOneWidget);
     expect(
       container.read(playlistDetailToolbarStateProvider).searchMode,
       isFalse,
@@ -67,7 +73,7 @@ void main() {
 
     container.read(playlistDetailToolbarStateProvider).onToggleSearch!();
     await tester.pumpAndSettle();
-    expect(find.byType(SongsSearchBar), findsOneWidget);
+    expect(find.byKey(const ValueKey('header-search-field')), findsOneWidget);
 
     container.read(playlistDetailToolbarStateProvider).onToggleBatch!();
     await tester.pumpAndSettle();
@@ -79,7 +85,7 @@ void main() {
       container.read(playlistDetailToolbarStateProvider).batchMode,
       isTrue,
     );
-    expect(find.byType(SongsSearchBar), findsNothing);
+    expect(find.byKey(const ValueKey('header-search-field')), findsNothing);
     expect(find.byType(Checkbox), findsNWidgets(2));
 
     container.read(playlistDetailToolbarStateProvider).onToggleSearch!();
@@ -89,7 +95,7 @@ void main() {
       isFalse,
     );
     expect(find.byType(Checkbox), findsNothing);
-    expect(find.byType(SongsSearchBar), findsOneWidget);
+    expect(find.byKey(const ValueKey('header-search-field')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -108,7 +114,7 @@ void main() {
     await tester.pump();
     expect(container.read(shellToolbarVisibleProvider), isTrue);
 
-    await tester.tap(find.byType(SongsSearchBar));
+    await tester.tap(find.byKey(const ValueKey('header-search-field')));
     await tester.pump();
     expect(container.read(shellToolbarVisibleProvider), isFalse);
 
@@ -121,15 +127,15 @@ void main() {
 
 Future<ProviderContainer> _pumpDetailPage(WidgetTester tester) async {
   final tracks = [
-    PlaylistTrack.fromMusicInfo(_playlistMusic('track-1', '第一首')),
-    PlaylistTrack.fromMusicInfo(_playlistMusic('track-2', '第二首')),
+    PlaylistTrack.fromMusicInfo(_playlistMusic('track-1', 'First song')),
+    PlaylistTrack.fromMusicInfo(_playlistMusic('track-2', 'Second song')),
   ];
   SharedPreferences.setMockInitialValues({
     localPlaylistsStorageKey: [
       jsonEncode(
         LocalPlaylist(
           id: 'search',
-          name: '搜索歌单',
+          name: 'Search playlist',
           tracks: tracks,
           createdAt: DateTime.utc(2026, 7, 31),
           updatedAt: DateTime.utc(2026, 7, 31),
@@ -163,12 +169,12 @@ MusicInfo _playlistMusic(String id, String name) {
   return MusicInfo.fromJson({
     'id': id,
     'name': name,
-    'singer': '在线歌手',
+    'singer': 'Online artist',
     'source': MusicSource.wy.code,
     'interval': '03:30',
     'meta': {
       'songId': id,
-      'albumName': '在线专辑',
+      'albumName': 'Online album',
       'qualitys': [
         {'type': Quality.k320.code, 'size': '1024'},
       ],
