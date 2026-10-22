@@ -221,6 +221,118 @@ void main() {
   });
 
   test(
+    'ten automatic source-failure skips pause and remain retryable',
+    () async {
+      final harness = await _Harness.create(loadFailures: 1000);
+      addTearDown(harness.dispose);
+      final queue = _remoteQueue(30);
+
+      await harness.controller.playFromHistoryQueue(queue.first, queue);
+      final paused = harness.container.read(playerControllerProvider);
+      expect(paused.queueIndex, 10);
+      expect(paused.queue, hasLength(30));
+      expect(paused.track?.id, 'kw:song-10:remote');
+      expect(paused.loading, isFalse);
+      expect(paused.playing, isFalse);
+      expect(paused.processingState, PlayerProcessingState.ready);
+      expect(paused.error, contains('连续切换 10 首'));
+      expect(harness.resolver.requestedQualities, hasLength(11));
+      expect(harness.audio.hasPendingSourceRetry, isTrue);
+
+      // Notification play uses the same pending retry as the in-app button.
+      await harness.audio.play();
+      final retried = harness.container.read(playerControllerProvider);
+      expect(retried.queueIndex, 20);
+      expect(retried.processingState, PlayerProcessingState.ready);
+      expect(retried.playing, isFalse);
+      expect(harness.audio.pauseCount, 2);
+    },
+  );
+
+  test('manual song selection starts a new failure skip budget', () async {
+    final harness = await _Harness.create(loadFailures: 1000);
+    addTearDown(harness.dispose);
+    final queue = _remoteQueue(30);
+    await harness.controller.playFromHistoryQueue(queue.first, queue);
+    expect(harness.container.read(playerControllerProvider).queueIndex, 10);
+
+    await harness.controller.playFromHistoryQueue(queue[11], queue);
+    final state = harness.container.read(playerControllerProvider);
+    expect(state.queueIndex, 21);
+    expect(state.processingState, PlayerProcessingState.ready);
+    expect(state.playing, isFalse);
+  });
+
+  for (final progressed in [false, true]) {
+    test(
+      progressed
+          ? 'actual playback progress resets the failure skip budget'
+          : 'ready without playback progress does not reset failure skips',
+      () async {
+        final harness = await _Harness.create(loadFailures: 18);
+        addTearDown(harness.dispose);
+        final queue = _remoteQueue(30);
+        await harness.controller.playFromHistoryQueue(queue.first, queue);
+        expect(harness.container.read(playerControllerProvider).queueIndex, 9);
+        harness.audio.emitPlaybackState(bass.BassProcessingState.ready);
+        if (progressed) {
+          harness.audio.emitPosition(const Duration(seconds: 2));
+        }
+
+        harness.audio.loadFailures = 1000;
+        harness.audio.emitError(
+          const bass.BassPlayerException(code: 1, message: 'stream failed'),
+        );
+        final expectedIndex = progressed ? 19 : 10;
+        await _waitUntil(() {
+          final state = harness.container.read(playerControllerProvider);
+          return state.queueIndex == expectedIndex &&
+              !state.loading &&
+              harness.audio.hasPendingSourceRetry;
+        });
+        final paused = harness.container.read(playerControllerProvider);
+        expect(paused.playing, isFalse);
+        expect(paused.processingState, PlayerProcessingState.ready);
+        expect(paused.error, contains('连续切换 10 首'));
+      },
+    );
+  }
+
+  for (final mode in [
+    PlayerPlaybackMode.shuffle,
+    PlayerPlaybackMode.repeatOne,
+  ]) {
+    test(
+      'source failure skip limit also applies in ${mode.name} mode',
+      () async {
+        final harness = await _Harness.create(loadFailures: 1000);
+        addTearDown(harness.dispose);
+        harness.controller.setPlaybackMode(mode);
+        final queue = _remoteQueue(30);
+
+        await harness.controller.playFromHistoryQueue(queue.first, queue);
+        final state = harness.container.read(playerControllerProvider);
+        expect(harness.resolver.requestedQualities, hasLength(11));
+        expect(state.processingState, PlayerProcessingState.ready);
+        expect(state.playing, isFalse);
+        expect(state.error, contains('连续切换 10 首'));
+      },
+    );
+  }
+
+  test('a shorter failed queue still pauses at its tail', () async {
+    final harness = await _Harness.create(loadFailures: 1000);
+    addTearDown(harness.dispose);
+    final queue = _remoteQueue(4);
+    await harness.controller.playFromHistoryQueue(queue.first, queue);
+    final state = harness.container.read(playerControllerProvider);
+    expect(state.queueIndex, 3);
+    expect(harness.resolver.requestedQualities, hasLength(4));
+    expect(state.processingState, PlayerProcessingState.ready);
+    expect(state.error, isNot(contains('连续切换 10 首')));
+  });
+
+  test(
     'auto-play-on-startup resumes the persisted track automatically',
     () async {
       final snapshot = PlayerSessionSnapshot(
@@ -736,12 +848,15 @@ class _ScriptedResolver implements MusicUrlResolver {
 class _FakeAudioHandler extends PlayerAudioHandler {
   _FakeAudioHandler({required this.loadFailures});
 
-  final int loadFailures;
+  int loadFailures;
   final List<Uri> loadedUris = [];
   final StreamController<bass.BassPlayerException> _errors =
       StreamController<bass.BassPlayerException>.broadcast(sync: true);
   final StreamController<bass.BassPlaybackSnapshot> _states =
       StreamController<bass.BassPlaybackSnapshot>.broadcast(sync: true);
+  final StreamController<Duration> _positions =
+      StreamController<Duration>.broadcast(sync: true);
+  PlayerTransportCallback? _sourceRetry;
   int failTransitionCount = 0;
   int playCount = 0;
   int pauseCount = 0;
@@ -755,7 +870,10 @@ class _FakeAudioHandler extends PlayerAudioHandler {
   bass.BassProcessingState _processingState = bass.BassProcessingState.idle;
 
   @override
-  Stream<Duration> get positionStream => const Stream<Duration>.empty();
+  Stream<Duration> get positionStream => _positions.stream;
+
+  @override
+  bool get hasPendingSourceRetry => _sourceRetry != null;
 
   @override
   Stream<Duration?> get durationStream => const Stream<Duration?>.empty();
@@ -783,6 +901,7 @@ class _FakeAudioHandler extends PlayerAudioHandler {
     required MediaItem item,
     int? queueIndex,
   }) async {
+    _sourceRetry = null;
     _playing = false;
     _processingState = bass.BassProcessingState.loading;
   }
@@ -805,6 +924,11 @@ class _FakeAudioHandler extends PlayerAudioHandler {
 
   @override
   Future<void> play() async {
+    final retry = _sourceRetry;
+    if (retry != null) {
+      await retry();
+      return;
+    }
     playCount++;
     _playing = true;
     _processingState = bass.BassProcessingState.ready;
@@ -836,6 +960,25 @@ class _FakeAudioHandler extends PlayerAudioHandler {
     failTransitionCount++;
   }
 
+  @override
+  void pauseAfterSourceFailure({
+    required MediaItem item,
+    required PlayerTransportCallback onRetry,
+    int? queueIndex,
+  }) {
+    _sourceRetry = onRetry;
+    super.pauseAfterSourceFailure(
+      item: item,
+      onRetry: onRetry,
+      queueIndex: queueIndex,
+    );
+  }
+
+  void emitPosition(Duration position) {
+    _position = position;
+    _positions.add(position);
+  }
+
   void emitError(bass.BassPlayerException error) => _errors.add(error);
 
   void emitPlaybackState(bass.BassProcessingState processingState) {
@@ -853,6 +996,7 @@ class _FakeAudioHandler extends PlayerAudioHandler {
 
   @override
   Future<void> disposeHandler() async {
+    await _positions.close();
     await _errors.close();
     await _states.close();
     await super.disposeHandler();
@@ -950,3 +1094,32 @@ DownloadHistoryEntry _localEntry(String id, String path) {
     savedPath: path,
   );
 }
+
+List<DownloadHistoryEntry> _remoteQueue(int length) => [
+  for (var index = 0; index < length; index++)
+    DownloadHistoryEntry(
+      id: 'remote-$index',
+      musicId: 'song-$index',
+      name: 'Song $index',
+      singer: 'Test Singer',
+      albumName: 'Test Album',
+      sourceCode: 'kw',
+      qualityCode: '128k',
+      status: DownloadHistoryStatus.completed,
+      createdAt: DateTime.utc(2026),
+      musicJson: {
+        'id': 'song-$index',
+        'name': 'Song $index',
+        'singer': 'Test Singer',
+        'source': 'kw',
+        'interval': '03:00',
+        'meta': {
+          'songId': 'song-$index',
+          'albumName': 'Test Album',
+          'qualitys': [
+            {'type': '128k'},
+          ],
+        },
+      },
+    ),
+];

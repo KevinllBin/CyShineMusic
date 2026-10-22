@@ -316,6 +316,7 @@ class BassPlayerPlugin :
                         urlWithHeaders(source, headers),
                         flags,
                         requestToken,
+                        generation,
                     )
                 }
                 "content" -> {
@@ -957,35 +958,32 @@ class BassPlayerPlugin :
         request: String,
         flags: Int,
         requestToken: Any,
+        generation: Int,
     ): Int = when (format) {
-        "flac" -> networkWithFallback(request, flags, requestToken) {
+        "flac" -> networkWithFallback(request, flags, requestToken, generation) {
             BASSFLAC.BASS_FLAC_StreamCreateURL(request, 0, flags, null, requestToken)
         }
-        "ape" -> networkWithFallback(request, flags, requestToken) {
+        "ape" -> networkWithFallback(request, flags, requestToken, generation) {
             BASSAPE.BASS_APE_StreamCreateURL(request, 0, flags, null, requestToken)
         }
-        "alac" -> networkWithFallback(request, flags, requestToken) {
+        "alac" -> networkWithFallback(request, flags, requestToken, generation) {
             BASSALAC.BASS_ALAC_StreamCreateURL(request, 0, flags, null, requestToken)
         }
         "m4a" -> {
             val generic = BASS.BASS_StreamCreateURL(request, 0, flags, null, requestToken)
-            if (generic != 0) generic else BASSALAC.BASS_ALAC_StreamCreateURL(
-                request,
-                0,
-                flags,
-                null,
-                requestToken,
-            )
+            if (generic != 0 || generation != loadGeneration.get()) {
+                generic
+            } else {
+                BASSALAC.BASS_ALAC_StreamCreateURL(request, 0, flags, null, requestToken)
+            }
         }
         "lossless" -> {
             val generic = BASS.BASS_StreamCreateURL(request, 0, flags, null, requestToken)
-            if (generic != 0) generic else BASSFLAC.BASS_FLAC_StreamCreateURL(
-                request,
-                0,
-                flags,
-                null,
-                requestToken,
-            )
+            if (generic != 0 || generation != loadGeneration.get()) {
+                generic
+            } else {
+                BASSFLAC.BASS_FLAC_StreamCreateURL(request, 0, flags, null, requestToken)
+            }
         }
         else -> BASS.BASS_StreamCreateURL(request, 0, flags, null, requestToken)
     }
@@ -994,10 +992,15 @@ class BassPlayerPlugin :
         request: String,
         flags: Int,
         requestToken: Any,
+        generation: Int,
         specialized: () -> Int,
     ): Int {
         val specializedHandle = specialized()
-        return if (specializedHandle != 0) specializedHandle else {
+        // Cancellation also covers decoder fallback: do not start another
+        // network connection after stop() or a newer load revoked this one.
+        return if (specializedHandle != 0 || generation != loadGeneration.get()) {
+            specializedHandle
+        } else {
             BASS.BASS_StreamCreateURL(request, 0, flags, null, requestToken)
         }
     }

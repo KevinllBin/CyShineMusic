@@ -40,6 +40,18 @@ const playerAudioServiceConfig = AudioServiceConfig(
 /// Upper bound for a single [PlayerAudioHandler.load] attempt.
 const playerLoadTimeout = Duration(seconds: 40);
 
+/// Remote streams should fail over promptly when the URL never connects.
+/// Local lossless files keep [playerLoadTimeout] because opening and reading
+/// their headers can legitimately take longer on slower storage.
+const playerRemoteLoadTimeout = Duration(seconds: 2);
+
+Duration _loadTimeoutFor(Uri sourceUri) {
+  return switch (sourceUri.scheme.toLowerCase()) {
+    'http' || 'https' || 'ftp' => playerRemoteLoadTimeout,
+    _ => playerLoadTimeout,
+  };
+}
+
 class PlayerLoadTimeoutException implements Exception {
   const PlayerLoadTimeoutException(this.timeout);
 
@@ -127,6 +139,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   int? _queueIndexBeforeTransition;
   bool _trackTransitionActive = false;
   PlayerTransportCallback? _retryAfterSourceFailure;
+  // BASS owns one stream at a time. A load can outlive its Dart timeout, so
+  // keep a generation to prevent an old timeout from stopping a newer load.
+  int _loadGeneration = 0;
 
   Stream<Duration> get positionStream => _player.positionStream;
   Stream<Duration?> get durationStream => _player.durationStream;
@@ -255,6 +270,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     required MediaItem item,
     int? queueIndex,
   }) async {
+    _loadGeneration++;
     _retryAfterSourceFailure = null;
     if (!_trackTransitionActive) {
       _mediaItemBeforeTransition = _currentMediaItem;
@@ -314,6 +330,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     required Uri sourceUri,
     int? queueIndex,
   }) async {
+    final loadGeneration = ++_loadGeneration;
     _retryAfterSourceFailure = null;
     _queueIndex = queueIndex;
     _currentMediaItem = item;
@@ -321,7 +338,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     final resolvedDuration = await _loadSourceBounded(
       sourceUri,
       formatHint: item.extras?['quality']?.toString(),
+      loadGeneration: loadGeneration,
     );
+    if (loadGeneration != _loadGeneration) return resolvedDuration;
     _trackTransitionActive = false;
     _clearTransitionSnapshot();
     _updateDuration(resolvedDuration);
@@ -332,9 +351,14 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<Duration?> _loadSourceBounded(
     Uri sourceUri, {
     String? formatHint,
+    required int loadGeneration,
   }) async {
     if (!_engineInitialized) await initializeEngine();
+    // A newer transition may have started while the BASS engine was
+    // initializing. Do not let this stale request become the active stream.
+    if (loadGeneration != _loadGeneration) return null;
     final stopwatch = Stopwatch()..start();
+    final timeout = _loadTimeoutFor(sourceUri);
     unawaited(
       AppLogger.write(
         'player-load',
@@ -344,7 +368,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     );
     final loading = _player.load(sourceUri, formatHint: formatHint);
     try {
-      final resolvedDuration = await loading.timeout(playerLoadTimeout);
+      final resolvedDuration = await loading.timeout(timeout);
       stopwatch.stop();
       unawaited(
         AppLogger.write(
@@ -359,10 +383,12 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     } on TimeoutException {
       stopwatch.stop();
       unawaited(loading.then((_) {}, onError: (Object _) {}));
-      try {
-        await _player.stop();
-      } catch (_) {
-        // Best effort: the load already failed, keep the original reason.
+      if (loadGeneration == _loadGeneration) {
+        try {
+          await _player.stop();
+        } catch (_) {
+          // Best effort: the load already failed, keep the original reason.
+        }
       }
       await AppLogger.write(
         'player-load',
@@ -370,7 +396,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
             'format=${formatHint ?? 'unknown'} '
             'after=${stopwatch.elapsedMilliseconds}ms',
       );
-      throw const PlayerLoadTimeoutException(playerLoadTimeout);
+      throw PlayerLoadTimeoutException(timeout);
     } catch (error) {
       stopwatch.stop();
       await AppLogger.write(

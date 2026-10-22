@@ -60,6 +60,56 @@ void main() {
     );
   });
 
+  test('a pending remote load times out after two seconds and stops', () async {
+    final player = _PendingLoadBassPlayer();
+    final handler = PlayerAudioHandler(player: player);
+    addTearDown(handler.disposeHandler);
+    await handler.initializeEngine();
+
+    await expectLater(
+      handler
+          .load(
+            item: const MediaItem(id: 'remote', title: 'Remote'),
+            sourceUri: Uri.parse('https://audio.test/stalled.mp3'),
+          )
+          .timeout(const Duration(seconds: 5)),
+      throwsA(
+        isA<PlayerLoadTimeoutException>().having(
+          (error) => error.timeout,
+          'timeout',
+          const Duration(seconds: 2),
+        ),
+      ),
+    );
+    expect(player.stopCount, 1);
+  });
+
+  test('an old remote timeout leaves a newer local load intact', () async {
+    final player = _PendingLoadBassPlayer();
+    final handler = PlayerAudioHandler(player: player);
+    addTearDown(handler.disposeHandler);
+    await handler.initializeEngine();
+
+    final remoteFailure = expectLater(
+      handler.load(
+        item: const MediaItem(id: 'remote', title: 'Remote'),
+        sourceUri: Uri.parse('https://audio.test/stalled.mp3'),
+      ),
+      throwsA(isA<PlayerLoadTimeoutException>()),
+    );
+    final localLoading = handler.load(
+      item: const MediaItem(id: 'local', title: 'Local'),
+      sourceUri: Uri.file('/music/local.flac'),
+    );
+
+    await remoteFailure.timeout(const Duration(seconds: 5));
+    expect(player.stopCount, 0);
+    expect(handler.currentMediaItem?.id, 'local');
+    player.pendingLoads.last.complete(const Duration(minutes: 4));
+    expect(await localLoading, const Duration(minutes: 4));
+    expect(handler.currentMediaItem?.duration, const Duration(minutes: 4));
+  });
+
   test('platform failures preserve signed BASS error codes', () {
     final error = BassPlayerException.fromPlatform(
       PlatformException(
@@ -270,4 +320,32 @@ class _FakeBassPlayer extends BassPlayer {
 
   @override
   Future<void> dispose() async {}
+}
+
+class _PendingLoadBassPlayer extends _FakeBassPlayer {
+  final pendingLoads = <Completer<Duration?>>[];
+  int stopCount = 0;
+
+  @override
+  Future<BassEngineInfo> initialize() async =>
+      const BassEngineInfo(version: 'test', fxVersion: 'test', plugins: {});
+
+  @override
+  Future<Duration?> load(
+    Uri source, {
+    Map<String, String> headers = const {},
+    String? formatHint,
+  }) {
+    final pending = Completer<Duration?>();
+    pendingLoads.add(pending);
+    return pending.future;
+  }
+
+  @override
+  Future<void> stop() async {
+    stopCount++;
+    for (final pending in pendingLoads) {
+      if (!pending.isCompleted) pending.complete(null);
+    }
+  }
 }

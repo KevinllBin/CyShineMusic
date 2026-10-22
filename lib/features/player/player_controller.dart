@@ -45,6 +45,7 @@ const _embeddedTagReadTimeout = Duration(seconds: 8);
 const _positionCheckpointInterval = Duration(seconds: 2);
 const _stalledPlaybackRecoveryDelay = Duration(seconds: 12);
 const _stallProgressResetThreshold = Duration(seconds: 1);
+const _maxConsecutiveSourceFailureSkips = 10;
 
 final playbackStallRecoveryDelayProvider = Provider<Duration>(
   (_) => _stalledPlaybackRecoveryDelay,
@@ -168,6 +169,7 @@ class PlayerController extends StateNotifier<PlayerState>
   String? _completionHandledForTrackId;
   Set<String> _attemptedRemoteSourceIds = <String>{};
   bool _lateSourceFallbackActive = false;
+  int _consecutiveSourceFailureSkips = 0;
   int _sleepTimerPauseGeneration = 0;
   bool _pausedBySleepTimer = false;
   int _softStallRecoveryAttempts = 0;
@@ -190,6 +192,7 @@ class PlayerController extends StateNotifier<PlayerState>
   }
 
   Future<void> playFromMusic(MusicInfo music, {Quality? quality}) async {
+    _consecutiveSourceFailureSkips = 0;
     _pendingRestoredSession = null;
     _clearQueue(syncState: false);
     await _playRemoteMusic(music, quality: quality);
@@ -399,13 +402,27 @@ class PlayerController extends StateNotifier<PlayerState>
       }
       await AppLogger.write('player', 'play remote failed: $e');
       if (!mounted || !identical(_requestToken, token)) return false;
-      if (autoPlay && pauseGeneration == _sleepTimerPauseGeneration) {
+      final skipLimitReached =
+          _consecutiveSourceFailureSkips >= _maxConsecutiveSourceFailureSkips;
+      if (autoPlay &&
+          pauseGeneration == _sleepTimerPauseGeneration &&
+          !skipLimitReached) {
         final nextIndex = _nextQueueIndexAfterFailure();
         if (nextIndex != null) {
-          _logPlayback('all sources failed, skipping to queueIndex=$nextIndex');
+          _consecutiveSourceFailureSkips++;
+          _logPlayback(
+            'all sources failed, skipping to queueIndex=$nextIndex '
+            'consecutiveSkips=$_consecutiveSourceFailureSkips',
+          );
           await _playQueueIndex(nextIndex);
           return false;
         }
+      }
+      if (skipLimitReached) {
+        _logPlayback(
+          'source failure skip limit reached '
+          'count=$_consecutiveSourceFailureSkips; pausing',
+        );
       }
       try {
         await _audioHandler.pause();
@@ -426,6 +443,7 @@ class PlayerController extends StateNotifier<PlayerState>
         ),
         queueIndex: _hasCurrentQueueTrack ? _queueIndex : null,
         onRetry: () async {
+          _consecutiveSourceFailureSkips = 0;
           await _playRemoteMusic(
             music,
             quality: selectedQuality,
@@ -443,7 +461,13 @@ class PlayerController extends StateNotifier<PlayerState>
         error: null,
       );
       _syncQueueAvailability();
-      if (showErrors) state = state.copyWith(error: describeDioError(e));
+      if (showErrors) {
+        state = state.copyWith(
+          error: skipLimitReached
+              ? '连续切换 $_maxConsecutiveSourceFailureSkips 首歌曲仍无法播放，已暂停'
+              : describeDioError(e),
+        );
+      }
       _persistFullSession();
       return false;
     }
@@ -460,6 +484,7 @@ class PlayerController extends StateNotifier<PlayerState>
     final available = track.availableQualities;
     if (available.isNotEmpty && !available.contains(quality)) return false;
 
+    _consecutiveSourceFailureSkips = 0;
     return _playRemoteMusic(
       music,
       quality: quality,
@@ -648,12 +673,17 @@ class PlayerController extends StateNotifier<PlayerState>
   void _recordPlaybackProgress(Duration position) {
     final track = state.track;
     if (track == null ||
-        track.isLocal ||
         !state.playing ||
         state.processingState != PlayerProcessingState.ready) {
       return;
     }
     final progress = position - _stallProgressAnchor;
+    // A resolved URL or a ready state alone does not prove that audio played.
+    // Reset only after playback actually advances, including local songs.
+    if (progress >= _stallProgressResetThreshold) {
+      _consecutiveSourceFailureSkips = 0;
+    }
+    if (track.isLocal) return;
     if (progress >= _stallProgressResetThreshold || progress.isNegative) {
       _softStallRecoveryAttempts = 0;
       _stallProgressAnchor = position;
@@ -683,6 +713,7 @@ class PlayerController extends StateNotifier<PlayerState>
   }
 
   Future<void> playFromHistory(DownloadHistoryEntry entry) async {
+    _consecutiveSourceFailureSkips = 0;
     _pendingRestoredSession = null;
     _setQueueForEntry(entry);
     await _playLocal(
@@ -741,6 +772,7 @@ class PlayerController extends StateNotifier<PlayerState>
     List<DownloadHistoryEntry> queue, {
     String? playlistId,
   }) async {
+    _consecutiveSourceFailureSkips = 0;
     _pendingRestoredSession = null;
     _queuePlaylistId = playlistId;
     _queue = _playableQueue(queue);
@@ -758,6 +790,7 @@ class PlayerController extends StateNotifier<PlayerState>
   }
 
   Future<void> playFromFile(String path) async {
+    _consecutiveSourceFailureSkips = 0;
     _pendingRestoredSession = null;
     _clearQueue();
     await _playLocal(PlayerTrack.fromFile(path));
@@ -796,6 +829,7 @@ class PlayerController extends StateNotifier<PlayerState>
     if (state.loading || _transportSuppressionToken != null) {
       return Future<void>.value();
     }
+    _consecutiveSourceFailureSkips = 0;
     final previousIndex = _previousQueueIndex;
     if (previousIndex == null) {
       return state.track == null
@@ -809,6 +843,7 @@ class PlayerController extends StateNotifier<PlayerState>
     if (state.loading || _transportSuppressionToken != null) {
       return Future<void>.value();
     }
+    _consecutiveSourceFailureSkips = 0;
     final nextIndex = _nextQueueIndex();
     if (nextIndex == null) {
       return state.track == null
@@ -822,6 +857,7 @@ class PlayerController extends StateNotifier<PlayerState>
     if (state.loading || _transportSuppressionToken != null) {
       return Future<void>.value();
     }
+    _consecutiveSourceFailureSkips = 0;
     return _playQueueIndex(index, resetPlayOrder: true);
   }
 
@@ -1128,6 +1164,7 @@ class PlayerController extends StateNotifier<PlayerState>
     if (_pausedBySleepTimer) return;
     final trackId = state.track?.id;
     if (trackId == null || _completionHandledForTrackId == trackId) return;
+    _consecutiveSourceFailureSkips = 0;
     _completionHandledForTrackId = trackId;
     if (state.playbackMode == PlayerPlaybackMode.repeatOne) {
       unawaited(_restartCurrentTrack());
@@ -1821,6 +1858,7 @@ class PlayerController extends StateNotifier<PlayerState>
         _transportSuppressionToken != null) {
       return;
     }
+    _consecutiveSourceFailureSkips = 0;
     await _restartCurrentTrack();
   }
 

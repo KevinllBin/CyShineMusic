@@ -14,6 +14,8 @@ import '../services/app_logger.dart';
 import 'music_source_models.dart';
 import 'music_source_updates.dart';
 
+const _musicSourceResolveTimeout = Duration(seconds: 2);
+
 class MusicSourceRuntimeException implements Exception {
   const MusicSourceRuntimeException(this.message);
 
@@ -151,7 +153,7 @@ class MusicSourceRuntime {
             'quality': quality.code,
             'musicInfo': toOldMusicInfoJson(music, quality: quality),
           })
-          .timeout(const Duration(seconds: 35));
+          .timeout(_musicSourceResolveTimeout);
       if (result == null || (result['url'] as String? ?? '').trim().isEmpty) {
         throw const MusicSourceRuntimeException('音源没有返回播放地址');
       }
@@ -161,6 +163,10 @@ class MusicSourceRuntime {
         fileName: normalizeResolvedFileName(result['fileName']),
       );
     } on TimeoutException {
+      // The Dart timeout does not cancel the native QuickJS request by itself.
+      // Dispose the runtime so a slow script cannot hold the next fallback
+      // attempt behind its still-running HTTP request.
+      await _disposeRuntime();
       throw const MusicSourceRuntimeException('音源解析超时');
     } on PlatformException catch (error) {
       throw MusicSourceRuntimeException(error.message ?? '音源解析失败');
