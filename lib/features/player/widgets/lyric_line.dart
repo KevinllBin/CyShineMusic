@@ -11,6 +11,7 @@ import '../../../core/storage/settings_store.dart';
 import '../../../theme/app_motion.dart';
 import '../lyric_parser.dart';
 import 'karaoke_line_text.dart';
+import 'lyric_typography.dart';
 import 'player_control_color.dart';
 import 'player_palette.dart';
 
@@ -171,11 +172,7 @@ class LyricLineTile extends ConsumerWidget {
     final blurDisabled = ref.watch(
       settingsProvider.select((settings) => settings.lyricViewBlurDisabled),
     );
-    final secondaryWeight = (font.weight - 100).clamp(
-      kLyricFontWeightMin,
-      kLyricFontWeightMax,
-    );
-    final sizeScale = font.size / kLyricFontSizeDefault;
+    final secondaryWeight = lyricSecondaryFontWeight(font.weight);
     final ink = Theme.of(context).brightness == Brightness.dark
         ? Colors.white
         : ref.watch(playerLyricInkProvider) ?? const Color(0xFF050F19);
@@ -193,7 +190,7 @@ class LyricLineTile extends ConsumerWidget {
     final subStyle = TextStyle(
       color: ink.withValues(alpha: active && !line.hasWordTiming ? 1 : 0.3),
       fontFamilyFallback: kPlayerFontFallback,
-      fontSize: 14 * sizeScale,
+      fontSize: lyricTranslationFontSize(font.size),
       fontWeight: FontWeight(secondaryWeight.round()),
       fontVariations: [FontVariation.weight(secondaryWeight)],
       height: 1.30,
@@ -262,7 +259,9 @@ class LyricLineTile extends ConsumerWidget {
               child: _LyricTextStyle(
                 duration: colorDuration,
                 curve: _kLyricFocusCurve,
-                style: subStyle.copyWith(fontSize: 12 * sizeScale),
+                style: subStyle.copyWith(
+                  fontSize: lyricRomanFontSize(font.size),
+                ),
                 child: Text(roman, textAlign: TextAlign.start),
               ),
             ),

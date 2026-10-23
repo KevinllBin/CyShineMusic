@@ -316,23 +316,21 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
                       ) ==
                       Brightness.dark
                 : isDark;
-            SystemChrome.setSystemUIOverlayStyle(
-              SystemUiOverlayStyle(
-                statusBarColor: Colors.transparent,
-                systemNavigationBarColor: Colors.transparent,
-                systemNavigationBarDividerColor: Colors.transparent,
-                systemStatusBarContrastEnforced: false,
-                systemNavigationBarContrastEnforced: false,
-                statusBarIconBrightness: overlayIsDark
-                    ? Brightness.light
-                    : Brightness.dark,
-                statusBarBrightness: overlayIsDark
-                    ? Brightness.dark
-                    : Brightness.light,
-                systemNavigationBarIconBrightness: overlayIsDark
-                    ? Brightness.light
-                    : Brightness.dark,
-              ),
+            final overlayStyle = SystemUiOverlayStyle(
+              statusBarColor: Colors.transparent,
+              systemNavigationBarColor: Colors.transparent,
+              systemNavigationBarDividerColor: Colors.transparent,
+              systemStatusBarContrastEnforced: false,
+              systemNavigationBarContrastEnforced: false,
+              statusBarIconBrightness: overlayIsDark
+                  ? Brightness.light
+                  : Brightness.dark,
+              statusBarBrightness: overlayIsDark
+                  ? Brightness.dark
+                  : Brightness.light,
+              systemNavigationBarIconBrightness: overlayIsDark
+                  ? Brightness.light
+                  : Brightness.dark,
             );
 
             return MaterialApp.router(
@@ -345,17 +343,22 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
               darkTheme: darkTheme,
               routerConfig: appRouter,
               builder: (context, child) {
-                return CarDisplayViewport(
-                  enabled: settings.carDisplayEnabled,
-                  sizeFactor: settings.carDisplaySize,
-                  child: AppToastOverlay(
-                    child: MusicSourceUpdatePrompt(
-                      navigatorKey: rootNavigatorKey,
-                      ready: _sourceUpdatePromptsReady,
-                      child: StartupGate(
-                        skipStartupScreen: settings.skipStartupScreen,
-                        onReady: _onStartupReady,
-                        child: child ?? const SizedBox.shrink(),
+                // Route-specific regions (such as artwork headers) override
+                // this baseline only while they are visible in the layer tree.
+                return AnnotatedRegion<SystemUiOverlayStyle>(
+                  value: overlayStyle,
+                  child: CarDisplayViewport(
+                    enabled: settings.carDisplayEnabled,
+                    sizeFactor: settings.carDisplaySize,
+                    child: AppToastOverlay(
+                      child: MusicSourceUpdatePrompt(
+                        navigatorKey: rootNavigatorKey,
+                        ready: _sourceUpdatePromptsReady,
+                        child: StartupGate(
+                          skipStartupScreen: settings.skipStartupScreen,
+                          onReady: _onStartupReady,
+                          child: child ?? const SizedBox.shrink(),
+                        ),
                       ),
                     ),
                   ),

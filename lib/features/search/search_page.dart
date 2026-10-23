@@ -235,6 +235,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   }
 
   Future<void> _play(MusicInfo music) async {
+    final replaceQueue = ref.read(settingsProvider).replaceQueueOnSearchPlay;
     // Capture the visible page before awaiting the source check, since a new
     // search or page change may replace the results while it is pending.
     final results = List<MusicInfo>.of(
@@ -248,15 +249,18 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       music,
     ).toQueueEntry(playlistId: 'search');
     if (entry == null) return;
+    final player = ref.read(playerControllerProvider.notifier);
+    if (!replaceQueue) {
+      await player.playSingleQueueEntry(entry);
+      return;
+    }
     // Queue only metadata. The player resolves the selected song now and
     // fetches other playback URLs only when those songs are played.
     final queue = [
       for (final result in results)
         ?PlaylistTrack.fromMusicInfo(result).toQueueEntry(playlistId: 'search'),
     ];
-    await ref
-        .read(playerControllerProvider.notifier)
-        .playFromPlaylistQueue(entry, queue);
+    await player.playFromPlaylistQueue(entry, queue);
   }
 
   Future<void> _selectPlaylistForMusic(MusicInfo music) async {
@@ -339,6 +343,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           scrollToTopOnSuccess: true,
           recordHistory: false,
         ),
+        onCloseSearch: state.isSearchActive ? _returnToDiscovery : null,
       );
       // Always refresh the callbacks as well as the visible paging values.
       // They close over the current SearchState page; keeping an older state

@@ -1077,6 +1077,10 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
     ResolvedPlaylistTrack item,
     List<DownloadHistoryEntry> queue,
   ) async {
+    final replaceQueue =
+        !_searchMode ||
+        _searchQuery.trim().isEmpty ||
+        ref.read(settingsProvider).replaceQueueOnSearchPlay;
     final entry = item.queueEntry;
     if (entry == null) {
       showAppToast(context, '这首歌曲暂时无法播放', type: AppToastType.warning);
@@ -1087,9 +1091,16 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
       entry,
     );
     if (!available || !context.mounted) return;
-    await ref
-        .read(playerControllerProvider.notifier)
-        .playFromPlaylistQueue(entry, queue, playlistId: widget.playlistId);
+    final player = ref.read(playerControllerProvider.notifier);
+    if (!replaceQueue) {
+      await player.playSingleQueueEntry(entry);
+    } else {
+      await player.playFromPlaylistQueue(
+        entry,
+        queue,
+        playlistId: widget.playlistId,
+      );
+    }
   }
 
   Future<void> _removeTrack(

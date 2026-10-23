@@ -426,7 +426,15 @@ class _OnlinePlaylistDetailPageState
                           music: music,
                           onPlay: entry == null
                               ? null
-                              : () => _playQueue(playbackPlaylist, entry),
+                              : () => _playQueue(
+                                  playbackPlaylist,
+                                  entry,
+                                  replaceQueue: searching
+                                      ? ref
+                                            .read(settingsProvider)
+                                            .replaceQueueOnSearchPlay
+                                      : true,
+                                ),
                         ),
                       ),
                     );
@@ -559,8 +567,9 @@ class _OnlinePlaylistDetailPageState
 
   Future<void> _playQueue(
     PlaylistInfo playlist,
-    DownloadHistoryEntry selectedEntry,
-  ) async {
+    DownloadHistoryEntry selectedEntry, {
+    bool replaceQueue = true,
+  }) async {
     final available = await ensureQueueEntryMusicSourceAvailable(
       context,
       selectedEntry,
@@ -571,6 +580,10 @@ class _OnlinePlaylistDetailPageState
     final entry = _matchingQueueEntry(queue, selectedEntry);
     if (entry == null) return;
     final player = ref.read(playerControllerProvider.notifier);
+    if (!replaceQueue) {
+      await player.playSingleQueueEntry(entry);
+      return;
+    }
     final api = ref.read(musicApiProvider);
 
     final playback = player.playFromPlaylistQueue(entry, queue);

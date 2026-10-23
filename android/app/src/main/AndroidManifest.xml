@@ -40,6 +40,14 @@
             <meta-data
                 android:name="flutter_deeplinking_enabled"
                 android:value="false" />
+            <!-- Flutter needs a stable activity in both source and APK manifests.
+                 The private scheme excludes this filter from desktop launcher
+                 queries; Flutter starts MainActivity by explicit component. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <data android:scheme="${applicationId}.flutter" />
+            </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

@@ -263,6 +263,34 @@ class SettingsPage extends ConsumerWidget {
                                 ],
                               ),
                               SettingsMenuAction(
+                                key: const ValueKey('search-playback-menu'),
+                                menuId: 'search-playback-menu',
+                                icon: Icons.playlist_play_rounded,
+                                title: '点击搜索结果内单曲时',
+                                subtitle: settings.replaceQueueOnSearchPlay
+                                    ? '播放歌曲并替换播放列表'
+                                    : '播放歌曲',
+                                options: [
+                                  SettingsMenuOption(
+                                    id: 'play-song',
+                                    label: '播放歌曲',
+                                    selected:
+                                        !settings.replaceQueueOnSearchPlay,
+                                    onSelected: () => ref
+                                        .read(settingsProvider.notifier)
+                                        .setReplaceQueueOnSearchPlay(false),
+                                  ),
+                                  SettingsMenuOption(
+                                    id: 'replace-queue',
+                                    label: '播放歌曲并替换播放列表',
+                                    selected: settings.replaceQueueOnSearchPlay,
+                                    onSelected: () => ref
+                                        .read(settingsProvider.notifier)
+                                        .setReplaceQueueOnSearchPlay(true),
+                                  ),
+                                ],
+                              ),
+                              SettingsMenuAction(
                                 key: const ValueKey('online-quality-menu'),
                                 menuId: 'online-quality-menu',
                                 icon: Icons.high_quality_rounded,

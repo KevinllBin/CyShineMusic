@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/storage/settings_store.dart';
+import '../../player/widgets/lyric_typography.dart';
 import '../../player/widgets/player_palette.dart';
 
 Future<({double weight, double size})> showLyricSettingsSheet(
@@ -221,13 +222,10 @@ class _LyricPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final scaler = MediaQuery.textScalerOf(context);
-    final secondaryWeight = (weight - 100).clamp(
-      kLyricFontWeightMin,
-      kLyricFontWeightMax,
-    );
+    final secondaryWeight = lyricSecondaryFontWeight(weight);
     final height =
         scaler.scale(kLyricFontSizeMax) * 1.2 +
-        scaler.scale(14 * kLyricFontSizeMax / kLyricFontSizeDefault) * 1.3 +
+        scaler.scale(lyricTranslationFontSize(kLyricFontSizeMax)) * 1.3 +
         scaler.scale(12) +
         56;
     return Container(
@@ -289,7 +287,7 @@ class _LyricPreview extends StatelessWidget {
                   style: TextStyle(
                     color: scheme.onSurface.withValues(alpha: 0.38),
                     fontFamilyFallback: kPlayerFontFallback,
-                    fontSize: 14 * size / kLyricFontSizeDefault,
+                    fontSize: lyricTranslationFontSize(size),
                     fontWeight: FontWeight(secondaryWeight.round()),
                     fontVariations: [FontVariation.weight(secondaryWeight)],
                     height: 1.3,

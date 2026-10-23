@@ -22,6 +22,15 @@ PALETTES = {
 DENSITIES = [("mdpi", 108, 48), ("hdpi", 162, 72), ("xhdpi", 216, 96),
              ("xxhdpi", 324, 144), ("xxxhdpi", 432, 192)]
 LANCZOS = Image.Resampling.LANCZOS
+
+# Preserve the complete launcher artwork, including its background and colors.
+notification_icon = Image.open(ROOT / "logo.png").convert("RGBA")
+for density, _, icon_size in DENSITIES:
+    size = icon_size // 2  # 24dp notification canvas.
+    drawables = RES / f"drawable-{density}"
+    drawables.mkdir(parents=True, exist_ok=True)
+    notification_icon.resize((size, size), LANCZOS).save(drawables / "ic_stat_app.png")
+
 source = Image.open(ROOT / "logo_fg.png").convert("RGBA")
 pixels = np.asarray(source)
 base = np.array([ImageColor.getrgb(color) for color in SOURCE_COLORS], dtype=np.int32)

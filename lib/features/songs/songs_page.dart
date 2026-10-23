@@ -486,8 +486,9 @@ class _SongsPageState extends ConsumerState<SongsPage> {
 
   Future<void> _play(
     DownloadHistoryEntry entry,
-    List<DownloadHistoryEntry> queue,
-  ) async {
+    List<DownloadHistoryEntry> queue, {
+    bool replaceQueue = true,
+  }) async {
     final path = entry.savedPath;
     final hasLocalFile =
         path != null && path.isNotEmpty && File(path).existsSync();
@@ -512,7 +513,9 @@ class _SongsPageState extends ConsumerState<SongsPage> {
       _restoreToolbarAfterSearchFocus();
     }
     final player = ref.read(playerControllerProvider.notifier);
-    if (playlistMode) {
+    if (!replaceQueue) {
+      await player.playSingleQueueEntry(entry);
+    } else if (playlistMode) {
       await player.playFromPlaylistQueue(entry, queue, playlistId: playlistId);
     } else {
       await player.playFromHistoryQueue(entry, queue);
@@ -1313,7 +1316,14 @@ class _SongsPageState extends ConsumerState<SongsPage> {
                       onAddNext: () => _addNext(entry),
                       onAddToPlaylist: () =>
                           unawaited(_selectPlaylistForSong(entry)),
-                      onPlay: () => _play(entry, songs),
+                      onPlay: () => _play(
+                        entry,
+                        songs,
+                        replaceQueue:
+                            !_searchMode ||
+                            _searchQuery.trim().isEmpty ||
+                            ref.read(settingsProvider).replaceQueueOnSearchPlay,
+                      ),
                       onDelete: playlistMode
                           ? () {
                               final track = _visiblePlaylistTracks[entry.id];

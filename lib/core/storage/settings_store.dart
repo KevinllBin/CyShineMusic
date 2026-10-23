@@ -41,6 +41,7 @@ const String _kUseNativeNavigationKey = 'use_native_navigation';
 const String _kNavigationModeKey = 'navigation_mode';
 const String _kNetworkAdapterModeKey = 'network_adapter_mode';
 const String _kEnabledSearchSourcesKey = 'enabled_search_source_codes';
+const String _kReplaceQueueOnSearchPlayKey = 'replace_queue_on_search_play';
 const String _kDiscoverySourceOrderKey = 'discovery_source_order';
 const String _kOnlinePlaybackQualityKey = 'online_playback_quality';
 const String _kBatchDownloadQualityKey = 'batch_download_quality';
@@ -111,6 +112,7 @@ class AppSettings {
     required this.navigationMode,
     required this.networkAdapterMode,
     required this.enabledSearchSources,
+    this.replaceQueueOnSearchPlay = true,
     required this.discoverySourceOrder,
     required this.onlinePlaybackQuality,
     required this.batchDownloadQuality,
@@ -155,6 +157,9 @@ class AppSettings {
   bool get useNativeNavigation => navigationMode == AppNavigationMode.native;
   final NetworkAdapterMode networkAdapterMode;
   final Set<MusicSource> enabledSearchSources;
+
+  /// Applies to song search results in discovery, libraries and collections.
+  final bool replaceQueueOnSearchPlay;
   final List<MusicSource> discoverySourceOrder;
   final OnlinePlaybackQuality onlinePlaybackQuality;
   final OnlinePlaybackQuality batchDownloadQuality;
@@ -193,6 +198,7 @@ class AppSettings {
     bool? useNativeNavigation,
     NetworkAdapterMode? networkAdapterMode,
     Set<MusicSource>? enabledSearchSources,
+    bool? replaceQueueOnSearchPlay,
     List<MusicSource>? discoverySourceOrder,
     OnlinePlaybackQuality? onlinePlaybackQuality,
     OnlinePlaybackQuality? batchDownloadQuality,
@@ -236,6 +242,8 @@ class AppSettings {
             : this.navigationMode),
     networkAdapterMode: networkAdapterMode ?? this.networkAdapterMode,
     enabledSearchSources: enabledSearchSources ?? this.enabledSearchSources,
+    replaceQueueOnSearchPlay:
+        replaceQueueOnSearchPlay ?? this.replaceQueueOnSearchPlay,
     discoverySourceOrder: discoverySourceOrder ?? this.discoverySourceOrder,
     onlinePlaybackQuality: onlinePlaybackQuality ?? this.onlinePlaybackQuality,
     batchDownloadQuality: batchDownloadQuality ?? this.batchDownloadQuality,
@@ -263,6 +271,7 @@ class AppSettings {
     navigationMode: AppNavigationMode.singleCapsule,
     networkAdapterMode: NetworkAdapterMode.system,
     enabledSearchSources: kDefaultEnabledSearchSources,
+    replaceQueueOnSearchPlay: true,
     discoverySourceOrder: kDefaultDiscoverySourceOrder,
     onlinePlaybackQuality: OnlinePlaybackQuality.highest,
     batchDownloadQuality: OnlinePlaybackQuality.highest,
@@ -336,6 +345,8 @@ class SettingsNotifier extends Notifier<AppSettings> {
       enabledSearchSources: decodeEnabledSearchSources(
         _prefs.getStringList(_kEnabledSearchSourcesKey),
       ),
+      replaceQueueOnSearchPlay:
+          _prefs.getBool(_kReplaceQueueOnSearchPlayKey) ?? true,
       discoverySourceOrder: decodeDiscoverySourceOrder(
         _prefs.getStringList(_kDiscoverySourceOrderKey),
       ),
@@ -743,6 +754,11 @@ class SettingsNotifier extends Notifier<AppSettings> {
       order.map((source) => source.code).toList(growable: false),
     );
     state = state.copyWith(discoverySourceOrder: order);
+  }
+
+  Future<void> setReplaceQueueOnSearchPlay(bool value) async {
+    await _prefs.setBool(_kReplaceQueueOnSearchPlayKey, value);
+    state = state.copyWith(replaceQueueOnSearchPlay: value);
   }
 
   Future<void> setOnlinePlaybackQuality(OnlinePlaybackQuality quality) async {

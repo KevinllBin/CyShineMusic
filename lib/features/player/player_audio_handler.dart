@@ -25,7 +25,7 @@ const playerAudioServiceConfig = AudioServiceConfig(
   androidNotificationChannelId: 'com.cyshine.music.channel.audio_playback',
   androidNotificationChannelName: '音乐播放',
   androidNotificationChannelDescription: '显示正在播放的歌曲和媒体控制',
-  androidNotificationIcon: 'drawable/ic_stat_music_note',
+  androidNotificationIcon: 'drawable/ic_stat_app',
   androidShowNotificationBadge: false,
   androidNotificationOngoing: false,
   // Keep the MediaSession and notification alive while a track is paused or

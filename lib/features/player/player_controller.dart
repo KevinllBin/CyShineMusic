@@ -737,6 +737,26 @@ class PlayerController extends StateNotifier<PlayerState>
     return _playFromQueue(entry, queue, playlistId: playlistId);
   }
 
+  /// Plays one song while retaining the queue, inserting after the current
+  /// song only when it is not already queued.
+  Future<void> playSingleQueueEntry(DownloadHistoryEntry entry) {
+    if (!_isPlayableEntry(entry)) {
+      state = state.copyWith(error: '歌曲不可播放');
+      return Future<void>.value();
+    }
+    _consecutiveSourceFailureSkips = 0;
+    _pendingRestoredSession = null;
+    var index = _queue.indexWhere((item) => _sameEntry(item, entry));
+    if (index < 0) {
+      index = _hasCurrentQueueTrack ? _queueIndex + 1 : 0;
+      _queue = List<DownloadHistoryEntry>.of(_queue)..insert(index, entry);
+    } else if (!_isPlayableEntry(_queue[index])) {
+      // A missing local file can still be played using the search metadata.
+      _queue = List<DownloadHistoryEntry>.of(_queue)..[index] = entry;
+    }
+    return _playQueueIndex(index, resetPlayOrder: true);
+  }
+
   /// Replaces a playlist queue after its remaining tracks finish loading,
   /// without restarting or seeking the active track.
   ///

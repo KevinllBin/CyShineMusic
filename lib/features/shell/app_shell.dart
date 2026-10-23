@@ -16,6 +16,7 @@ import '../player/widgets/spinning_cover_art.dart';
 import '../player/player_controller.dart';
 import '../playlists/playlist_detail_toolbar_state.dart';
 import '../search/search_controller.dart';
+import '../search/search_toolbar_state.dart';
 import '../settings/settings_section.dart';
 import '../songs/songs_toolbar_state.dart';
 import 'player_pull_scope.dart';
@@ -363,6 +364,12 @@ class _AppShellState extends ConsumerState<AppShell>
       await navigator.maybePop();
       return true;
     }
+    final popupNavigator = _nestedPopupNavigator();
+    if (popupNavigator != null) {
+      _resetTopLevelBack();
+      await popupNavigator.maybePop();
+      return true;
+    }
     if (widget.location == '/player') {
       _pullActive = false;
       unawaited(_dismissPlayer());
@@ -400,6 +407,15 @@ class _AppShellState extends ConsumerState<AppShell>
         return true;
       }
     }
+    if (widget.location == '/' &&
+        ref.read(searchControllerProvider).isSearchActive) {
+      final closeSearch = ref.read(searchToolbarStateProvider).onCloseSearch;
+      if (closeSearch != null) {
+        _resetTopLevelBack();
+        closeSearch();
+        return true;
+      }
+    }
 
     _releaseRouteFocus();
     final settingsParent = settingsParentLocation(widget.location);
@@ -420,6 +436,29 @@ class _AppShellState extends ConsumerState<AppShell>
       unawaited(_moveAppTaskToBack());
     }
     return true;
+  }
+
+  NavigatorState? _nestedPopupNavigator() {
+    RouteMatchBase match = GoRouter.of(
+      context,
+    ).routerDelegate.currentConfiguration.matches.last;
+    // Sheets and menus belong to the navigator that opened them, including
+    // retained tab navigators. Inspect outer overlays before inner ones.
+    while (match is ShellRouteMatch) {
+      final navigator = match.navigatorKey.currentState;
+      if (navigator == null ||
+          ModalRoute.of(navigator.context)?.isCurrent == false) {
+        break;
+      }
+      var hasPopup = false;
+      navigator.popUntil((route) {
+        hasPopup = route is PopupRoute || route.willHandlePopInternally;
+        return true; // Inspect the top route without popping a page.
+      });
+      if (hasPopup) return navigator;
+      match = match.matches.last;
+    }
+    return null;
   }
 
   Future<void> _handleTopLevelBack() async {
