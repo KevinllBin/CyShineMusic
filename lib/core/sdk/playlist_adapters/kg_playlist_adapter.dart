@@ -4,7 +4,9 @@ import '../../models/playlist_info.dart';
 import '../internal/builders.dart';
 import '../internal/crypto_util.dart';
 import '../internal/format.dart';
+import '../internal/kg_quality.dart';
 import '../internal/sdk_http.dart';
+import '../kg_sdk.dart';
 
 typedef KgJsonPoster =
     Future<dynamic> Function(
@@ -44,6 +46,10 @@ class KgPlaylistAdapter {
   }) async {
     final load = jsonLoader ?? SdkHttp.getJson;
     final post = jsonPoster ?? _postJson;
+    // Fixture loaders stay isolated from live privilege requests. The normal
+    // app path uses the default loaders and enriches tracks with Atmos/master
+    // variants from Kugou's privilege endpoint.
+    final enrichQualityDetails = jsonLoader == null && jsonPoster == null;
     final target = id.trim();
     if (target.startsWith(_globalPrefix)) {
       final globalTarget = target.substring(_globalPrefix.length).trim();
@@ -63,12 +69,19 @@ class KgPlaylistAdapter {
         chain: chain,
         load: load,
         post: post,
+        enrichQualityDetails: enrichQualityDetails,
         maxTracks: maxTracks,
       );
     }
     if (target.startsWith(_chainPrefix)) {
       final chain = target.substring(_chainPrefix.length).trim();
-      return _parseChain(chain, load: load, post: post, maxTracks: maxTracks);
+      return _parseChain(
+        chain,
+        load: load,
+        post: post,
+        enrichQualityDetails: enrichQualityDetails,
+        maxTracks: maxTracks,
+      );
     }
     if (target.startsWith(_gcidPrefix)) {
       final gcid = target.substring(_gcidPrefix.length).trim();
@@ -77,6 +90,7 @@ class KgPlaylistAdapter {
         globalId,
         load: load,
         post: post,
+        enrichQualityDetails: enrichQualityDetails,
         maxTracks: maxTracks,
       );
     }
@@ -86,6 +100,7 @@ class KgPlaylistAdapter {
         target,
         load: load,
         post: post,
+        enrichQualityDetails: enrichQualityDetails,
         maxTracks: maxTracks,
       );
     } catch (_) {
@@ -95,6 +110,7 @@ class KgPlaylistAdapter {
         globalId,
         load: load,
         post: post,
+        enrichQualityDetails: enrichQualityDetails,
         maxTracks: maxTracks,
       );
     }
@@ -104,6 +120,7 @@ class KgPlaylistAdapter {
     String id, {
     required SdkJsonLoader load,
     required KgJsonPoster post,
+    required bool enrichQualityDetails,
     int? maxTracks,
   }) async {
     final infoBody = await load(
@@ -148,9 +165,17 @@ class KgPlaylistAdapter {
     }
 
     final songs = await _completeSongs(rawSongs, post);
+    final qualityDetails = enrichQualityDetails
+        ? await _qualityDetailsFor(songs)
+        : const <String, List<QualityOption>>{};
     final tracks = songs
         .take(expected > 0 ? expected : rawSongs.length)
-        .map(parseTrack)
+        .map(
+          (song) => parseTrack(
+            song,
+            qualityDetails: qualityDetails[kgHashKey(_trackHash(song))],
+          ),
+        )
         .whereType<MusicInfo>()
         .toList(growable: false);
     return PlaylistInfo(
@@ -171,6 +196,7 @@ class KgPlaylistAdapter {
     String? chain,
     required SdkJsonLoader load,
     required KgJsonPoster post,
+    required bool enrichQualityDetails,
     int? maxTracks,
   }) async {
     if (id.isEmpty) throw Exception('酷狗歌单 ID 无效');
@@ -201,9 +227,17 @@ class KgPlaylistAdapter {
           maxTracks: maxTracks,
         );
     final songs = await _completeSongs(rawSongs, post);
+    final qualityDetails = enrichQualityDetails
+        ? await _qualityDetailsFor(songs)
+        : const <String, List<QualityOption>>{};
     final tracks = songs
         .take(expected > 0 ? expected : rawSongs.length)
-        .map(parseTrack)
+        .map(
+          (song) => parseTrack(
+            song,
+            qualityDetails: qualityDetails[kgHashKey(_trackHash(song))],
+          ),
+        )
         .whereType<MusicInfo>()
         .toList(growable: false);
     return PlaylistInfo(
@@ -226,6 +260,7 @@ class KgPlaylistAdapter {
     String chain, {
     required SdkJsonLoader load,
     required KgJsonPoster post,
+    required bool enrichQualityDetails,
     int? maxTracks,
   }) async {
     if (chain.isEmpty) throw Exception('酷狗分享链接无效');
@@ -257,6 +292,7 @@ class KgPlaylistAdapter {
         chain: chain,
         load: load,
         post: post,
+        enrichQualityDetails: enrichQualityDetails,
         maxTracks: maxTracks,
       );
     }
@@ -267,6 +303,7 @@ class KgPlaylistAdapter {
         chain: chain,
         load: load,
         post: post,
+        enrichQualityDetails: enrichQualityDetails,
         maxTracks: maxTracks,
       );
     }
@@ -290,6 +327,7 @@ class KgPlaylistAdapter {
         chain: chain,
         load: load,
         post: post,
+        enrichQualityDetails: enrichQualityDetails,
         maxTracks: maxTracks,
       );
     }
@@ -592,7 +630,34 @@ class KgPlaylistAdapter {
     return merged;
   }
 
-  static MusicInfo? parseTrack(Map item) {
+  static Future<Map<String, List<QualityOption>>> _qualityDetailsFor(
+    Iterable<Map> songs,
+  ) async {
+    final resources = <KgPrivilegeResource>[];
+    for (final song in songs) {
+      final hash = _trackHash(song);
+      if (hash.isEmpty) continue;
+      final audio = song['audio_info'] as Map?;
+      final album = song['album_info'] as Map?;
+      resources.add(
+        KgPrivilegeResource(
+          hash: hash,
+          albumId: audio?['album_id'] ?? album?['album_id'] ?? song['album_id'],
+        ),
+      );
+    }
+    return KgSdk.getQualityDetails(resources);
+  }
+
+  static String _trackHash(Map item) {
+    final audio = item['audio_info'] as Map?;
+    return _text(audio?['hash'] ?? item['hash'] ?? item['FileHash']) ?? '';
+  }
+
+  static MusicInfo? parseTrack(
+    Map item, {
+    Iterable<QualityOption>? qualityDetails,
+  }) {
     final audio = item['audio_info'] as Map?;
     final album = item['album_info'] as Map?;
     final baseHash =
@@ -633,6 +698,9 @@ class KgPlaylistAdapter {
       audio?['hash_high'] ?? item['hash_high'],
     );
     add(Quality.ape, item['filesize_ape'], item['hash_ape']);
+    final mergedQualities = qualityDetails == null
+        ? qualities
+        : mergeKgQualityOptions(qualities, qualityDetails);
 
     var name = _text(item['songname'] ?? item['SongName']);
     var singer =
@@ -662,7 +730,7 @@ class KgPlaylistAdapter {
       singer: decodeName(singer),
       source: MusicSource.kg,
       songId: songId,
-      qualitys: qualities,
+      qualitys: mergedQualities,
       interval: formatPlayTime(durationSeconds),
       albumName: decodeName(albumName),
       albumId: album?['album_id'] ?? item['album_id'],

@@ -9,8 +9,10 @@ import '../ui/cover_image_source.dart';
 import 'internal/builders.dart';
 import 'internal/crypto_util.dart';
 import 'internal/format.dart';
+import 'internal/kg_quality.dart';
 import 'internal/sdk_http.dart';
 import 'internal/tx_quality.dart';
+import 'kg_sdk.dart';
 import 'leaderboard_catalog.dart';
 import 'playlist_adapters/kg_playlist_adapter.dart';
 import 'playlist_adapters/kw_playlist_adapter.dart';
@@ -108,6 +110,7 @@ class LeaderboardSdk {
         board,
         maxTracks: maxTracks,
         load: jsonLoader ?? SdkHttp.getJson,
+        enrichQualityDetails: jsonLoader == null && jsonPoster == null,
       ),
       MusicSource.mg => _getMg(
         board,
@@ -239,6 +242,7 @@ class LeaderboardSdk {
     LeaderboardSummary board, {
     required int? maxTracks,
     required SdkJsonLoader load,
+    required bool enrichQualityDetails,
   }) async {
     const pageCapacity = 100;
     final requested = maxTracks != null && maxTracks > 0 ? maxTracks : 1000;
@@ -272,8 +276,36 @@ class LeaderboardSdk {
         break;
       }
     }
+    final qualityDetails = enrichQualityDetails
+        ? await KgSdk.getQualityDetails([
+            for (final song in songs)
+              KgPrivilegeResource(
+                hash:
+                    (song['audio_info'] as Map?)?['hash'] ??
+                    song['hash'] ??
+                    song['FileHash'] ??
+                    '',
+                albumId:
+                    (song['audio_info'] as Map?)?['album_id'] ??
+                    (song['album_info'] as Map?)?['album_id'] ??
+                    song['album_id'],
+              ),
+          ])
+        : const <String, List<QualityOption>>{};
     final tracks = songs
-        .map(KgPlaylistAdapter.parseTrack)
+        .map(
+          (song) => KgPlaylistAdapter.parseTrack(
+            song,
+            qualityDetails:
+                qualityDetails[kgHashKey(
+                  ((song['audio_info'] as Map?)?['hash'] ??
+                          song['hash'] ??
+                          song['FileHash'] ??
+                          '')
+                      .toString(),
+                )],
+          ),
+        )
         .whereType<MusicInfo>()
         .toList(growable: false);
     final cover = tracks

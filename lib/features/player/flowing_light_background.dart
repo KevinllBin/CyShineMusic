@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
-import 'artwork_colors.dart';
+import '../../core/ui/artwork_colors.dart';
 import 'flowing_light_pipeline.dart';
 import 'flowing_light_spec.dart';
 
@@ -146,7 +146,8 @@ class _FlowingLightBackgroundState extends State<FlowingLightBackground>
     final Color baseColor;
     try {
       final colors =
-          widget.artworkColors ?? await loadArtworkColors(widget.imageProvider);
+          widget.artworkColors ??
+          await loadArtworkColors(widget.imageProvider, requestGroup: 'player');
       baseColor = colors?.baseColor ?? const Color(0xFF000000);
     } catch (_) {
       image.dispose();

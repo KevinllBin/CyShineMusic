@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/ui/cover_image_source.dart';
+import '../../../core/ui/artwork_colors.dart';
 import '../../../theme/app_motion.dart';
-import '../artwork_colors.dart';
 import '../player_controller.dart';
 import 'player_palette.dart';
 
@@ -35,7 +35,7 @@ final playerArtworkColorsProvider = FutureProvider.autoDispose<ArtworkColors?>((
 ) async {
   final provider = ref.watch(playerArtworkProvider);
   if (provider == null) return null;
-  return loadArtworkColors(provider);
+  return loadArtworkColors(provider, requestGroup: 'player');
 });
 
 final playerLyricInkProvider = Provider.autoDispose<Color?>((ref) {

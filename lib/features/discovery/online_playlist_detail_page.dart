@@ -163,6 +163,7 @@ class _OnlinePlaylistDetailPageState
     bool onImage = false,
     bool? statusBarOnImage,
     double progress = 1,
+    bool forHero = false,
   }) {
     return ImmersivePlaylistTopBar(
       title: playlist.name,
@@ -179,7 +180,9 @@ class _OnlinePlaylistDetailPageState
         onImage: onImage,
         controller: _searchController,
         focusNode: _searchFocusNode,
-        expanded: _searchMode,
+        // 飞行副本只显示收起的按钮，不能挂载同一个输入框焦点。
+        expanded: _searchMode && !forHero,
+        autoFocus: !forHero,
         onOpen: _openSearch,
         onClose: _closeSearch,
         onChanged: (_) => setState(() {}),
@@ -461,6 +464,7 @@ class _OnlinePlaylistDetailPageState
                     topBar: _buildSearchTopBar(playbackPlaylist, local),
                     infoPane: PlaylistWideInfoPane(
                       artworkProvider: artworkProvider,
+                      scrollStorageId: _identity,
                       artworkHeroTag: onlinePlaylistArtworkHeroTag(
                         playlist.source,
                         playlist.id,
@@ -478,7 +482,7 @@ class _OnlinePlaylistDetailPageState
                         child: CustomScrollView(
                           controller: _scrollController,
                           key: PageStorageKey(
-                            'online-playlist-wide-${playlist.source.code}-${playlist.id}',
+                            'online-${widget.kind.name}-wide-${playlist.source.code}-${playlist.id}',
                           ),
                           physics: const AlwaysScrollableScrollPhysics(
                             parent: BouncingScrollPhysics(),
@@ -490,6 +494,7 @@ class _OnlinePlaylistDetailPageState
                   )
                 : ScrollingImmersivePlaylistBody(
                     title: playlist.name,
+                    scrollStorageId: _identity,
                     topBarBuilder:
                         (context, onImage, statusBarOnImage, progress) =>
                             _buildSearchTopBar(
@@ -506,7 +511,7 @@ class _OnlinePlaylistDetailPageState
                         child: CustomScrollView(
                           controller: _scrollController,
                           key: PageStorageKey(
-                            'online-playlist-${playlist.source.code}-${playlist.id}',
+                            'online-${widget.kind.name}-${playlist.source.code}-${playlist.id}',
                           ),
                           physics: const AlwaysScrollableScrollPhysics(
                             parent: BouncingScrollPhysics(),
@@ -520,8 +525,13 @@ class _OnlinePlaylistDetailPageState
                                   playlist.id,
                                   kind: widget.kind,
                                 ),
-                                topBar: const ImmersivePlaylistTopBar(
-                                  title: '',
+                                topBar: _buildSearchTopBar(
+                                  playbackPlaylist,
+                                  local,
+                                  onImage: true,
+                                  statusBarOnImage: true,
+                                  progress: 0,
+                                  forHero: true,
                                 ),
                                 showTopBar: false,
                               ),
@@ -557,7 +567,8 @@ class _OnlinePlaylistDetailPageState
     ];
     if (queue.length < 2) return;
     final entry = queue[math.Random().nextInt(queue.length)];
-    if (!await ensureQueueEntryMusicSourceAvailable(context, entry) || !mounted) {
+    if (!await ensureQueueEntryMusicSourceAvailable(context, entry) ||
+        !mounted) {
       return;
     }
     final player = ref.read(playerControllerProvider.notifier);
@@ -808,6 +819,12 @@ class _DetailLoading extends StatelessWidget {
                     infoPane: PlaylistWideInfoPane(
                       artworkProvider: artworkProvider,
                       artworkLoading: artworkProvider == null,
+                      scrollStorageId: (
+                        source: source,
+                        id: playlistId,
+                        kind: kind,
+                      ),
+                      persistScrollOrigin: false,
                       artworkHeroTag: onlinePlaylistArtworkHeroTag(
                         source,
                         playlistId,
@@ -838,6 +855,12 @@ class _DetailLoading extends StatelessWidget {
                   )
                 : ScrollingImmersivePlaylistBody(
                     title: item?.name.trim() ?? '',
+                    scrollStorageId: (
+                      source: source,
+                      id: playlistId,
+                      kind: kind,
+                    ),
+                    persistScrollOrigin: false,
                     child: CustomScrollView(
                       physics: const AlwaysScrollableScrollPhysics(
                         parent: BouncingScrollPhysics(),
@@ -962,6 +985,12 @@ class _DetailError extends StatelessWidget {
                     ),
                     infoPane: PlaylistWideInfoPane(
                       artworkProvider: artworkProvider,
+                      scrollStorageId: (
+                        source: source,
+                        id: playlistId,
+                        kind: kind,
+                      ),
+                      persistScrollOrigin: false,
                       artworkHeroTag: onlinePlaylistArtworkHeroTag(
                         source,
                         playlistId,
@@ -975,6 +1004,12 @@ class _DetailError extends StatelessWidget {
                   )
                 : ScrollingImmersivePlaylistBody(
                     title: item?.name.trim() ?? '',
+                    scrollStorageId: (
+                      source: source,
+                      id: playlistId,
+                      kind: kind,
+                    ),
+                    persistScrollOrigin: false,
                     child: CustomScrollView(
                       physics: const AlwaysScrollableScrollPhysics(
                         parent: BouncingScrollPhysics(),

@@ -3,8 +3,8 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
-import '../artwork_colors.dart';
-import '../flow_palette.dart';
+import '../../../core/ui/artwork_colors.dart';
+import '../../../core/ui/flow_palette.dart';
 
 /// Radius of each color body, in short-side units, passed through the shader's
 /// `w` component. Ordered to match [FlowPalette.accentsArgb].
@@ -144,7 +144,10 @@ class _FlowingLightLayerState extends State<FlowingLightLayer>
   }
 
   Future<void> _derivePalette(int generation) async {
-    final colors = await loadArtworkColors(widget.imageProvider);
+    final colors = await loadArtworkColors(
+      widget.imageProvider,
+      requestGroup: 'player',
+    );
     if (!mounted || generation != _paletteGeneration || colors == null) return;
     if (colors.palette == _palette) return;
     setState(() => _palette = colors.palette);

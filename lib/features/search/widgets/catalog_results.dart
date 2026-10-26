@@ -5,10 +5,12 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/models/catalog_result.dart';
 import '../../../core/models/music_info.dart';
+import '../../../core/models/online_collection_kind.dart';
 import '../../../core/models/search_category.dart';
 import '../../../core/ui/expressive_loading_status.dart';
 import '../../../core/ui/container_transform.dart';
 import '../../../core/ui/cover_image_source.dart';
+import '../../discovery/discovery_controller.dart';
 import '../../downloads/download_progress.dart';
 import '../../shell/shell_bottom_area.dart';
 import '../search_controller.dart';
@@ -143,7 +145,6 @@ class CatalogResults extends ConsumerWidget {
       if (overview) children.add(const SizedBox(height: 14));
     }
     return ListView.builder(
-      key: const PageStorageKey('search-results-scroll'),
       controller: scrollController,
       padding: EdgeInsets.fromLTRB(
         12,
@@ -165,6 +166,11 @@ class CatalogResultTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final summary = item.summary;
     final artist = item.category == SearchCategory.artists;
+    final kind = switch (item.category) {
+      SearchCategory.artists => OnlineCollectionKind.artist,
+      SearchCategory.albums => OnlineCollectionKind.album,
+      _ => OnlineCollectionKind.playlist,
+    };
     final scheme = Theme.of(context).colorScheme;
     final radius = BorderRadius.circular(artist ? 30 : 12);
     final image = CoverImageSource.normalizeUrl(summary.coverUrl, size: 180);
@@ -209,22 +215,31 @@ class CatalogResultTile extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
           child: Row(
             children: [
-              ClipRRect(
-                borderRadius: radius,
-                child: SizedBox.square(
-                  dimension: 58,
-                  child: image == null || image.isEmpty
-                      ? fallback
-                      // NetworkImage appends User-Agent to Dart's default,
-                      // which NetEase rejects. Match the song/detail loader.
-                      : CachedNetworkImage(
-                          imageUrl: image,
-                          httpHeaders: CoverImageSource.headersFor(image),
-                          fit: BoxFit.cover,
-                          memCacheWidth: 180,
-                          placeholder: (_, _) => fallback,
-                          errorWidget: (_, _, _) => fallback,
-                        ),
+              SizedBox.square(
+                dimension: 58,
+                child: Hero(
+                  tag: onlinePlaylistArtworkHeroTag(
+                    summary.source,
+                    summary.id,
+                    kind: kind,
+                  ),
+                  transitionOnUserGestures: true,
+                  createRectTween: containerTransformHeroRectTween,
+                  child: HeroArtworkShape(
+                    borderRadius: radius,
+                    child: image == null || image.isEmpty
+                        ? fallback
+                        // NetworkImage appends User-Agent to Dart's default,
+                        // which NetEase rejects. Match the song/detail loader.
+                        : CachedNetworkImage(
+                            imageUrl: image,
+                            httpHeaders: CoverImageSource.headersFor(image),
+                            fit: BoxFit.cover,
+                            memCacheWidth: 180,
+                            placeholder: (_, _) => fallback,
+                            errorWidget: (_, _, _) => fallback,
+                          ),
+                  ),
                 ),
               ),
               const SizedBox(width: 13),

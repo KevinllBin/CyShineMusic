@@ -28,7 +28,7 @@ import 'package:cy_shine_music/core/services/tagger.dart';
 import 'package:cy_shine_music/core/storage/base_url.dart';
 import 'package:cy_shine_music/core/sync/sync_models.dart';
 import 'package:cy_shine_music/features/downloads/download_history_entry.dart';
-import 'package:cy_shine_music/features/player/flow_palette.dart';
+import 'package:cy_shine_music/core/ui/flow_palette.dart';
 import 'package:cy_shine_music/features/player/flowing_light_spec.dart';
 import 'package:cy_shine_music/features/player/lyric_parser.dart';
 // player_models (not player_controller): the controller's closure pulls in

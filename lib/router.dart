@@ -356,8 +356,8 @@ class _PlayerRouteBackdrop extends StatelessWidget {
 /// extra 传入，没有起点（深链、预览弹窗）时退化为整页淡入；从别的 tab
 /// 切回（[ShellTabSwitch]）时直接出现。
 ///
-/// 路由时长同时驱动页面容器与封面 Hero，两者共用 [AppMotion.long] /
-/// [AppMotion.medium]。
+/// 路由时长同时驱动页面容器与封面 Hero，展开和收回共用
+/// [AppMotion.containerTransformDuration]。
 CustomTransitionPage<void> _containerTransformPage(
   BuildContext context, {
   required LocalKey key,
@@ -370,8 +370,10 @@ CustomTransitionPage<void> _containerTransformPage(
     key: key,
     transitionDuration: reduceMotion || extra is ShellTabSwitch
         ? Duration.zero
-        : AppMotion.long,
-    reverseTransitionDuration: reduceMotion ? Duration.zero : AppMotion.medium,
+        : AppMotion.containerTransformDuration,
+    reverseTransitionDuration: reduceMotion
+        ? Duration.zero
+        : AppMotion.containerTransformDuration,
     transitionsBuilder: (_, animation, _, child) => SkippableExitTransition(
       animation: animation,
       skipExit: _leavesDiscovery,

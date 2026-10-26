@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/storage/settings_store.dart';
+import '../../../core/ui/artwork_colors.dart';
 import '../../../core/ui/container_transform.dart';
 import '../../../core/ui/cover_image_source.dart';
 import '../../../core/ui/cover_placeholder.dart';
@@ -58,7 +59,7 @@ typedef _ArtworkSchemeCacheKey = ({
 class _PlaylistArtworkThemeState extends ConsumerState<PlaylistArtworkTheme> {
   static const _schemeCacheLimit = 48;
   static final Map<_ArtworkSchemeCacheKey, ColorScheme> _resolvedSchemes = {};
-  static final Map<_ArtworkSchemeCacheKey, Future<ColorScheme>>
+  static final Map<_ArtworkSchemeCacheKey, Future<ColorScheme?>>
   _pendingSchemes = {};
 
   ColorScheme? _scheme;
@@ -113,18 +114,13 @@ class _PlaylistArtworkThemeState extends ConsumerState<PlaylistArtworkTheme> {
     _makeSchemeCacheRoom(requestKey);
     final future = _pendingSchemes.putIfAbsent(
       requestKey,
-      () => ColorScheme.fromImageProvider(
-        provider: provider,
-        brightness: base.brightness,
-        dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
-        contrastLevel: 0.1,
-      ),
+      () => _loadScheme(provider, base.brightness),
     );
     future.then(
       (scheme) {
         if (identical(_pendingSchemes[requestKey], future)) {
           _pendingSchemes.remove(requestKey);
-          _resolvedSchemes[requestKey] = scheme;
+          if (scheme != null) _resolvedSchemes[requestKey] = scheme;
         }
         if (!mounted || _activeRequestKey != requestKey) return;
         setState(() => _scheme = scheme);
@@ -133,7 +129,27 @@ class _PlaylistArtworkThemeState extends ConsumerState<PlaylistArtworkTheme> {
         if (identical(_pendingSchemes[requestKey], future)) {
           _pendingSchemes.remove(requestKey);
         }
+        if (!mounted || _activeRequestKey != requestKey) return;
+        setState(() => _scheme = null);
       },
+    );
+  }
+
+  static Future<ColorScheme?> _loadScheme(
+    ImageProvider<Object> provider,
+    Brightness brightness,
+  ) async {
+    final colors = await loadArtworkColors(provider);
+    if (colors == null) return null;
+    var seed = colors.accent ?? colors.baseColor;
+    // Keep monochrome covers neutral, as the player controls do. The flow
+    // palette gives them a small artificial saturation for its animation.
+    if (HSLColor.fromColor(seed).saturation <= 0.22) seed = colors.baseColor;
+    return ColorScheme.fromSeed(
+      seedColor: seed,
+      brightness: brightness,
+      dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
+      contrastLevel: 0.1,
     );
   }
 
@@ -226,9 +242,9 @@ class ImmersivePlaylistHeader extends StatelessWidget {
       provider: artworkProvider,
       loading: artworkLoading,
     );
-    // scrim 与顶栏既叠在头图上，也随封面 Hero 的 shuttle 一起飞行（落地前
-    // 淡入），飞行结束时不会突然出现。同一组 widget 会同时出现在两棵子树
-    // 里，所以 [topBar] 不能带 GlobalKey。
+    // Hero 位于页面顶栏上方，飞行时也要绘制顶栏，才能在落地前接上。
+    // showTopBar 只控制头图原位；外置滚动顶栏的页面应传入相同的静态外观。
+    // 同一组 widget 会同时出现在两棵子树里，所以 [topBar] 不能带 GlobalKey。
     final overlays = <Widget>[
       const DecoratedBox(
         decoration: BoxDecoration(
@@ -267,9 +283,7 @@ class ImmersivePlaylistHeader extends StatelessWidget {
               tag: tag,
               transitionOnUserGestures: true,
               createRectTween: containerTransformHeroRectTween,
-              // 飞行期间头图原位照常绘制，shuttle 只是叠在其上：落地零跳变，
-              // 卡片封面比头图窄时（榜单横向卡片）露出的部分也是同一张图。
-              placeholderBuilder: (_, _, child) => child,
+              // 使用 Hero 默认占位保留布局，避免大头图与移动封面同时绘制。
               flightShuttleBuilder:
                   (flightContext, animation, direction, fromHero, toHero) =>
                       buildArtworkHeroFlightShuttle(
@@ -312,12 +326,16 @@ class ScrollingImmersivePlaylistBody extends StatelessWidget {
   const ScrollingImmersivePlaylistBody({
     super.key,
     required this.child,
+    this.scrollStorageId,
+    this.persistScrollOrigin = true,
     this.title = '',
     this.onBack,
     this.topBarBuilder,
   });
 
   final Widget child;
+  final Object? scrollStorageId;
+  final bool persistScrollOrigin;
   final String title;
   final VoidCallback? onBack;
   final Widget Function(
@@ -380,7 +398,14 @@ class ScrollingImmersivePlaylistBody extends StatelessWidget {
               onBack: onBack,
             );
           },
-          child: child,
+          child: ContainerTransformScrollRegion(
+            key: ValueKey(('compact-scroll-origin', scrollStorageId)),
+            storageId: scrollStorageId == null
+                ? null
+                : ('compact', scrollStorageId),
+            persistScrollOrigin: persistScrollOrigin,
+            child: child,
+          ),
         );
       },
     );

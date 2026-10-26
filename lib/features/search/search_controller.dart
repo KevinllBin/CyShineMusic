@@ -269,7 +269,9 @@ class SearchController extends Notifier<SearchState> {
     );
     try {
       final result = await future;
-      if (revision == _settingsRevision) {
+      // Catalog failures are returned as notices, not thrown. Keep them
+      // retryable when a user switches categories or submits the query again.
+      if (revision == _settingsRevision && result.notices.isEmpty) {
         if (_responseCache.length >= 48) {
           _responseCache.remove(_responseCache.keys.first);
         }

@@ -62,26 +62,121 @@ class ContainerTransformExtra<T extends Object> {
   final ContainerTransformOrigin? origin;
 }
 
-/// 页面内容不透明度（M3 fade-through）：容器展开不到三成时保持透明，
-/// 之后随展开线性淡入；收回时先淡出、再由容器独自缩回卡片。
-double containerTransformContentOpacity(double progress) {
-  return ((progress - 0.3) / 0.7).clamp(0.0, 1.0);
+/// 会带走详情封面的滚动区域；在首次布局前恢复过渡选择，避免 Hero 先飞行。
+class ContainerTransformScrollRegion extends StatefulWidget {
+  const ContainerTransformScrollRegion({
+    super.key,
+    this.storageId,
+    this.persistScrollOrigin = true,
+    required this.child,
+  });
+
+  final Object? storageId;
+
+  /// 加载/错误占位仍跟踪当前滚动，但不能用自己的短列表覆盖保存的位置。
+  final bool persistScrollOrigin;
+  final Widget child;
+
+  @override
+  State<ContainerTransformScrollRegion> createState() =>
+      _ContainerTransformScrollRegionState();
 }
 
-/// 容器底色、描边、阴影的不透明度：只在贴合卡片的最后 8% 行程内淡出。
-/// 收回落地时卡片文字从容器下透出而不是硬切；展开时这段只占一两帧。
+class _ContainerTransformScrollRegionState
+    extends State<ContainerTransformScrollRegion> {
+  _ContainerTransformTransitionState? _transition;
+  bool _atScrollOrigin = true;
+  bool? _savedScrollOrigin;
+  bool _restored = false;
+
+  Object? get _storageKey => widget.storageId == null
+      ? null
+      : (ContainerTransformScrollRegion, widget.storageId);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _transition = context
+        .findAncestorStateOfType<_ContainerTransformTransitionState>();
+    if (_restored) return;
+    _restored = true;
+    if (_storageKey case final key?) {
+      _savedScrollOrigin =
+          PageStorage.maybeOf(context)?.readState(context, identifier: key)
+              as bool?;
+      _atScrollOrigin = _savedScrollOrigin ?? true;
+    }
+    // 这里只初始化字段，不在子树构建期间请求祖先重建。
+    // 区域内的 HeroMode 会立即生效，容器在首个动画帧读取相同选择。
+    _transition?._restoreScrollOrigin(_atScrollOrigin);
+  }
+
+  void _updateScrollOrigin(ScrollMetrics metrics, int depth) {
+    if (depth != 0 || metrics.axis != Axis.vertical) return;
+    final atOrigin = (metrics.pixels - metrics.minScrollExtent).abs() <= 1;
+    _transition?._updateScrollOrigin(atOrigin);
+    if (widget.persistScrollOrigin &&
+        _storageKey != null &&
+        _savedScrollOrigin != atOrigin) {
+      PageStorage.maybeOf(
+        context,
+      )?.writeState(context, atOrigin, identifier: _storageKey);
+      _savedScrollOrigin = atOrigin;
+    }
+    if (_atScrollOrigin == atOrigin) return;
+    setState(() => _atScrollOrigin = atOrigin);
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      NotificationListener<ScrollMetricsNotification>(
+        onNotification: (notification) {
+          _updateScrollOrigin(notification.metrics, notification.depth);
+          return false;
+        },
+        child: NotificationListener<ScrollNotification>(
+          onNotification: (notification) {
+            _updateScrollOrigin(notification.metrics, notification.depth);
+            return false;
+          },
+          child: AnimatedBuilder(
+            animation:
+                _transition?.widget.animation ?? kAlwaysCompleteAnimation,
+            builder: (context, child) => HeroMode(
+              enabled: _transition?._heroEnabled ?? _atScrollOrigin,
+              child: child!,
+            ),
+            child: widget.child,
+          ),
+        ),
+      );
+}
+
+/// 页面内容随容器全程柔和淡入/淡出，不在收回中途突然变成空壳。
+double containerTransformContentOpacity(double progress) {
+  return _smoothOpacity(progress);
+}
+
+/// 底色与内容重叠淡出，让搜索结果在封面收回途中逐渐透出。
+/// 只在靠近整页时保持实色，避免返回后半段只剩一个遮挡列表的矩形。
 double containerTransformFillOpacity(double progress) {
-  return (progress / 0.08).clamp(0.0, 1.0);
+  return _smoothOpacity(progress / 0.85);
+}
+
+double _smoothOpacity(double progress) {
+  final t = progress.clamp(0.0, 1.0);
+  return t * t * (3 - 2 * t);
 }
 
 /// 路由 `transitionsBuilder`：页面从 [origin] 卡片矩形展开成整页，返回时
 /// 原路收回。圆角、底色、描边与浮起阴影一起过渡；页面内容按 fitWidth 从
-/// 卡片宽度放大到整页，并按 fade-through 在容器展开后淡入。
+/// 卡片宽度放大到整页，与背景重叠淡入、淡出。
 ///
 /// 稳定态所有包装层都退化为恒等参数（不裁剪、不缩放、不透明、无装饰），
 /// 页面没有额外合成开销；包装层本身始终存在、不做增删，避免子树重挂载。
 ///
 /// [origin] 为 null（深链、无卡片入口）时退化为整页淡入 + 轻微放大。
+/// 恢复到已滚动的详情时，进入和返回均使用整页轻微缩放与淡变。
 class ContainerTransformTransition extends StatefulWidget {
   const ContainerTransformTransition({
     super.key,
@@ -105,12 +200,57 @@ class ContainerTransformTransition extends StatefulWidget {
 class _ContainerTransformTransitionState
     extends State<ContainerTransformTransition> {
   late CurvedAnimation _progress = _curve(widget.animation);
+  late AnimationStatus _status = widget.animation.status;
+  bool _atScrollOrigin = true;
+  bool _restoredScrollOrigin = false;
+  bool _fadeTransition = false;
+
+  bool get _heroEnabled =>
+      _status == AnimationStatus.completed ? _atScrollOrigin : !_fadeTransition;
+
+  void _restoreScrollOrigin(bool atOrigin) {
+    if (_restoredScrollOrigin) return;
+    _restoredScrollOrigin = true;
+    _atScrollOrigin = atOrigin;
+    _fadeTransition = !atOrigin;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    widget.animation.addStatusListener(_handleStatus);
+  }
+
+  void _handleStatus(AnimationStatus status) {
+    setState(() {
+      // 只在完整展开后选择退场方式；进入途中立即返回仍沿原轨迹倒放。
+      // 返回中锁定选择，避免惯性滚动/手势取消导致两种几何轨迹跳变。
+      if (status == AnimationStatus.reverse &&
+          _status == AnimationStatus.completed) {
+        _fadeTransition = !_atScrollOrigin;
+      } else if (status == AnimationStatus.completed ||
+          status == AnimationStatus.dismissed) {
+        _fadeTransition = false;
+      }
+      _status = status;
+    });
+  }
+
+  void _updateScrollOrigin(bool atOrigin) {
+    if (_atScrollOrigin == atOrigin) return;
+    // 只在离开/回到起点时重建 HeroMode，不随每个滚动像素重建页面。
+    if (_status == AnimationStatus.completed) {
+      setState(() => _atScrollOrigin = atOrigin);
+    } else {
+      _atScrollOrigin = atOrigin;
+    }
+  }
 
   static CurvedAnimation _curve(Animation<double> parent) {
     return CurvedAnimation(
       parent: parent,
-      curve: AppMotion.emphasized,
-      reverseCurve: AppMotion.emphasized.flipped,
+      curve: AppMotion.containerTransform,
+      reverseCurve: AppMotion.containerTransform.flipped,
     );
   }
 
@@ -118,19 +258,27 @@ class _ContainerTransformTransitionState
   void didUpdateWidget(covariant ContainerTransformTransition oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.animation, widget.animation)) {
+      oldWidget.animation.removeStatusListener(_handleStatus);
       _progress.dispose();
       _progress = _curve(widget.animation);
+      _status = widget.animation.status;
+      widget.animation.addStatusListener(_handleStatus);
     }
   }
 
   @override
   void dispose() {
+    widget.animation.removeStatusListener(_handleStatus);
     _progress.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    return HeroMode(enabled: _heroEnabled, child: _buildTransition(context));
+  }
+
+  Widget _buildTransition(BuildContext context) {
     final origin = widget.origin;
     if (origin == null) {
       return FadeTransition(
@@ -163,14 +311,20 @@ class _ContainerTransformTransitionState
   ) {
     final t = _progress.value.clamp(0.0, 1.0);
     final settled = t >= 1;
-    final rect = settled ? full : Rect.lerp(origin.rect, full, t)!;
-    final radius = BorderRadius.lerp(
-      origin.borderRadius,
-      BorderRadius.zero,
-      t,
-    )!;
+    // 沿用同一棵包装子树，退场切换不重挂载页面，也不把列表滚回顶部。
+    final start = _fadeTransition
+        ? Rect.fromCenter(
+            center: full.center,
+            width: full.width * 0.985,
+            height: full.height * 0.985,
+          )
+        : origin.rect;
+    final rect = settled ? full : Rect.lerp(start, full, t)!;
+    final radius = _fadeTransition
+        ? BorderRadius.zero
+        : BorderRadius.lerp(origin.borderRadius, BorderRadius.zero, t)!;
     final scale = full.width > 0 ? rect.width / full.width : 1.0;
-    final fill = containerTransformFillOpacity(t);
+    final fill = _fadeTransition ? 0.0 : containerTransformFillOpacity(t);
     final lift = (1 - t) * fill;
     final surface = Color.lerp(
       origin.color ?? scheme.surface,
@@ -207,7 +361,9 @@ class _ContainerTransformTransitionState
             child: ClipRRect(
               key: ContainerTransformTransition.surfaceKey,
               borderRadius: radius,
-              clipBehavior: settled ? Clip.none : Clip.antiAlias,
+              clipBehavior: settled || _fadeTransition
+                  ? Clip.none
+                  : Clip.antiAlias,
               child: OverflowBox(
                 alignment: Alignment.topLeft,
                 minWidth: full.width,
@@ -232,27 +388,30 @@ class _ContainerTransformTransitionState
 }
 
 /// 封面 Hero 的 [Hero.createRectTween]。Hero 内部固定用 fastOutSlowIn 驱动
-/// 飞行，这里把它重映射为 [AppMotion.emphasized]，让封面与容器沿同一条曲线
-/// 运动，飞行全程贴合容器的左上角。
+/// 飞行，这里把它重映射为 [AppMotion.containerTransform]，让封面与容器
+/// 沿同一条曲线运动，共同柔和起步、减速落地。
 ///
 /// Hero 只看目标端的 createRectTween（push 看页面端、pop 看卡片端），
 /// 所以两端都要挂上。
 Tween<Rect?> containerTransformHeroRectTween(Rect? begin, Rect? end) {
-  return _EmphasizedHeroRectTween(begin: begin, end: end);
+  return _ContainerTransformHeroRectTween(begin: begin, end: end);
 }
 
-class _EmphasizedHeroRectTween extends RectTween {
-  _EmphasizedHeroRectTween({super.begin, super.end});
+class _ContainerTransformHeroRectTween extends RectTween {
+  _ContainerTransformHeroRectTween({super.begin, super.end});
 
   @override
-  Rect? lerp(double t) => Rect.lerp(begin, end, emphasizedHeroProgress(t));
+  Rect? lerp(double t) =>
+      Rect.lerp(begin, end, containerTransformHeroProgress(t));
 }
 
-/// 把 Hero 传入的 fastOutSlowIn 进度换算成 emphasized 进度。
-double emphasizedHeroProgress(double t) {
+/// 把 Hero 传入的 fastOutSlowIn 进度换算成容器进度，正反向共用。
+double containerTransformHeroProgress(double t) {
   if (t <= 0) return 0;
   if (t >= 1) return 1;
-  return AppMotion.emphasized.transform(_invertCurve(Curves.fastOutSlowIn, t));
+  return AppMotion.containerTransform.transform(
+    _invertCurve(Curves.fastOutSlowIn, t),
+  );
 }
 
 /// 单调曲线求逆：二分 24 次。
@@ -305,7 +464,7 @@ class HeroArtworkShape extends StatelessWidget {
 /// 方向因此一致。
 ///
 /// * 圆角在卡片端与页面端之间插值（两端用 [HeroArtworkShape] 声明）；
-/// * 卡片端封面打底，页面端封面在前半程淡入——两端图源不同（榜单渐变
+/// * 卡片端封面打底，页面端封面随尺寸柔和淡入——两端图源不同（榜单渐变
 ///   占位 → 真实封面）时不再硬切；
 /// * [overlay]（头图 scrim、顶栏）在落地前淡入，飞行结束时不再突然出现。
 ///
@@ -384,8 +543,8 @@ class _ArtworkHeroShuttle extends StatelessWidget {
             page.borderRadius,
             progress,
           )!;
-          final pageOpacity = ((progress - 0.15) / 0.35).clamp(0.0, 1.0);
-          final overlayOpacity = ((progress - 0.55) / 0.45).clamp(0.0, 1.0);
+          final pageOpacity = _smoothOpacity(progress);
+          final overlayOpacity = _smoothOpacity((progress - 0.15) / 0.85);
           return ClipRRect(
             key: shuttleKey,
             borderRadius: radius,

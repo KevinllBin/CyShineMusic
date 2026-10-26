@@ -5,19 +5,19 @@ import 'package:cy_shine_music/core/ui/container_transform.dart';
 import 'package:cy_shine_music/theme/app_motion.dart';
 
 void main() {
-  test('hero progress remaps fastOutSlowIn onto the emphasized curve', () {
-    expect(emphasizedHeroProgress(0), 0);
-    expect(emphasizedHeroProgress(1), 1);
+  test('hero progress remaps fastOutSlowIn onto the container curve', () {
+    expect(containerTransformHeroProgress(0), 0);
+    expect(containerTransformHeroProgress(1), 1);
     for (final t in const [0.1, 0.25, 0.5, 0.75, 0.9]) {
       final heroValue = Curves.fastOutSlowIn.transform(t);
       expect(
-        emphasizedHeroProgress(heroValue),
-        closeTo(AppMotion.emphasized.transform(t), 5e-3),
+        containerTransformHeroProgress(heroValue),
+        closeTo(AppMotion.containerTransform.transform(t), 5e-3),
       );
     }
     var previous = 0.0;
     for (var step = 1; step <= 100; step++) {
-      final value = emphasizedHeroProgress(step / 100);
+      final value = containerTransformHeroProgress(step / 100);
       expect(value, greaterThanOrEqualTo(previous));
       previous = value;
     }
@@ -29,18 +29,18 @@ void main() {
     expect(tween.transform(1), const Rect.fromLTWH(0, 0, 200, 200));
     expect(
       tween.transform(Curves.fastOutSlowIn.transform(0.5))!.width,
-      closeTo(100 + 100 * AppMotion.emphasized.transform(0.5), 1e-3),
+      closeTo(100 + 100 * AppMotion.containerTransform.transform(0.5), 1e-3),
     );
   });
 
-  test('content fades in after the container opened a third of the way', () {
+  test('content and fill fade together throughout the transform', () {
     expect(containerTransformContentOpacity(0), 0);
-    expect(containerTransformContentOpacity(0.3), 0);
-    expect(containerTransformContentOpacity(0.65), closeTo(0.5, 1e-9));
+    expect(containerTransformContentOpacity(0.3), closeTo(0.216, 1e-9));
+    expect(containerTransformContentOpacity(0.5), closeTo(0.5, 1e-9));
     expect(containerTransformContentOpacity(1), 1);
     expect(containerTransformFillOpacity(0), 0);
-    expect(containerTransformFillOpacity(0.04), closeTo(0.5, 1e-9));
-    expect(containerTransformFillOpacity(0.08), 1);
+    expect(containerTransformFillOpacity(0.425), closeTo(0.5, 1e-9));
+    expect(containerTransformFillOpacity(0.85), 1);
     expect(containerTransformFillOpacity(1), 1);
   });
 
@@ -88,7 +88,7 @@ void main() {
 
     controller.value = 0.5;
     await tester.pump();
-    final t = AppMotion.emphasized.transform(0.5);
+    final t = AppMotion.containerTransform.transform(0.5);
     _expectRectCloseTo(
       tester.getRect(surface),
       Rect.lerp(origin.rect, full, t)!,
@@ -98,7 +98,10 @@ void main() {
       closeTo(containerTransformContentOpacity(t), 1e-9),
     );
     expect(decoration().boxShadow, isNotNull);
-    expect(decoration().color!.a, closeTo(1, 1e-9));
+    expect(
+      decoration().color!.a,
+      closeTo(containerTransformFillOpacity(t), 1e-9),
+    );
 
     controller.value = 1;
     await tester.pump();
@@ -110,11 +113,11 @@ void main() {
     expect(decoration().boxShadow, isNull);
     expect(decoration().border, isNull);
 
-    // 收回沿 emphasized.flipped 曲线：先快速缩小、再缓缓贴合卡片。
+    // 收回沿容器的 flipped 曲线，与封面一起柔和起步、减速贴合卡片。
     controller.reverse();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 150));
-    final reverseT = AppMotion.emphasized.flipped.transform(0.7);
+    final reverseT = AppMotion.containerTransform.flipped.transform(0.7);
     _expectRectCloseTo(
       tester.getRect(surface),
       Rect.lerp(origin.rect, full, reverseT)!,

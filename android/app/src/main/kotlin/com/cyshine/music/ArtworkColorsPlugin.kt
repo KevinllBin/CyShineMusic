@@ -47,6 +47,7 @@ class ArtworkColorsPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         }
         val path = call.argument<String>("path")
         val bytes = call.argument<ByteArray>("bytes")
+        val requestGroup = call.argument<String>("requestGroup")
         if (path.isNullOrEmpty() && (bytes == null || bytes.isEmpty())) {
             result.success(null)
             return
@@ -56,12 +57,14 @@ class ArtworkColorsPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             result.success(null)
             return
         }
-        // This channel serves the current player cover. Let an active job
-        // finish, but replace work which has not started with the latest one.
-        requests.toList().forEach { old ->
-            if (executor.remove(old)) old.complete(mapOf("cancelled" to true))
+        // Only rapidly changing consumers such as the player replace their
+        // queued work. Independent detail pages keep their FIFO requests.
+        if (requestGroup != null) requests.toList().forEach { old ->
+            if (old.requestGroup == requestGroup && executor.remove(old)) {
+                old.complete(mapOf("cancelled" to true))
+            }
         }
-        val request = Extraction(path, bytes, result)
+        val request = Extraction(path, bytes, requestGroup, result)
         requests.add(request)
         executor.execute(request)
     }
@@ -69,6 +72,7 @@ class ArtworkColorsPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     private inner class Extraction(
         private val path: String?,
         private val bytes: ByteArray?,
+        val requestGroup: String?,
         private val result: MethodChannel.Result,
     ) : Runnable {
         private var completed = false

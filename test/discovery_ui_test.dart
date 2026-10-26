@@ -17,6 +17,7 @@ import 'package:cy_shine_music/core/models/online_collection_kind.dart';
 import 'package:cy_shine_music/core/models/playlist_info.dart';
 import 'package:cy_shine_music/core/models/playlist_summary.dart';
 import 'package:cy_shine_music/core/models/search_response.dart';
+import 'package:cy_shine_music/core/models/search_category.dart';
 import 'package:cy_shine_music/core/music_sources/music_source_controller.dart';
 import 'package:cy_shine_music/core/storage/settings_store.dart';
 import 'package:cy_shine_music/core/ui/app_toast.dart';
@@ -1348,6 +1349,29 @@ class _FakeDiscoveryApi extends MusicApi {
       ],
     );
     return delayDetail ? _detail.future : Future.value(playlist);
+  }
+
+  @override
+  Future<SearchResponse> searchContent({
+    required String keyword,
+    required MusicSource source,
+    required SearchCategory category,
+    int page = 1,
+    int limit = 30,
+  }) {
+    // Keep this fake focused on search-controller caching. The real catalog
+    // fan-out can return partial notices, which are intentionally retryable
+    // and therefore not cached by the production controller.
+    searchRequests.add(
+      SearchQuery(
+        keyword: keyword,
+        source: source,
+        page: page,
+        category: category,
+      ),
+    );
+    if (delaySearch) return _search.future;
+    return Future.value(_searchResponse(source));
   }
 
   @override

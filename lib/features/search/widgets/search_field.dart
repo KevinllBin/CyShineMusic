@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/material.dart' as material show SearchController;
 
-class NativeSearchField extends StatelessWidget {
+class NativeSearchField extends StatefulWidget {
   const NativeSearchField({
     super.key,
     required this.controller,
@@ -21,6 +21,24 @@ class NativeSearchField extends StatelessWidget {
     material.SearchController controller,
   )
   suggestionsBuilder;
+
+  @override
+  State<NativeSearchField> createState() => _NativeSearchFieldState();
+}
+
+class _NativeSearchFieldState extends State<NativeSearchField> {
+  // Editing belongs to the search view. A focusable anchor can regain focus
+  // when platform-menu local history changes and reopen the keyboard.
+  final _barFocusNode = FocusNode(
+    debugLabel: 'search-anchor',
+    canRequestFocus: false,
+  );
+
+  @override
+  void dispose() {
+    _barFocusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -45,64 +63,74 @@ class NativeSearchField extends StatelessWidget {
     final shape = WidgetStatePropertyAll(
       RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     );
-    return SearchAnchor.bar(
-      searchController: controller,
+    return SearchAnchor(
+      searchController: widget.controller,
       isFullScreen: false,
-      barHintText: '搜索歌曲、艺人、歌单、专辑',
-      barLeading: Icon(
-        Icons.search_rounded,
-        color: scheme.onSurfaceVariant,
-        size: 20,
-      ),
-      barTrailing: [
-        _SearchTrailing(
-          controller: controller,
-          loading: loading,
-          onClear: onClear,
-        ),
-      ],
-      barElevation: const WidgetStatePropertyAll(0),
-      barBackgroundColor: WidgetStatePropertyAll(scheme.surfaceContainerHigh),
-      barOverlayColor: WidgetStateProperty.resolveWith((states) {
-        if (states.contains(WidgetState.pressed)) {
-          return scheme.primary.withValues(alpha: 0.08);
-        }
-        if (states.contains(WidgetState.hovered) ||
-            states.contains(WidgetState.focused)) {
-          return scheme.primary.withValues(alpha: 0.05);
-        }
-        return Colors.transparent;
-      }),
-      barSide: WidgetStatePropertyAll(
-        BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.28)),
-      ),
-      barShape: shape,
-      barPadding: const WidgetStatePropertyAll(
-        EdgeInsetsDirectional.fromSTEB(12, 0, 6, 0),
-      ),
-      barTextStyle: textStyle,
-      barHintStyle: hintStyle,
-      constraints: const BoxConstraints(minHeight: 48, maxHeight: 48),
-      viewConstraints: BoxConstraints(
-        maxHeight: math.min(MediaQuery.sizeOf(context).height * 0.52, 520),
-      ),
+      viewOnSubmitted: widget.onSubmitted,
+      viewHintText: '搜索歌曲、艺人、歌单、专辑',
+      viewBackgroundColor: scheme.surfaceContainerHigh,
+      viewElevation: 0,
       viewShape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
       ),
       viewSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.8)),
-      viewBackgroundColor: scheme.surfaceContainerHigh,
-      viewElevation: 0,
       dividerColor: scheme.outlineVariant.withValues(alpha: 0.72),
       viewBarPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-      viewHeaderHeight: 48,
-      viewHeaderTextStyle: textStyle.value,
-      viewHeaderHintStyle: hintStyle.value,
+      headerHeight: 48,
+      headerTextStyle: textStyle.value,
+      headerHintStyle: hintStyle.value,
+      viewConstraints: BoxConstraints(
+        maxHeight: math.min(MediaQuery.sizeOf(context).height * 0.52, 520),
+      ),
       shrinkWrap: true,
       textCapitalization: TextCapitalization.none,
       textInputAction: TextInputAction.search,
       keyboardType: TextInputType.text,
-      suggestionsBuilder: suggestionsBuilder,
-      onSubmitted: onSubmitted,
+      suggestionsBuilder: widget.suggestionsBuilder,
+      builder: (context, searchController) => SearchBar(
+        controller: searchController,
+        focusNode: _barFocusNode,
+        readOnly: true,
+        onTap: searchController.openView,
+        hintText: '搜索歌曲、艺人、歌单、专辑',
+        leading: Icon(
+          Icons.search_rounded,
+          color: scheme.onSurfaceVariant,
+          size: 20,
+        ),
+        trailing: [
+          _SearchTrailing(
+            controller: widget.controller,
+            loading: widget.loading,
+            onClear: widget.onClear,
+          ),
+        ],
+        elevation: const WidgetStatePropertyAll(0),
+        backgroundColor: WidgetStatePropertyAll(scheme.surfaceContainerHigh),
+        overlayColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.pressed)) {
+            return scheme.primary.withValues(alpha: 0.08);
+          }
+          if (states.contains(WidgetState.hovered) ||
+              states.contains(WidgetState.focused)) {
+            return scheme.primary.withValues(alpha: 0.05);
+          }
+          return Colors.transparent;
+        }),
+        side: WidgetStatePropertyAll(
+          BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.28)),
+        ),
+        shape: shape,
+        padding: const WidgetStatePropertyAll(
+          EdgeInsetsDirectional.fromSTEB(12, 0, 6, 0),
+        ),
+        textStyle: textStyle,
+        hintStyle: hintStyle,
+        constraints: const BoxConstraints(minHeight: 48, maxHeight: 48),
+        textCapitalization: TextCapitalization.none,
+        textInputAction: TextInputAction.search,
+        keyboardType: TextInputType.text,
+      ),
     );
   }
 }

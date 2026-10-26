@@ -8,6 +8,45 @@ import 'package:cy_shine_music/core/sdk/catalog_sdk.dart';
 import 'package:cy_shine_music/core/sdk/playlist_sdk.dart';
 
 void main() {
+  test('tx artist paging live search', () async {
+    final first = await CatalogSdk.search(
+      '陈',
+      MusicSource.tx,
+      SearchCategory.artists,
+      1,
+      3,
+    );
+    final second = await CatalogSdk.search(
+      '陈',
+      MusicSource.tx,
+      SearchCategory.artists,
+      2,
+      3,
+    );
+    print(
+      'tx artist pages: ${first.items.map((i) => i.summary.id).join(', ')} / ${second.items.map((i) => i.summary.id).join(', ')}',
+    );
+    expect(first.hasMore, isTrue);
+    expect(first.items, hasLength(3));
+    expect(second.items, isNotEmpty);
+    final ids = first.items.map((i) => i.summary.id).toSet();
+    expect(second.items.every((i) => !ids.contains(i.summary.id)), isTrue);
+  });
+
+  test('tx artist English live search', () async {
+    final result = await CatalogSdk.search(
+      'Taylor Swift',
+      MusicSource.tx,
+      SearchCategory.artists,
+      1,
+      3,
+    );
+    print(
+      'tx artist English: ${result.items.map((i) => i.summary.name).join(', ')}',
+    );
+    expect(result.items.first.summary.name, 'Taylor Swift');
+  });
+
   for (final source in [MusicSource.wy, MusicSource.tx, MusicSource.kw]) {
     for (final category in [
       SearchCategory.artists,

@@ -119,6 +119,8 @@ Map<String, List<QualityOption>> parseKgPrivilegeQualityDetails(Object? raw) {
       final info = good['info'];
       final size = info is Map ? sizeFormat(info['filesize']) : null;
       if (type == null || size == null) continue;
+      // Keep the source-script contract: master uses viper_clear metadata.
+      // viper_tape is a separate variant, even when it has a distinct hash.
       byType[type] = QualityOption(
         type: type,
         size: size,

@@ -6,7 +6,7 @@ import 'package:flutter/painting.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:cy_shine_music/features/player/artwork_colors.dart';
+import 'package:cy_shine_music/core/ui/artwork_colors.dart';
 
 const _channel = MethodChannel('cy_shine_music/artwork_colors');
 const _reply = <String, Object?>{
@@ -40,6 +40,7 @@ void main() {
       expect(call.method, 'extract');
       final arguments = call.arguments as Map;
       expect(arguments['bytes'], bytes);
+      expect(arguments.containsKey('requestGroup'), isFalse);
       expect(arguments.containsKey('rgba'), isFalse);
       return pending.future;
     });
@@ -70,14 +71,88 @@ void main() {
         calls++;
         return calls == 1 ? cancellation.future : _reply;
       });
-      final first = loadArtworkColors(provider);
-      final next = loadArtworkColors(other);
-      final returned = loadArtworkColors(provider);
+      final first = loadArtworkColors(provider, requestGroup: 'player');
+      final next = loadArtworkColors(other, requestGroup: 'player');
+      final returned = loadArtworkColors(provider, requestGroup: 'player');
       expect(returned, same(first));
       cancellation.complete({'cancelled': true});
       expect(await returned, isNotNull);
       expect(await next, isNotNull);
       expect(calls, 2);
+    },
+  );
+
+  test('shares source work across display sizes and request groups', () async {
+    final pending = Completer<Map<String, Object?>>();
+    final source = MemoryImage(Uint8List.fromList([20, 21, 22]));
+    final player = ResizeImage(source, width: 192, height: 192);
+    final detail = ResizeImage(source, width: 1200, height: 1200);
+    var calls = 0;
+    messenger.setMockMethodCallHandler(_channel, (call) async {
+      calls++;
+      expect((call.arguments as Map)['requestGroup'], 'player');
+      return pending.future;
+    });
+
+    final first = loadArtworkColors(player, requestGroup: 'player');
+    final sameGroup = loadArtworkColors(source, requestGroup: 'player');
+    final independent = loadArtworkColors(detail);
+    expect(sameGroup, same(first));
+    pending.complete(_reply);
+    final colors = await first;
+    expect(await independent, same(colors));
+    expect(await loadArtworkColors(detail), same(colors));
+    expect(calls, 1);
+  });
+
+  test('independent detail requests do not supersede each other', () async {
+    final firstReply = Completer<Map<String, Object?>>();
+    final firstCover = MemoryImage(Uint8List.fromList([30, 31, 32]));
+    final secondCover = MemoryImage(Uint8List.fromList([40, 41, 42]));
+    final playerCover = MemoryImage(Uint8List.fromList([50, 51, 52]));
+    final groups = <Object?>[];
+    messenger.setMockMethodCallHandler(_channel, (call) async {
+      final arguments = call.arguments as Map;
+      groups.add(arguments['requestGroup']);
+      final bytes = arguments['bytes'] as Uint8List;
+      return bytes.first == 30 ? firstReply.future : _reply;
+    });
+
+    final first = loadArtworkColors(firstCover);
+    final second = loadArtworkColors(secondCover);
+    final player = loadArtworkColors(playerCover, requestGroup: 'player');
+    firstReply.complete(_reply);
+    expect(await first, isNotNull);
+    expect(await second, isNotNull);
+    expect(await player, isNotNull);
+    expect(groups, [null, null, 'player']);
+  });
+
+  test(
+    'detail retries shared work cancelled by the next player cover',
+    () async {
+      final cancellation = Completer<Map<String, Object?>>();
+      final source = MemoryImage(Uint8List.fromList([60, 61, 62]));
+      final nextCover = MemoryImage(Uint8List.fromList([70, 71, 72]));
+      final sourceGroups = <Object?>[];
+      messenger.setMockMethodCallHandler(_channel, (call) async {
+        final arguments = call.arguments as Map;
+        final bytes = arguments['bytes'] as Uint8List;
+        if (bytes.first != 60) return _reply;
+        sourceGroups.add(arguments['requestGroup']);
+        return sourceGroups.length == 1 ? cancellation.future : _reply;
+      });
+
+      final oldPlayer = loadArtworkColors(source, requestGroup: 'player');
+      final detail = loadArtworkColors(source);
+      final nextPlayer = loadArtworkColors(nextCover, requestGroup: 'player');
+      cancellation.complete({'cancelled': true});
+      expect(await oldPlayer, isNull);
+      final colors = await detail;
+      expect(colors, isNotNull);
+      expect(await nextPlayer, isNotNull);
+      expect(sourceGroups, ['player', null]);
+      expect(await loadArtworkColors(source), same(colors));
     },
   );
 

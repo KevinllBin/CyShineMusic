@@ -7,9 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'flow_palette.dart';
-import 'widgets/lyric_ink.dart';
+import 'lyric_ink.dart';
 
-/// All player colors derived from one cover, shared by its visual consumers.
+/// Colors derived from one cover, shared by its visual consumers.
 class ArtworkColors {
   const ArtworkColors({
     required this.baseColor,
@@ -27,29 +27,42 @@ class ArtworkColors {
 
 const _channel = MethodChannel('cy_shine_music/artwork_colors');
 const _maxCachedColors = 12;
-final _loads = <ImageProvider<Object>, Future<ArtworkColors?>>{};
+typedef _LoadKey = ({ImageProvider<Object> provider, String? requestGroup});
+// These process-wide maps are the single shared cache for player and details.
+final _loads = <_LoadKey, Future<ArtworkColors?>>{};
 final _nativeResults = <Object, Future<ArtworkColors?>>{};
-ImageProvider<Object>? _requestedArtwork;
+final _requestedArtwork = <String, ImageProvider<Object>>{};
 
 /// Android samples an existing cached file or encoded memory cover as a
 /// software Bitmap. Only a few ARGB values come back through the channel.
 /// Other platforms and custom ImageProviders retain the Flutter implementation.
+/// A non-null [requestGroup] replaces queued work only within that group;
+/// independent detail pages leave it null and share the same result cache.
 Future<ArtworkColors?> loadArtworkColors(
   ImageProvider<Object> provider, {
   ImageConfiguration configuration = ImageConfiguration.empty,
+  String? requestGroup,
 }) {
-  _requestedArtwork = provider;
-  final pending = _loads[provider];
+  // Native extraction has its own bounded decode. Ignore display-only resize
+  // wrappers so the same cover can share work across the player and details.
+  while (provider is ResizeImage) {
+    provider = provider.imageProvider;
+  }
+  if (requestGroup != null) _requestedArtwork[requestGroup] = provider;
+  final key = (provider: provider, requestGroup: requestGroup);
+  final pending = _loads[key];
   if (pending != null) return pending;
-  final future = _load(provider, configuration);
-  _loads[provider] = future;
+  final future = _load(provider, configuration, requestGroup);
+  _loads[key] = future;
+  void removeLoad() {
+    if (identical(_loads[key], future)) _loads.remove(key);
+  }
+
   unawaited(
     future.then<void>(
-      (_) {
-        _loads.remove(provider);
-      },
+      (_) => removeLoad(),
       onError: (Object _, StackTrace _) {
-        _loads.remove(provider);
+        removeLoad();
       },
     ),
   );
@@ -59,13 +72,11 @@ Future<ArtworkColors?> loadArtworkColors(
 Future<ArtworkColors?> _load(
   ImageProvider<Object> provider,
   ImageConfiguration configuration,
+  String? requestGroup,
 ) async {
   if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
     try {
-      ImageProvider<Object> source = provider;
-      while (source is ResizeImage) {
-        source = source.imageProvider;
-      }
+      final source = provider;
       final Map<String, Object> arguments;
       final Object key;
       if (source is MemoryImage) {
@@ -99,13 +110,11 @@ Future<ArtworkColors?> _load(
       }
       // An older download can finish after a newer cover. Do not let it
       // replace the current cover's queued native job.
-      if (_requestedArtwork != provider) return null;
+      if (!_isCurrent(provider, requestGroup)) return null;
       final cached = _nativeResults.remove(key);
-      if (cached != null) {
-        _nativeResults[key] = cached;
-        return await cached ?? await _loadFlutter(provider, configuration);
-      }
-      final result = _extractNative(arguments);
+      final result =
+          cached ??
+          _extractNative({...arguments, 'requestGroup': ?requestGroup});
       _nativeResults[key] = result;
       while (_nativeResults.length > _maxCachedColors) {
         _nativeResults.remove(_nativeResults.keys.first);
@@ -121,9 +130,11 @@ Future<ArtworkColors?> _load(
         rethrow;
       }
     } on _CancelledExtraction {
-      // A -> B -> A can reuse A's pending Future just as Android cancels its
-      // queued job. Restart it when A has become the current cover again.
-      if (_requestedArtwork == provider) return _load(provider, configuration);
+      // A detail may share a player job which the next song cancels. Retry
+      // independent consumers, and A -> B -> A when A is current again.
+      if (_isCurrent(provider, requestGroup)) {
+        return _load(provider, configuration, requestGroup);
+      }
       return null;
     } on MissingPluginException {
       // A widget can start the audio engine before an Activity attaches the
@@ -135,6 +146,9 @@ Future<ArtworkColors?> _load(
   }
   return _loadFlutter(provider, configuration);
 }
+
+bool _isCurrent(ImageProvider<Object> provider, String? requestGroup) =>
+    requestGroup == null || _requestedArtwork[requestGroup] == provider;
 
 Future<ArtworkColors?> _extractNative(Map<String, Object> arguments) async {
   final result = await _channel.invokeMapMethod<String, Object?>(
@@ -201,7 +215,22 @@ Future<ArtworkColors?> _loadFlutter(
   final result = Completer<ArtworkColors?>();
   final ImageStream stream;
   try {
-    stream = provider.resolve(configuration);
+    // Bound decoding for standard cover providers. Custom providers may
+    // supply their own completer and must retain their resolve behavior.
+    final canResize =
+        provider is MemoryImage ||
+        provider is FileImage ||
+        provider is NetworkImage ||
+        provider is CachedNetworkImageProvider;
+    stream = canResize
+        ? ResizeImage(
+            provider,
+            width: 192,
+            height: 192,
+            policy: ResizeImagePolicy.fit,
+            allowUpscaling: false,
+          ).resolve(configuration)
+        : provider.resolve(configuration);
   } catch (_) {
     return null;
   }
@@ -234,7 +263,7 @@ Future<ArtworkColors?> _loadFlutter(
               : await compute(
                   _extractFlutter,
                   pixels,
-                  debugLabel: 'player-artwork-colors',
+                  debugLabel: 'artwork-colors',
                 );
         }
       } catch (_) {

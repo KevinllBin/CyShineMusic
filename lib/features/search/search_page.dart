@@ -47,7 +47,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   void initState() {
     super.initState();
     _controller = material.SearchController();
-    _resultsScrollController = ScrollController();
+    // Loading replaces the list. Each new result starts at the top instead of
+    // restoring the previous list's PageStorage offset when it reattaches.
+    _resultsScrollController = ScrollController(keepScrollOffset: false);
     _controller.text = ref.read(searchControllerProvider).keyword;
   }
 
@@ -119,7 +121,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   Future<void> _runSearch({
     String? keyword,
     int page = 1,
-    bool scrollToTopOnSuccess = false,
+    bool scrollToTopOnSuccess = true,
     bool recordHistory = true,
   }) async {
     DebugPaintGuard.disableNow();
@@ -159,12 +161,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         response?.page == page;
     if (!requestStillMatches) return;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_resultsScrollController.hasClients) return;
-      _resultsScrollController.jumpTo(
-        _resultsScrollController.position.minScrollExtent,
-      );
-    });
+    _resetResultsScroll();
   }
 
   @override
@@ -373,12 +370,11 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     if (previous != null &&
         (previous.category != next.category ||
             previous.source != next.source ||
-            previous.keyword != next.keyword)) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _resultsScrollController.hasClients) {
-          _resultsScrollController.jumpTo(0);
-        }
-      });
+            previous.keyword != next.keyword ||
+            previous.page != next.page ||
+            (next.response != null &&
+                !identical(previous.response, next.response)))) {
+      _resetResultsScroll();
     }
     if (next.error != null && next.error != previous?.error) {
       _dismissSearchErrorToast();
@@ -390,6 +386,15 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     } else if (next.error == null && previous?.error != null) {
       _dismissSearchErrorToast();
     }
+  }
+
+  void _resetResultsScroll() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_resultsScrollController.hasClients) return;
+      _resultsScrollController.jumpTo(
+        _resultsScrollController.position.minScrollExtent,
+      );
+    });
   }
 
   void _dismissSearchErrorToast() {

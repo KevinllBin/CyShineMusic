@@ -59,6 +59,8 @@ class PlaylistWideInfoPane extends StatelessWidget {
     required this.metadata,
     this.artworkLoading = false,
     this.artworkHeroTag,
+    this.scrollStorageId,
+    this.persistScrollOrigin = true,
     this.description,
     this.descriptionLoading = false,
     this.actions,
@@ -68,6 +70,8 @@ class PlaylistWideInfoPane extends StatelessWidget {
   final ImageProvider<Object>? artworkProvider;
   final bool artworkLoading;
   final Object? artworkHeroTag;
+  final Object? scrollStorageId;
+  final bool persistScrollOrigin;
   final String title;
   final String metadata;
   final String? description;
@@ -87,36 +91,42 @@ class PlaylistWideInfoPane extends StatelessWidget {
         loading: artworkLoading,
       ),
     );
-    return SingleChildScrollView(
-      key: const ValueKey('playlist-wide-info-pane'),
-      physics: const BouncingScrollPhysics(
-        parent: AlwaysScrollableScrollPhysics(),
-      ),
-      padding: EdgeInsets.fromLTRB(20, 4, 12, bottomPadding),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (artworkHeroTag case final tag?)
-            Hero(
-              tag: tag,
-              transitionOnUserGestures: true,
-              createRectTween: containerTransformHeroRectTween,
-              placeholderBuilder: (_, _, child) => child,
-              flightShuttleBuilder: buildArtworkHeroFlightShuttle,
-              // 卡片端圆角 → 这里的 20dp 圆角，由 shuttle 在飞行中插值。
-              child: HeroArtworkShape(borderRadius: radius, child: artwork),
-            )
-          else
-            ClipRRect(borderRadius: radius, child: artwork),
-          PlaylistDetailInfo(
-            title: title,
-            metadata: metadata,
-            description: description,
-            descriptionLoading: descriptionLoading,
-            padding: const EdgeInsets.fromLTRB(0, 16, 0, 0),
-          ),
-          ?actions,
-        ],
+    return ContainerTransformScrollRegion(
+      key: scrollStorageId != null && persistScrollOrigin
+          ? PageStorageKey(('playlist-wide-info-pane', scrollStorageId))
+          : null,
+      storageId: scrollStorageId == null ? null : ('wide', scrollStorageId),
+      persistScrollOrigin: persistScrollOrigin,
+      child: SingleChildScrollView(
+        key: const ValueKey('playlist-wide-info-pane'),
+        physics: const BouncingScrollPhysics(
+          parent: AlwaysScrollableScrollPhysics(),
+        ),
+        padding: EdgeInsets.fromLTRB(20, 4, 12, bottomPadding),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (artworkHeroTag case final tag?)
+              Hero(
+                tag: tag,
+                transitionOnUserGestures: true,
+                createRectTween: containerTransformHeroRectTween,
+                flightShuttleBuilder: buildArtworkHeroFlightShuttle,
+                // 卡片端圆角 → 这里的 20dp 圆角，由 shuttle 在飞行中插值。
+                child: HeroArtworkShape(borderRadius: radius, child: artwork),
+              )
+            else
+              ClipRRect(borderRadius: radius, child: artwork),
+            PlaylistDetailInfo(
+              title: title,
+              metadata: metadata,
+              description: description,
+              descriptionLoading: descriptionLoading,
+              padding: const EdgeInsets.fromLTRB(0, 16, 0, 0),
+            ),
+            ?actions,
+          ],
+        ),
       ),
     );
   }

@@ -57,14 +57,35 @@ class TxCatalog {
       );
     }
     final artist = category == SearchCategory.artists;
-    final body = await catalogJson(
-      'https://c.y.qq.com/soso/fcgi-bin/client_search_cp?p=$page&n=$limit&w=${Uri.encodeComponent(keyword)}&format=json&t=${artist ? 9 : 8}',
+    const module = 'music.search.SearchCgiService';
+    // This search endpoint needs the module name as its request key and no
+    // top-level comm block. The legacy client_search_cp endpoint returns 500.
+    final request = jsonEncode({
+      module: {
+        'module': module,
+        'method': 'DoSearchForQQMusicDesktop',
+        'param': {
+          'search_type': artist ? 1 : 2,
+          'query': keyword,
+          'page_num': page,
+          'num_per_page': limit,
+        },
+      },
+    });
+    final response = await catalogJson(
+      'https://u.y.qq.com/cgi-bin/musicu.fcg?data=${Uri.encodeComponent(request)}',
       loader: loader,
       headers: headers,
     );
-    if (body['code'] != 0) throw Exception('QQ 搜索暂时不可用');
+    final result = catalogMap(response[module]);
+    final payload = catalogMap(result['data']);
+    if (response['code'] != 0 ||
+        result['code'] != 0 ||
+        (payload['code'] != null && payload['code'] != 0)) {
+      throw Exception('QQ 搜索暂时不可用');
+    }
     final data = catalogMap(
-      catalogMap(body['data'])[artist ? 'singer' : 'album'],
+      catalogMap(payload['body'])[artist ? 'singer' : 'album'],
     );
     if (data['list'] is! List) throw Exception('QQ 搜索暂时不可用');
     final items = catalogMaps(data['list'])
@@ -92,7 +113,7 @@ class TxCatalog {
         })
         .where((i) => i.summary.id.isNotEmpty)
         .toList();
-    final total = catalogInt(data['totalnum']);
+    final total = catalogInt(catalogMap(payload['meta'])['sum']);
     return CatalogResult(
       items: items,
       total: total,

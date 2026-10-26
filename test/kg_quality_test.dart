@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:cy_shine_music/core/models/enums.dart';
 import 'package:cy_shine_music/core/models/music_info.dart';
+import 'package:cy_shine_music/core/sdk/internal/builders.dart';
 import 'package:cy_shine_music/core/sdk/internal/kg_quality.dart';
+import 'package:cy_shine_music/core/sdk/playlist_adapters/kg_playlist_adapter.dart';
 
 void main() {
   const baseHash = '8141FAA45AAD5BCFF5FF9873B89709E3';
@@ -88,6 +90,70 @@ void main() {
     );
 
     expect(cover, 'http://imge.kugou.com/stdmusic/480/cover.png');
+  });
+
+  test('keeps Wo Bu Nan Guo master size and hash on viper_clear', () {
+    // Live metadata from Sun Yanzi's studio recording, 2026-10-26. Tape has
+    // a different hash from 320K but only 34 more bytes; clear is 133.72 MiB.
+    const songHash = '3FD7E1EC51122C745C637735C8BDE716';
+    const clearHash = 'DAEFA540E03EE3C70FFAFBC0BCFF252C';
+    final goods = [
+      _good('128', 5127719, songHash),
+      _good('320', 12819004, 'C4F5F3EAB5EDDA7E150A02BBE9D4D2E3'),
+      _good('flac', 35801703, '40652F6D57A19CC77E9E2416A5A4F8EE'),
+      _good('high', 36507181, 'BBB4612A8CDADC66379213532AD01EAB'),
+      _good('viper_atmos', 78662621, '8EEF9EA5C5642056B0B12041D6CCF4A2'),
+      _good('viper_tape', 12819038, '8FE823EE6E30CD2CE8EA5FB1B6E49535'),
+      _good('viper_clear', 140213422, clearHash),
+    ];
+
+    for (final orderedGoods in [goods, goods.reversed.toList()]) {
+      final details = parseKgPrivilegeQualityDetails({
+        'error_code': 0,
+        'data': [
+          {'hash': songHash, 'relate_goods': orderedGoods},
+        ],
+      });
+      final music = KgPlaylistAdapter.parseTrack({
+        'audio_id': 284977,
+        'hash': songHash,
+        'songname': '我不难过',
+        'singername': '孙燕姿',
+        'filesize': 5127719,
+        '320filesize': 12819004,
+        '320hash': 'C4F5F3EAB5EDDA7E150A02BBE9D4D2E3',
+      }, qualityDetails: details[songHash])!;
+      final byType = {
+        for (final option in music.meta.qualitys) option.type: option,
+      };
+
+      expect(music.bestQuality, Quality.master);
+      expect(byType[Quality.master]?.size, '133.72M');
+      expect(byType[Quality.master]?.hash, clearHash);
+      expect(byType[Quality.k320]?.size, '12.23M');
+      final payload = toOldMusicInfoJson(music, quality: Quality.master);
+      expect((payload['_types'] as Map)['master'], {
+        'size': '133.72M',
+        'hash': clearHash,
+      });
+    }
+  });
+
+  test('does not substitute tape for a missing viper_clear variant', () {
+    final details = parseKgPrivilegeQualityDetails({
+      'error_code': 0,
+      'data': [
+        {
+          'hash': baseHash,
+          'relate_goods': [
+            _good('320', 12819004, 'MP3_HASH'),
+            _good('viper_tape', 12819038, 'DIFFERENT_TAPE_HASH'),
+          ],
+        },
+      ],
+    });
+
+    expect(details[baseHash]!.map((option) => option.type), [Quality.k320]);
   });
 
   test('merges detail results without dropping search-response fallbacks', () {
