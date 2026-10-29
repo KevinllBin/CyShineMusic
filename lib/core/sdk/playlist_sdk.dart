@@ -19,9 +19,21 @@ class PlaylistSdk {
     MusicSource source = MusicSource.all,
     int? maxTracks,
   }) async {
+    final directTarget = parseTarget(input, source: source);
+    if (directTarget == null &&
+        source == MusicSource.all &&
+        RegExp(r'^\d{4,}$').hasMatch(input.trim())) {
+      try {
+        return await KgPlaylistAdapter.parse(
+          'code:${input.trim()}',
+          maxTracks: maxTracks,
+        );
+      } catch (_) {
+        // Bare numeric playlist IDs remain ambiguous across platforms.
+      }
+    }
     final target =
-        parseTarget(input, source: source) ??
-        await _parseRedirectTarget(input, source: source);
+        directTarget ?? await _parseRedirectTarget(input, source: source);
     if (target == null) {
       throw Exception('无法识别歌单链接或 ID');
     }
@@ -47,9 +59,10 @@ class PlaylistSdk {
   }) {
     final text = input.trim();
     if (text.isEmpty) return null;
-    if (source == MusicSource.kg) {
+    if (source == MusicSource.kg || source == MusicSource.all) {
       final kgId = _parseKgText(text);
-      if (kgId != null) {
+      if (kgId != null &&
+          (source == MusicSource.kg || kgId.startsWith('code:'))) {
         return ParsedPlaylistTarget(id: kgId, source: MusicSource.kg);
       }
     }
@@ -237,9 +250,15 @@ class PlaylistSdk {
     }
     if (text.startsWith('global:') ||
         text.startsWith('chain:') ||
-        text.startsWith('gcid:')) {
+        text.startsWith('gcid:') ||
+        text.startsWith('code:')) {
       return text;
     }
+    final shareCode = RegExp(
+      r'^(?:酷狗码|酷狗碼|kugou\s*code)\s*[:：]?\s*(\d{4,})$',
+      caseSensitive: false,
+    ).firstMatch(text);
+    if (shareCode != null) return 'code:${shareCode.group(1)}';
 
     final uri = Uri.tryParse(text);
     if (uri != null && uri.host.isNotEmpty) {

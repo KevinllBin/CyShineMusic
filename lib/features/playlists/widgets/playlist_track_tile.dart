@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_slidable/flutter_slidable.dart';
-
-import '../../../core/ui/expressive_download_button.dart';
 import '../../../theme/app_motion.dart';
 import '../../downloads/download_progress.dart';
+import '../../songs/widgets/song_actions_menu.dart';
 import '../resolved_playlist_track.dart';
 import 'playlist_artwork.dart';
 
@@ -25,6 +23,7 @@ class PlaylistTrackTile extends ConsumerWidget {
     required this.onToggleSelected,
     required this.onPlay,
     required this.onDownload,
+    required this.onAddNext,
     required this.onRemove,
   });
 
@@ -38,6 +37,7 @@ class PlaylistTrackTile extends ConsumerWidget {
   final VoidCallback onToggleSelected;
   final VoidCallback onPlay;
   final VoidCallback? onDownload;
+  final VoidCallback? onAddNext;
   final VoidCallback onRemove;
 
   @override
@@ -73,7 +73,7 @@ class PlaylistTrackTile extends ConsumerWidget {
         ? scheme.primary.withValues(alpha: 0.86)
         : scheme.onSurfaceVariant;
 
-    final row = AnimatedContainer(
+    return AnimatedContainer(
       duration: shortDuration,
       curve: AppMotion.emphasized,
       constraints: const BoxConstraints(minHeight: _trackRowMinHeight),
@@ -204,28 +204,13 @@ class PlaylistTrackTile extends ConsumerWidget {
                                 ),
                               ),
                             )
-                          : Row(
-                              key: const ValueKey('playlist-track-actions'),
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (!isLocal && onDownload != null)
-                                  ExpressiveDownloadButton(
-                                    key: const ValueKey(
-                                      'playlist-download-action',
-                                    ),
-                                    isLoading: task?.isBusy ?? false,
-                                    isDone: task?.stage == DownloadStage.done,
-                                    progress: task?.fraction,
-                                    onPressed: task?.isBusy == true
-                                        ? null
-                                        : onDownload,
-                                    tooltip: '选择音质下载',
-                                    size: 44,
-                                    tonal: true,
-                                  )
-                                else
-                                  const SizedBox.square(dimension: 44),
-                              ],
+                          : SongActionsMenu.playlist(
+                              key: ValueKey('playlist-menu-${item.track.id}'),
+                              onRemove: onRemove,
+                              onAddNext: onAddNext,
+                              onDownload: onDownload,
+                              downloadTask: task,
+                              downloaded: isLocal,
                             ),
                     ),
                   ),
@@ -235,27 +220,6 @@ class PlaylistTrackTile extends ConsumerWidget {
           ),
         ),
       ),
-    );
-
-    return Slidable(
-      key: ValueKey('playlist-track-slide-${item.track.id}'),
-      groupTag: 'playlist-tracks',
-      enabled: !batchMode,
-      endActionPane: ActionPane(
-        motion: const BehindMotion(),
-        extentRatio: 0.24,
-        children: [
-          SlidableAction(
-            key: const ValueKey('playlist-remove-action'),
-            onPressed: (_) => onRemove(),
-            backgroundColor: scheme.error,
-            foregroundColor: scheme.onError,
-            icon: Icons.playlist_remove_rounded,
-            label: '移除',
-          ),
-        ],
-      ),
-      child: row,
     );
   }
 }

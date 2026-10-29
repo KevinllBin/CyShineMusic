@@ -17,6 +17,7 @@ import '../search/widgets/quality_picker_sheet.dart';
 import '../search/widgets/search_result_tile.dart';
 import 'playlist_cover_image.dart';
 import 'playlist_store.dart';
+import 'widgets/add_music_to_playlist.dart';
 
 class _OnlinePlaylistDraft {
   const _OnlinePlaylistDraft({
@@ -543,6 +544,7 @@ class _OnlineTrackTile extends ConsumerWidget {
     return SearchResultTile(
       music: music,
       onDownload: onDownload,
+      onAddToPlaylist: () => showAddMusicToPlaylist(context, ref, music),
       onPlay: onPlay,
       downloadTask: task,
     );

@@ -890,7 +890,7 @@ void main() {
       );
       expect(find.byTooltip('返回上一页'), findsOneWidget);
       expect(find.text('播放全部'), findsOneWidget);
-      expect(find.byTooltip('选择音质下载'), findsWidgets);
+      expect(find.byTooltip('歌曲操作'), findsWidgets);
       await tester.tap(find.text('收藏歌单'));
       await tester.pumpAndSettle();
 

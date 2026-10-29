@@ -6,10 +6,10 @@ import '../../../core/models/music_info.dart';
 import '../../../core/services/app_logger.dart';
 import '../../../core/ui/cover_image_source.dart';
 import '../../../core/ui/cover_placeholder.dart';
-import '../../../core/ui/expressive_download_button.dart';
 import '../../../theme/app_motion.dart';
 import '../../../theme/app_theme.dart';
 import '../../downloads/download_progress.dart';
+import '../../songs/widgets/song_actions_menu.dart';
 
 const double _resultCoverSize = 44;
 const double _resultRowMinHeight = 62;
@@ -20,7 +20,7 @@ class SearchResultTile extends StatelessWidget {
     required this.music,
     required this.onDownload,
     required this.onPlay,
-    this.onAddToPlaylist,
+    required this.onAddToPlaylist,
     this.downloadTask,
     this.coverUrl,
     this.coverLoading = false,
@@ -30,7 +30,7 @@ class SearchResultTile extends StatelessWidget {
   final MusicInfo music;
   final VoidCallback onDownload;
   final VoidCallback onPlay;
-  final VoidCallback? onAddToPlaylist;
+  final VoidCallback onAddToPlaylist;
   final DownloadTask? downloadTask;
   final String? coverUrl;
   final bool coverLoading;
@@ -41,18 +41,12 @@ class SearchResultTile extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final task = downloadTask;
     final done = task?.stage == DownloadStage.done;
-    final busy = task?.isBusy ?? false;
     final failed = task?.stage == DownloadStage.failed;
     final artist = music.singer.trim().isEmpty ? '未知歌手' : music.singer.trim();
     final metadata = [
       artist,
       if (music.albumName.trim().isNotEmpty) music.albumName.trim(),
     ].join(' · ');
-    final buttonTooltip = done
-        ? '已下载完成'
-        : failed
-        ? '重新选择音质下载'
-        : '选择音质下载';
     final backgroundColor = done
         ? scheme.primaryContainer.withValues(alpha: 0.22)
         : failed
@@ -150,30 +144,11 @@ class SearchResultTile extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 4),
-                  if (onAddToPlaylist != null)
-                    ExpressiveDownloadButton(
-                      key: ValueKey(
-                        'search-result-add-to-playlist-${music.id}',
-                      ),
-                      isLoading: false,
-                      onPressed: onAddToPlaylist,
-                      tooltip: '添加到歌单',
-                      size: 36,
-                      tapTargetSize: 40,
-                      tonal: true,
-                      idleIcon: Icons.playlist_add_rounded,
-                    ),
-                  if (onAddToPlaylist != null) const SizedBox(width: 2),
-                  ExpressiveDownloadButton(
-                    key: ValueKey('search-result-download-${music.id}'),
-                    isLoading: busy,
-                    isDone: done,
-                    progress: task?.fraction,
-                    onPressed: busy || done ? null : onDownload,
-                    tooltip: buttonTooltip,
-                    size: 36,
-                    tapTargetSize: 40,
-                    tonal: true,
+                  SongActionsMenu.online(
+                    key: ValueKey('search-result-menu-${music.id}'),
+                    onDownload: onDownload,
+                    onAddToPlaylist: onAddToPlaylist,
+                    downloadTask: task,
                   ),
                 ],
               ),

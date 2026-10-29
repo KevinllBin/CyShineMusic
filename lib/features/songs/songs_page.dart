@@ -5,7 +5,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/models/enums.dart';
@@ -19,6 +18,7 @@ import '../../theme/app_motion.dart';
 import '../downloads/download_history_store.dart';
 import '../music_sources/music_source_action_guard.dart';
 import '../player/player_controller.dart';
+import '../search/widgets/quality_picker_sheet.dart';
 import '../playlists/playlist_browser_sheet.dart';
 import '../playlists/playlist_models.dart';
 import '../playlists/online_playlist_updater.dart';
@@ -1288,59 +1288,58 @@ class _SongsPageState extends ConsumerState<SongsPage> {
                 12,
                 _batchMode ? 12 : ShellBottomArea.contentPadding(context, 104),
               ),
-              sliver: SlidableAutoCloseBehavior(
-                child: SliverList.separated(
-                  key: _songsListKey,
-                  itemCount: songs.length,
-                  separatorBuilder: (_, _) => const SongListDivider(),
-                  itemBuilder: (context, index) {
-                    final entry = songs[index];
-                    final path = entry.savedPath;
-                    final playing = matchesPlayingEntry(
+              sliver: SliverList.separated(
+                key: _songsListKey,
+                itemCount: songs.length,
+                separatorBuilder: (_, _) => const SongListDivider(),
+                itemBuilder: (context, index) {
+                  final entry = songs[index];
+                  final path = entry.savedPath;
+                  final playing = matchesPlayingEntry(
+                    entry,
+                    playbackIdentity.queueEntry,
+                    playbackIdentity.localPath,
+                    playbackIdentity.trackId,
+                  );
+                  return SongRow(
+                    key: ValueKey(entry.id),
+                    entry: entry,
+                    artworkVersion: path == null
+                        ? null
+                        : artworkVersionByPath[_pathKey(path)],
+                    playing: playing,
+                    playingActive: playing && playbackIdentity.playing,
+                    batchMode: _batchMode,
+                    selected: _selectedIds.contains(entry.id),
+                    onToggleSelected: () => _toggleSelection(entry),
+                    onAddNext: () => _addNext(entry),
+                    onAddToPlaylist: () =>
+                        unawaited(_selectPlaylistForSong(entry)),
+                    onDownload: entry.musicInfo == null
+                        ? null
+                        : () =>
+                              showQualityPickerSheet(context, entry.musicInfo!),
+                    onPlay: () => _play(
                       entry,
-                      playbackIdentity.queueEntry,
-                      playbackIdentity.localPath,
-                      playbackIdentity.trackId,
-                    );
-                    return SongRow(
-                      key: ValueKey(entry.id),
-                      entry: entry,
-                      artworkVersion: path == null
-                          ? null
-                          : artworkVersionByPath[_pathKey(path)],
-                      playing: playing,
-                      playingActive: playing && playbackIdentity.playing,
-                      batchMode: _batchMode,
-                      selected: _selectedIds.contains(entry.id),
-                      onToggleSelected: () => _toggleSelection(entry),
-                      onAddNext: () => _addNext(entry),
-                      onAddToPlaylist: () =>
-                          unawaited(_selectPlaylistForSong(entry)),
-                      onPlay: () => _play(
-                        entry,
-                        songs,
-                        replaceQueue:
-                            !_searchMode ||
-                            _searchQuery.trim().isEmpty ||
-                            ref.read(settingsProvider).replaceQueueOnSearchPlay,
-                      ),
-                      onDelete: playlistMode
-                          ? () {
-                              final track = _visiblePlaylistTracks[entry.id];
-                              if (track != null) {
-                                unawaited(
-                                  _removePlaylistTrack(
-                                    selectedPlaylist!,
-                                    track,
-                                  ),
-                                );
-                              }
+                      songs,
+                      replaceQueue:
+                          !_searchMode ||
+                          _searchQuery.trim().isEmpty ||
+                          ref.read(settingsProvider).replaceQueueOnSearchPlay,
+                    ),
+                    onDelete: playlistMode
+                        ? () {
+                            final track = _visiblePlaylistTracks[entry.id];
+                            if (track != null) {
+                              unawaited(
+                                _removePlaylistTrack(selectedPlaylist!, track),
+                              );
                             }
-                          : () => _deleteSong(entry),
-                      playlistMode: playlistMode,
-                    );
-                  },
-                ),
+                          }
+                        : () => _deleteSong(entry),
+                    playlistMode: playlistMode,
+                  );
+                },
               ),
             ),
         ],

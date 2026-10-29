@@ -13,6 +13,7 @@ import '../player/player_controller.dart';
 import '../playlists/playlist_store.dart';
 import 'download_history_store.dart';
 import 'download_progress.dart';
+import 'widgets/batch_download_tasks_sheet.dart';
 import '../shell/widgets/scrolling_page_header.dart';
 
 class DownloadHistoryPage extends ConsumerStatefulWidget {
@@ -47,6 +48,15 @@ class _DownloadHistoryPageState extends ConsumerState<DownloadHistoryPage> {
         ),
         slivers: [
           const SliverToBoxAdapter(child: ScrollHeaderSpacer()),
+          const SliverPadding(
+            padding: EdgeInsets.fromLTRB(16, 4, 16, 0),
+            sliver: SliverToBoxAdapter(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: BatchDownloadTasksButton(),
+              ),
+            ),
+          ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             sliver: SliverToBoxAdapter(

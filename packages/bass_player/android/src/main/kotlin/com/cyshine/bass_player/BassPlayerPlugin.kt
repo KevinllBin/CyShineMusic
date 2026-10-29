@@ -564,7 +564,9 @@ class BassPlayerPlugin :
 
         endSync = BASS.BASS_ChannelSetSync(
             stream,
-            BASS.BASS_SYNC_END or BASS.BASS_SYNC_ONETIME,
+            // The same stream is reused after seeking for repeat-one/replay.
+            // Keep reporting completion on every pass until the stream is freed.
+            BASS.BASS_SYNC_END,
             0,
             endSyncCallback,
             null,

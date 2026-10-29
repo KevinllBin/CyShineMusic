@@ -28,6 +28,7 @@ import '../player/player_controller.dart';
 import '../playlists/playlist_models.dart';
 import '../playlists/playlist_store.dart';
 import '../playlists/widgets/immersive_playlist_chrome.dart';
+import '../playlists/widgets/add_music_to_playlist.dart';
 import '../playlists/widgets/playlist_detail_actions.dart';
 import '../playlists/widgets/playlist_wide_layout.dart';
 import '../search/widgets/quality_picker_sheet.dart';
@@ -746,6 +747,7 @@ class _OnlinePlaylistTrackTileState
       onCoverError: _requestFallbackCover,
       downloadTask: task,
       onDownload: () => showQualityPickerSheet(context, widget.music),
+      onAddToPlaylist: () => showAddMusicToPlaylist(context, ref, widget.music),
       onPlay: widget.onPlay ?? () {},
     );
   }

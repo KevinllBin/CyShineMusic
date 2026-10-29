@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +15,7 @@ import 'package:cy_shine_music/core/models/music_info.dart';
 import 'package:cy_shine_music/core/models/playlist_info.dart';
 import 'package:cy_shine_music/core/music_sources/music_source_controller.dart';
 import 'package:cy_shine_music/core/services/download_service.dart';
+import 'package:cy_shine_music/core/services/batch_download_controller.dart';
 import 'package:cy_shine_music/core/storage/settings_store.dart';
 import 'package:cy_shine_music/features/downloads/download_history_store.dart';
 import 'package:cy_shine_music/features/playlists/online_playlist_import_page.dart';
@@ -571,7 +573,7 @@ void main() {
     await tester.pump();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
-    expect(service.calls, 1);
+    expect(service.calls, 2);
     expect(service.musics.map((music) => music.id), ['track-1', 'track-2']);
     expect(
       container.read(playlistDetailToolbarStateProvider).batchMode,
@@ -579,7 +581,7 @@ void main() {
     );
     expect(find.byType(Checkbox), findsNothing);
     expect(find.text('下载 2 首'), findsNothing);
-    expect(service.calls, 1);
+    expect(service.calls, 2);
 
     service.completeSuccessfully();
     await tester.pumpAndSettle();
@@ -588,7 +590,7 @@ void main() {
       isFalse,
     );
     expect(find.text('下载 2 首'), findsNothing);
-    expect(service.calls, 1);
+    expect(service.calls, 2);
     expect(tester.takeException(), isNull);
     await tester.pump(const Duration(seconds: 5));
   });
@@ -663,7 +665,10 @@ void main() {
     await tester.pump();
     expect(service.calls, 1);
     expect(service.musics.map((music) => music.id), ['online-track']);
-    expect(service.qualityPreference, OnlinePlaybackQuality.high);
+    expect(
+      container.read(batchDownloadProvider).single.quality,
+      OnlinePlaybackQuality.high,
+    );
     expect(
       container.read(playlistDetailToolbarStateProvider).batchMode,
       isFalse,
@@ -675,7 +680,7 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
   });
 
-  testWidgets('swipe to remove a playlist track without confirmation', (
+  testWidgets('menu removes a playlist track without confirmation', (
     tester,
   ) async {
     await _useCompactViewport(tester);
@@ -692,9 +697,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('第一首'), findsOneWidget);
 
-    await tester.drag(find.text('第一首'), const Offset(-260, 0));
+    await tester.tap(find.byTooltip('歌曲操作'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('移除'));
+    await tester.tap(find.text('移出歌单'));
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('从歌单中移除？'), findsNothing);
@@ -754,33 +759,26 @@ Widget _testAppWithContainer(ProviderContainer container, Widget home) {
 class _BlockingBatchDownloadService extends DownloadService {
   _BlockingBatchDownloadService(super.ref);
 
-  final Completer<List<BatchDownloadResult>> _completer = Completer();
+  final Completer<void> _completer = Completer();
   List<MusicInfo> musics = const [];
   int calls = 0;
 
   @override
-  Future<List<BatchDownloadResult>> downloadMany({
-    required List<MusicInfo> musics,
-    EmbedRequest embed = const EmbedRequest.richest(),
-    int concurrency = DownloadService.batchConcurrency,
-    OnlinePlaybackQuality qualityPreference = OnlinePlaybackQuality.highest,
-  }) {
+  Future<DownloadResult> downloadOne({
+    required MusicInfo music,
+    Quality? quality,
+    required EmbedRequest embed,
+    CancelToken? cancelToken,
+    String? batchTaskId,
+  }) async {
     calls += 1;
-    this.musics = List.of(musics);
-    this.qualityPreference = qualityPreference;
-    return _completer.future;
+    musics = [...musics, music];
+    await _completer.future;
+    return DownloadResult(path: 'D:/Music/${music.id}.mp3');
   }
 
-  OnlinePlaybackQuality qualityPreference = OnlinePlaybackQuality.highest;
-
   void completeSuccessfully() {
-    _completer.complete([
-      for (final music in musics)
-        BatchDownloadResult(
-          music: music,
-          result: DownloadResult(path: 'D:/Music/${music.id}.mp3'),
-        ),
-    ]);
+    _completer.complete();
   }
 }
 

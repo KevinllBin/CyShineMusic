@@ -21,6 +21,7 @@ class KgPlaylistAdapter {
   static const _globalPrefix = 'global:';
   static const _chainPrefix = 'chain:';
   static const _gcidPrefix = 'gcid:';
+  static const _codePrefix = 'code:';
   static const _kgAndroidSignatureSeed = 'OIlwieks28dk2k092lksi2UIkp';
   static const _kgWebSignatureSeed = 'NVPh5oo715z5DIWAeQlhMDsWXXQV4hwt';
 
@@ -94,6 +95,28 @@ class KgPlaylistAdapter {
         maxTracks: maxTracks,
       );
     }
+    if (target.startsWith(_codePrefix)) {
+      final code = target.substring(_codePrefix.length).trim();
+      final playlist = await _parseShareCode(
+        code,
+        load: load,
+        post: post,
+        enrichQualityDetails: enrichQualityDetails,
+        maxTracks: maxTracks,
+      );
+      if (playlist == null) throw Exception('酷狗码无效或已过期');
+      return playlist;
+    }
+    if (RegExp(r'^\d{4,}$').hasMatch(target)) {
+      final codePlaylist = await _parseShareCode(
+        target,
+        load: load,
+        post: post,
+        enrichQualityDetails: enrichQualityDetails,
+        maxTracks: maxTracks,
+      );
+      if (codePlaylist != null) return codePlaylist;
+    }
 
     try {
       return await _parseSpecial(
@@ -114,6 +137,72 @@ class KgPlaylistAdapter {
         maxTracks: maxTracks,
       );
     }
+  }
+
+  static Future<PlaylistInfo?> _parseShareCode(
+    String code, {
+    required SdkJsonLoader load,
+    required KgJsonPoster post,
+    required bool enrichQualityDetails,
+    int? maxTracks,
+  }) async {
+    if (!RegExp(r'^\d{4,}$').hasMatch(code)) return null;
+    try {
+      final response = await post(
+        'https://t.kugou.com/command/',
+        headers: const {
+          'KG-RC': '1',
+          'KG-THash': 'network_super_call.cpp:3676261689:379',
+          'User-Agent':
+              'Mozilla/5.0 (Linux; Android 10; HUAWEI HMA-AL00) '
+              'AppleWebKit/537.36 Mobile Safari/537.36',
+        },
+        body: {
+          'appid': 1001,
+          'clientver': 9020,
+          'mid': '21511157a05844bd085308bc76ef3343',
+          'clienttime': 640612895,
+          'key': '36164c4015e704673c588ee202b9ecb8',
+          'data': code,
+        },
+      );
+      final data = response is Map ? response['data'] : null;
+      final errorCode = response is Map
+          ? _int(response['err_code'] ?? response['error_code'])
+          : null;
+      final info = data is Map ? data['info'] : null;
+      if (response is! Map ||
+          _int(response['status']) != 1 ||
+          errorCode != 0 ||
+          info is! Map) {
+        return null;
+      }
+
+      final globalId = _text(info['global_collection_id']);
+      if (globalId != null) {
+        return _parseGlobalCollection(
+          globalId,
+          load: load,
+          post: post,
+          enrichQualityDetails: enrichQualityDetails,
+          maxTracks: maxTracks,
+        );
+      }
+      final specialId = _text(info['id']);
+      if (_int(info['type']) == 2 && specialId != null) {
+        return _parseSpecial(
+          specialId,
+          load: load,
+          post: post,
+          enrichQualityDetails: enrichQualityDetails,
+          maxTracks: maxTracks,
+        );
+      }
+    } catch (_) {
+      // A bare number can still be a legacy numeric playlist ID; let that
+      // parser try after command-code lookup fails.
+    }
+    return null;
   }
 
   static Future<PlaylistInfo> _parseSpecial(
@@ -217,15 +306,28 @@ class KgPlaylistAdapter {
       }
     }
     final info = sharedInfo ?? await _loadGlobalInfo(id, load);
-    final expected = _int(info['songcount']) ?? 0;
-    final rawSongs =
-        sharedSongs ??
-        await _loadGlobalSongs(
+    var expected = _int(info['songcount']) ?? 0;
+    var rawSongs = sharedSongs;
+    if (rawSongs == null) {
+      try {
+        final collection = await _loadOtherGlobalSongs(
+          id,
+          load: load,
+          maxTracks: maxTracks,
+        );
+        rawSongs = collection.songs;
+        if (collection.total > 0) expected = collection.total;
+      } catch (_) {
+        // Keep the older mobile API as a fallback for collections not exposed
+        // by the concept-app share endpoint.
+        rawSongs = await _loadGlobalSongs(
           id,
           expected: expected,
           load: load,
           maxTracks: maxTracks,
         );
+      }
+    }
     final songs = await _completeSongs(rawSongs, post);
     final qualityDetails = enrichQualityDetails
         ? await _qualityDetailsFor(songs)
@@ -521,6 +623,67 @@ class KgPlaylistAdapter {
     return songs;
   }
 
+  static Future<({List<Map> songs, int total})> _loadOtherGlobalSongs(
+    String id, {
+    required SdkJsonLoader load,
+    int? maxTracks,
+  }) async {
+    const defaultPageSize = 20;
+    final hardLimit = _trackLimit(maxTracks);
+    final pageSize =
+        maxTracks != null && maxTracks > 0 && maxTracks < defaultPageSize
+        ? maxTracks
+        : defaultPageSize;
+    final clientTime = DateTime.now().millisecondsSinceEpoch.toString();
+    final songs = <Map>[];
+    var total = 0;
+
+    for (var page = 1; songs.length < hardLimit; page++) {
+      final body = await load(
+        _signedGlobalUrl('/v2/get_other_list_file', [
+          MapEntry('clienttime', clientTime),
+          MapEntry('mid', clientTime),
+          MapEntry('uuid', clientTime),
+          const MapEntry('dfid', '-'),
+          const MapEntry('srcappid', '2919'),
+          const MapEntry('clientver', '20000'),
+          const MapEntry('appid', '1058'),
+          const MapEntry('uid', '0'),
+          const MapEntry('token', ''),
+          const MapEntry('type', '0'),
+          const MapEntry('module', 'playlist'),
+          MapEntry('page', '$page'),
+          MapEntry('pagesize', '$pageSize'),
+          MapEntry('global_collection_id', id),
+        ], host: 'pubsongscdn.kugou.com'),
+        headers: _globalHeaders(clientTime),
+      );
+      final data = body is Map ? body['data'] : null;
+      final errorCode = body is Map ? _int(body['error_code']) : null;
+      if (body is! Map ||
+          errorCode != 0 ||
+          _int(body['status']) != 1 ||
+          data is! Map ||
+          data['info'] is! List) {
+        throw Exception('酷狗新版歌单歌曲加载失败');
+      }
+
+      total = _int(data['count']) ?? total;
+      final pageSongs = (data['info'] as List).whereType<Map>().toList(
+        growable: false,
+      );
+      songs.addAll(pageSongs.take(hardLimit - songs.length));
+      if (pageSongs.isEmpty) {
+        if (total > songs.length) throw Exception('酷狗新版歌单歌曲不完整');
+        break;
+      }
+      if (total > 0 && songs.length >= _targetCount(total, hardLimit)) break;
+      if (total <= 0 && pageSongs.length < pageSize) break;
+    }
+
+    return (songs: songs, total: total);
+  }
+
   static Future<String?> _globalCollectionIdForSpecial(
     String id,
     SdkJsonLoader load,
@@ -677,9 +840,31 @@ class KgPlaylistAdapter {
       qualities.add(QualityOption(type: quality, size: size, hash: hashText));
     }
 
+    final relatedGoods = item['relate_goods'] as List? ?? const [];
+    final relatedByQuality = <Quality, QualityOption>{};
+    for (final good in relatedGoods.whereType<Map>()) {
+      final quality = switch (_int(good['level'])) {
+        2 => Quality.k128,
+        4 => Quality.k320,
+        5 => Quality.flac,
+        6 => Quality.hires,
+        _ => null,
+      };
+      final size = sizeFormat(good['size']);
+      if (quality == null || size == null) continue;
+      relatedByQuality[quality] = QualityOption(
+        type: quality,
+        size: size,
+        hash: _text(good['hash']),
+      );
+    }
+
     add(
       Quality.k128,
-      audio?['filesize'] ?? audio?['filesize_128'] ?? item['filesize'],
+      audio?['filesize'] ??
+          audio?['filesize_128'] ??
+          item['filesize'] ??
+          item['size'],
       baseHash,
     );
     add(
@@ -698,15 +883,34 @@ class KgPlaylistAdapter {
       audio?['hash_high'] ?? item['hash_high'],
     );
     add(Quality.ape, item['filesize_ape'], item['hash_ape']);
+    final qualityFallback = [...qualities];
+    for (final related in relatedByQuality.values) {
+      final index = qualityFallback.indexWhere(
+        (option) => option.type == related.type,
+      );
+      if (index < 0) {
+        qualityFallback.add(related);
+      } else {
+        qualityFallback[index] = related;
+      }
+    }
     final mergedQualities = qualityDetails == null
-        ? qualities
-        : mergeKgQualityOptions(qualities, qualityDetails);
+        ? qualityFallback
+        : mergeKgQualityOptions(qualityFallback, qualityDetails);
 
     var name = _text(item['songname'] ?? item['SongName']);
     var singer =
         _text(item['author_name'] ?? item['singername']) ??
         formatSingerName(item['authors'], nameKey: 'author_name');
-    final filename = _text(item['filename']) ?? '';
+    final singerInfo = item['singerinfo'] as List?;
+    if (singer.isEmpty && singerInfo != null) {
+      singer = singerInfo
+          .whereType<Map>()
+          .map((author) => _text(author['name']))
+          .whereType<String>()
+          .join('、');
+    }
+    final filename = _text(item['filename'] ?? item['name']) ?? '';
     if (name == null && filename.isNotEmpty) {
       final separator = filename.indexOf(' - ');
       if (separator >= 0) {
@@ -716,12 +920,18 @@ class KgPlaylistAdapter {
         name = filename;
       }
     }
-    final durationMs = num.tryParse(audio?['timelength']?.toString() ?? '');
+    final durationMs = num.tryParse(
+      (audio?['timelength'] ?? item['timelen'])?.toString() ?? '',
+    );
     final durationSeconds = durationMs == null
         ? num.tryParse(item['duration']?.toString() ?? '0') ?? 0
         : durationMs / 1000;
+    final albumInfo = item['albuminfo'] as Map?;
     final albumName = _text(
-      album?['album_name'] ?? item['album_name'] ?? item['remark'],
+      album?['album_name'] ??
+          albumInfo?['name'] ??
+          item['album_name'] ??
+          item['remark'],
     );
     final audioTrans = audio?['trans_param'] as Map?;
     final itemTrans = item['trans_param'] as Map?;
@@ -733,12 +943,13 @@ class KgPlaylistAdapter {
       qualitys: mergedQualities,
       interval: formatPlayTime(durationSeconds),
       albumName: decodeName(albumName),
-      albumId: album?['album_id'] ?? item['album_id'],
+      albumId: album?['album_id'] ?? albumInfo?['id'] ?? item['album_id'],
       hash: baseHash,
       picUrl: _image(
         album?['sizable_cover'] ??
             audioTrans?['union_cover'] ??
             itemTrans?['union_cover'] ??
+            item['cover'] ??
             item['image'] ??
             item['Image'] ??
             item['img'] ??

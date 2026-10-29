@@ -5,7 +5,7 @@ import 'package:cy_shine_music/features/downloads/download_history_entry.dart';
 import 'package:cy_shine_music/features/songs/widgets/song_row.dart';
 
 void main() {
-  testWidgets('song row slide actions open and close', (tester) async {
+  testWidgets('song row actions menu opens and closes', (tester) async {
     await tester.binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -35,16 +35,17 @@ void main() {
       ),
     );
 
-    final row = find.byKey(const ValueKey('song-slide-song-swipe-test'));
-    await tester.drag(row, const Offset(-180, 0));
+    await tester.tap(find.byTooltip('歌曲操作'));
     await tester.pumpAndSettle();
 
-    expect(find.text('歌单'), findsOneWidget);
+    expect(find.text('添加到歌单'), findsOneWidget);
     expect(find.text('删除'), findsOneWidget);
 
-    await tester.drag(row, const Offset(180, 0));
+    await tester.tapAt(const Offset(4, 700));
     await tester.pumpAndSettle();
 
+    expect(find.text('添加到歌单'), findsNothing);
+    expect(find.text('删除'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

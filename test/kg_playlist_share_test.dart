@@ -192,6 +192,156 @@ void main() {
     expect(pages, [1, 2]);
     expect(playlist.tracks, hasLength(2));
   });
+
+  test(
+    'loads concept-app global playlists from the current list API',
+    () async {
+      final playlist = await KgPlaylistAdapter.parse(
+        'global:$_globalId',
+        maxTracks: 1,
+        jsonLoader: (url, {headers}) async {
+          final uri = Uri.parse(url);
+          if (uri.path == '/api/v5/special/info_v2') {
+            return {
+              'errcode': 0,
+              'data': {
+                'global_specialid': _globalId,
+                'specialname': 'Concept playlist',
+                'songcount': 1,
+              },
+            };
+          }
+
+          expect(uri.host, 'pubsongscdn.kugou.com');
+          expect(uri.path, '/v2/get_other_list_file');
+          final query = Map<String, String>.from(uri.queryParameters);
+          expect(query['global_collection_id'], _globalId);
+          expect(query['module'], 'playlist');
+          expect(query['type'], '0');
+          expect(query['page'], '1');
+          expect(query['pagesize'], '1');
+          expect(query['uid'], '0');
+          expect(query['token'], '');
+          expect(headers?['clienttime'], query['clienttime']);
+          final signature = query.remove('signature');
+          final parameters =
+              query.entries
+                  .map((entry) => '${entry.key}=${entry.value}')
+                  .toList()
+                ..sort();
+          const seed = 'NVPh5oo715z5DIWAeQlhMDsWXXQV4hwt';
+          expect(
+            signature,
+            CryptoUtil.md5Hex('$seed${parameters.join()}$seed'),
+          );
+
+          return {
+            'error_code': 0,
+            'status': 1,
+            'data': {
+              'count': 1,
+              'info': [
+                {
+                  'audio_id': 92817,
+                  'hash': 'CONCEPT-HASH',
+                  'name': 'Concept Artist - Concept Track',
+                  'singerinfo': [
+                    {'name': 'Concept Artist'},
+                  ],
+                  'size': 2048,
+                  'timelen': 180000,
+                  'cover': 'http://img.test/concept.jpg',
+                  'albuminfo': {'id': 42, 'name': 'Concept Album'},
+                  'relate_goods': [
+                    {'level': 4, 'hash': 'CONCEPT-320', 'size': 4096},
+                  ],
+                },
+              ],
+            },
+          };
+        },
+        jsonPoster: _unavailableMetadata,
+      );
+
+      expect(playlist.name, 'Concept playlist');
+      expect(playlist.trackCount, 1);
+      expect(playlist.tracks, hasLength(1));
+      final track = playlist.tracks.single;
+      expect(track.name, 'Concept Track');
+      expect(track.singer, 'Concept Artist');
+      expect(track.albumName, 'Concept Album');
+      expect(track.meta.picUrl, 'https://img.test/concept.jpg');
+      expect(track.meta.qualitys.map((quality) => quality.type), [
+        Quality.k128,
+        Quality.k320,
+      ]);
+      expect(track.meta.qualitys.last.hash, 'CONCEPT-320');
+    },
+  );
+
+  test('resolves numeric Kugou codes through the command endpoint', () async {
+    final urls = <String>[];
+    final playlist = await KgPlaylistAdapter.parse(
+      '40209961',
+      maxTracks: 1,
+      jsonLoader: (url, {headers}) async {
+        final uri = Uri.parse(url);
+        urls.add(uri.path);
+        if (uri.path == '/api/v5/special/info_v2') {
+          return {
+            'errcode': 0,
+            'data': {
+              'specialname': 'Code playlist',
+              'songcount': 1,
+              'global_specialid': _globalId,
+            },
+          };
+        }
+        expect(uri.host, 'pubsongscdn.kugou.com');
+        expect(uri.path, '/v2/get_other_list_file');
+        return {
+          'error_code': 0,
+          'status': 1,
+          'data': {
+            'count': 1,
+            'info': [_song(1)],
+          },
+        };
+      },
+      jsonPoster: (url, {headers, body}) async {
+        urls.add(Uri.parse(url).path);
+        if (url.contains('/command/')) {
+          expect(headers?['KG-RC'], '1');
+          expect(body, {
+            'appid': 1001,
+            'clientver': 9020,
+            'mid': '21511157a05844bd085308bc76ef3343',
+            'clienttime': 640612895,
+            'key': '36164c4015e704673c588ee202b9ecb8',
+            'data': '40209961',
+          });
+          return {
+            'status': 1,
+            'err_code': 0,
+            'data': {
+              'info': {
+                'type': 4,
+                'name': 'Code playlist',
+                'count': 1,
+                'global_collection_id': _globalId,
+              },
+            },
+          };
+        }
+        return _unavailableMetadata(url, headers: headers, body: body);
+      },
+    );
+
+    expect(urls.first, '/command/');
+    expect(urls, contains('/v2/get_other_list_file'));
+    expect(playlist.name, 'Code playlist');
+    expect(playlist.tracks, hasLength(1));
+  });
 }
 
 Map<String, Object?> _song(int index) => {

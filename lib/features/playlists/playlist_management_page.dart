@@ -8,6 +8,7 @@ import '../../core/ui/app_toast.dart';
 import '../../core/ui/car_display_layout.dart';
 import '../../theme/app_motion.dart';
 import '../shell/shell_bottom_area.dart';
+import '../../core/ui/widgets/morphing_menu_button.dart';
 import '../shell/widgets/scrolling_page_header.dart';
 import 'lx_playlist_import.dart';
 import 'online_playlist_updater.dart';
@@ -439,8 +440,6 @@ String _managementDetailLocation(String playlistId) {
   ).toString();
 }
 
-enum _PlaylistMenuAction { update, rename, delete }
-
 class _PlaylistManagementTile extends StatelessWidget {
   const _PlaylistManagementTile({
     required this.playlist,
@@ -515,54 +514,36 @@ class _PlaylistManagementTile extends StatelessWidget {
                     ],
                   ),
                 ),
-                PopupMenuButton<_PlaylistMenuAction>(
+                MorphingMenuButton(
                   tooltip: '歌单选项',
-                  onSelected: (action) {
-                    switch (action) {
-                      case _PlaylistMenuAction.update:
-                        onUpdate?.call();
-                      case _PlaylistMenuAction.rename:
-                        onRename();
-                      case _PlaylistMenuAction.delete:
-                        onDelete();
-                    }
-                  },
-                  itemBuilder: (_) => [
+                  icon: Icons.more_horiz_rounded,
+                  motionStyle: MorphingMenuMotionStyle.list,
+                  actions: [
                     if (onUpdate != null)
-                      PopupMenuItem(
-                        value: _PlaylistMenuAction.update,
-                        enabled: !updating,
-                        child: ListTile(
-                          leading: updating
-                              ? const SizedBox.square(
-                                  dimension: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.2,
-                                  ),
-                                )
-                              : const Icon(Icons.refresh_rounded),
-                          title: Text(updating ? '正在更新' : '更新歌单'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
+                      MorphingMenuAction(
+                        label: updating ? '正在更新' : '更新歌单',
+                        leading: updating
+                            ? const SizedBox.square(
+                                dimension: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.2,
+                                ),
+                              )
+                            : const Icon(Icons.refresh_rounded),
+                        onSelected: updating ? null : onUpdate,
                       ),
-                    const PopupMenuItem(
-                      value: _PlaylistMenuAction.rename,
-                      child: ListTile(
-                        leading: Icon(Icons.edit_outlined),
-                        title: Text('重命名'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
+                    MorphingMenuAction(
+                      label: '重命名',
+                      leading: const Icon(Icons.edit_outlined),
+                      onSelected: onRename,
                     ),
-                    const PopupMenuItem(
-                      value: _PlaylistMenuAction.delete,
-                      child: ListTile(
-                        leading: Icon(Icons.delete_outline_rounded),
-                        title: Text('删除'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
+                    MorphingMenuAction(
+                      label: '删除',
+                      leading: const Icon(Icons.delete_outline_rounded),
+                      onSelected: onDelete,
+                      danger: true,
                     ),
                   ],
-                  icon: const Icon(Icons.more_vert_rounded),
                 ),
               ],
             ),

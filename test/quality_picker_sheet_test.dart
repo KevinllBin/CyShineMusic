@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -166,6 +167,8 @@ class _RecordingDownloadService extends DownloadService {
     required MusicInfo music,
     Quality? quality,
     required EmbedRequest embed,
+    CancelToken? cancelToken,
+    String? batchTaskId,
   }) async {
     this.quality = quality;
     return const DownloadResult(path: 'D:/Music/song.flac');

@@ -114,6 +114,13 @@ void main() {
       expect(gcid?.id, 'gcid:gcid_3z9ly0fxznz0d1');
     });
 
+    test('recognizes labelled Kugou share codes', () {
+      final code = PlaylistSdk.parseTarget('酷狗码：40209961');
+
+      expect(code?.source, MusicSource.kg);
+      expect(code?.id, 'code:40209961');
+    });
+
     test('recognizes Migu standard and hash share links', () {
       final standard = PlaylistSdk.parseTarget(
         'https://music.migu.cn/v3/music/playlist/207393686',

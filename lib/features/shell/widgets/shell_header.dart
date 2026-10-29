@@ -8,6 +8,7 @@ import '../../songs/songs_toolbar_state.dart';
 import '../../playlists/widgets/expanding_header_search.dart';
 import '../shell_route_utils.dart';
 import 'library_view_menu.dart';
+import '../../../core/ui/widgets/morphing_menu_button.dart';
 import 'scrolling_page_header.dart';
 
 class ShellHeader extends ConsumerWidget {
@@ -426,13 +427,11 @@ class SongsHeader extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 6),
-          FloatingHeaderSurface(
-            child: _LibraryOverflowMenu(
-              onOpenHistory: state.onOpenHistory,
-              onShuffle: state.hasSongs ? state.onShuffle : null,
-              onUpdatePlaylist: state.onUpdatePlaylist,
-              updatingPlaylist: state.updatingPlaylist,
-            ),
+          _LibraryOverflowMenu(
+            onOpenHistory: state.onOpenHistory,
+            onShuffle: state.hasSongs ? state.onShuffle : null,
+            onUpdatePlaylist: state.onUpdatePlaylist,
+            updatingPlaylist: state.updatingPlaylist,
           ),
         ],
       ),
@@ -482,66 +481,41 @@ class _LibraryOverflowMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return SizedBox.square(
-      dimension: 44,
-      child: PopupMenuButton<VoidCallback>(
-        key: const ValueKey('songs-overflow-menu'),
-        tooltip: '更多歌曲操作',
-        useRootNavigator: true,
-        position: PopupMenuPosition.under,
-        popUpAnimationStyle: const AnimationStyle(duration: AppMotion.medium),
-        color: scheme.surfaceContainerHigh,
-        surfaceTintColor: Colors.transparent,
-        elevation: 3,
-        menuPadding: const EdgeInsets.symmetric(vertical: 6),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        style: IconButton.styleFrom(visualDensity: VisualDensity.compact),
-        icon: const Icon(Icons.more_vert_rounded, size: 21),
-        onSelected: (action) {
-          if (context.mounted) action();
-        },
-        itemBuilder: (context) => [
-          PopupMenuItem<VoidCallback>(
-            value: onShuffle,
-            enabled: onShuffle != null,
-            child: const Row(
-              children: [
-                Icon(Icons.shuffle_rounded, size: 20),
-                SizedBox(width: 12),
-                Text('随机播放'),
-              ],
-            ),
+    return MorphingMenuButton(
+      key: const ValueKey('songs-overflow-menu'),
+      tooltip: '更多歌曲操作',
+      // The toolbar menu hides leading icons, so the shared default leaves
+      // too much unused space on the right. Keep a little room for scaling
+      // while trimming roughly one third of that blank area.
+      width: 184,
+      motionStyle: MorphingMenuMotionStyle.toolbar,
+      buttonBuilder: (button) => FloatingHeaderSurface(child: button),
+      actions: [
+        MorphingMenuAction(
+          label: '随机播放',
+          leading: const Icon(Icons.shuffle_rounded),
+          showLeading: false,
+          onSelected: onShuffle,
+        ),
+        if (onUpdatePlaylist != null)
+          MorphingMenuAction(
+            label: updatingPlaylist ? '正在更新' : '更新歌单',
+            leading: updatingPlaylist
+                ? const SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2.2),
+                  )
+                : const Icon(Icons.refresh_rounded),
+            showLeading: false,
+            onSelected: updatingPlaylist ? null : onUpdatePlaylist,
           ),
-          if (onUpdatePlaylist != null)
-            PopupMenuItem<VoidCallback>(
-              value: onUpdatePlaylist,
-              enabled: !updatingPlaylist,
-              child: Row(
-                children: [
-                  updatingPlaylist
-                      ? const SizedBox.square(
-                          dimension: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2.2),
-                        )
-                      : const Icon(Icons.refresh_rounded, size: 20),
-                  const SizedBox(width: 12),
-                  Text(updatingPlaylist ? '正在更新' : '更新歌单'),
-                ],
-              ),
-            ),
-          PopupMenuItem<VoidCallback>(
-            value: onOpenHistory ?? () => context.go('/downloads'),
-            child: const Row(
-              children: [
-                Icon(Icons.history_rounded, size: 20),
-                SizedBox(width: 12),
-                Text('下载历史'),
-              ],
-            ),
-          ),
-        ],
-      ),
+        MorphingMenuAction(
+          label: '下载历史',
+          leading: const Icon(Icons.history_rounded),
+          showLeading: false,
+          onSelected: onOpenHistory ?? () => context.go('/downloads'),
+        ),
+      ],
     );
   }
 }

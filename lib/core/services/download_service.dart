@@ -81,6 +81,7 @@ class DownloadService {
   static const int batchConcurrency = 3;
 
   final Set<String> _batchDownloadKeys = {};
+  final Set<String> _reservedTargetPaths = {};
 
   Future<List<BatchDownloadResult>> downloadMany({
     required List<MusicInfo> musics,
@@ -166,9 +167,11 @@ class DownloadService {
     required MusicInfo music,
     Quality? quality,
     required EmbedRequest embed,
+    CancelToken? cancelToken,
+    String? batchTaskId,
   }) async {
     final progress = _ref.read(downloadProgressProvider.notifier);
-    final taskId = progress.start(music);
+    final taskId = progress.start(music, batchTaskId: batchTaskId);
 
     final api = _ref.read(musicApiProvider);
     final dio = _ref.read(apiClientProvider);
@@ -178,12 +181,19 @@ class DownloadService {
       AppLogger.write('download', msg);
     }
 
+    void ensureActive() {
+      final cancellation = cancelToken?.cancelError;
+      if (cancellation != null) throw cancellation;
+    }
+
     Quality? selectedQuality = quality;
     Directory? taskCacheDir;
     try {
+      ensureActive();
       final resolver = _ref.read(musicUrlResolverProvider);
       final requestedQuality = selectedQuality ??= await resolver
           .highestQualityFor(music);
+      ensureActive();
       log('==== NEW DOWNLOAD ====');
       log(
         'start ${music.source.code} "${music.name} - ${music.singer}" '
@@ -198,14 +208,19 @@ class DownloadService {
       final destDir = await _resolveDestinationDir(settings.downloadDir, log);
       final cacheRoot = await getTemporaryDirectory();
       taskCacheDir = await cacheRoot.createTemp('cyshine-download-');
+      ensureActive();
 
       final MusicSourceFallbackResult<_DownloadedAudio> sourceResult;
       try {
         sourceResult = await resolver.useFirstAvailable<_DownloadedAudio>(
           music: music,
           quality: requestedQuality,
+          isCancelled: cancelToken == null
+              ? null
+              : () => cancelToken.isCancelled,
           shouldFallbackOnConsumerError: _shouldFallbackAfterDownloadError,
           use: (source, musicUrl) async {
+            ensureActive();
             if (musicUrl.url.trim().isEmpty) {
               throw Exception('音源未返回音频地址');
             }
@@ -237,6 +252,7 @@ class DownloadService {
               await dio.download(
                 musicUrl.url,
                 candidateTmpPath,
+                cancelToken: cancelToken,
                 options: Options(
                   headers: const {
                     'User-Agent':
@@ -289,6 +305,7 @@ class DownloadService {
       final tmpPath = downloaded.tmpPath;
       final fileName = downloaded.fileName;
       final resolvedQuality = downloaded.quality;
+      ensureActive();
 
       // 4. Embed core tags plus any cover/lyrics fetched on-device.
       Uint8List? coverBytes;
@@ -296,9 +313,16 @@ class DownloadService {
       if (embed.needsMetadata) {
         progress.updateStage(taskId, DownloadStage.fetchingMeta);
         if (embed.embedCover) {
-          coverBytes = await _fetchCoverBytes(api, dio, music, log);
+          coverBytes = await _fetchCoverBytes(
+            api,
+            dio,
+            music,
+            log,
+            cancelToken: cancelToken,
+          );
           log('step4 cover bytes=${coverBytes?.length ?? 0}');
         }
+        ensureActive();
 
         if (embed.embedLyric ||
             embed.embedTranslatedLyric ||
@@ -332,6 +356,7 @@ class DownloadService {
 
       // Title/artist/album are always written. A temporary lyric or cover
       // failure must not leave a downloaded audio file completely untagged.
+      ensureActive();
       progress.updateStage(taskId, DownloadStage.tagging);
       log(
         'step4 tagging start cover=${coverBytes?.length ?? 0} '
@@ -381,6 +406,8 @@ class DownloadService {
       }
 
       // 5. Move to user-visible directory + trigger MediaScanner.
+      // Once committing starts, finish recording this file even if paused.
+      ensureActive();
       progress.updateStage(taskId, DownloadStage.finishing);
       final finalPath = await _moveToTarget(tmpPath, destDir, fileName);
       await _scanMedia(finalPath);
@@ -391,6 +418,11 @@ class DownloadService {
       await _attachDownload(music, resolvedQuality, finalPath, log);
       return DownloadResult(path: finalPath);
     } catch (e, s) {
+      if (cancelToken?.isCancelled ?? false) {
+        log('CANCELLED: $e');
+        progress.cancel(taskId);
+        rethrow;
+      }
       log('FAILED at outer catch: $e');
       log('stack: $s');
       progress.fail(taskId, _messageFor(e));
@@ -416,8 +448,9 @@ class DownloadService {
     MusicApi api,
     Dio dio,
     MusicInfo music,
-    void Function(String) log,
-  ) async {
+    void Function(String) log, {
+    CancelToken? cancelToken,
+  }) async {
     String? picUrl;
     try {
       picUrl = await api.getPicUrl(musicInfo: music);
@@ -446,6 +479,7 @@ class DownloadService {
       final resp = await dio.get<List<int>>(
         picUrl,
         options: Options(responseType: ResponseType.bytes, headers: headers),
+        cancelToken: cancelToken,
       );
       final bytes = Uint8List.fromList(resp.data ?? const []);
       final contentType = resp.headers.value('content-type') ?? '';
@@ -473,6 +507,7 @@ class DownloadService {
   }
 
   bool _shouldFallbackAfterDownloadError(Object error) {
+    if (error is DioException && CancelToken.isCancel(error)) return false;
     if (error is FileSystemException) return false;
     if (error is DioException && error.error is FileSystemException) {
       return false;
@@ -505,16 +540,17 @@ class DownloadService {
     void Function(String) log,
   ) async {
     final dir = Directory(requested);
+    Directory? probeDir;
     try {
       if (!dir.existsSync()) {
         log('destDir does not exist, creating: ${dir.path}');
         await PermissionService.ensureExternalStorageWrite();
         await dir.create(recursive: true);
       }
-      // Write probe to confirm we actually have permission.
-      final probe = File(p.join(dir.path, '.cyshine_probe'));
+      // Concurrent downloads must not write/delete each other's probe.
+      probeDir = await dir.createTemp('.cyshine-probe-');
+      final probe = File(p.join(probeDir.path, 'write-test'));
       await probe.writeAsString('ok');
-      await probe.delete();
       return dir;
     } catch (e) {
       log('destDir FAILED ${dir.path}: $e; falling back to app-private');
@@ -522,6 +558,15 @@ class DownloadService {
       final fb = Directory(p.join(fallback.path, 'CyShineMusic'));
       if (!fb.existsSync()) fb.createSync(recursive: true);
       return fb;
+    } finally {
+      if (probeDir != null) {
+        try {
+          await probeDir.delete(recursive: true);
+        } catch (e) {
+          // Cleanup failure does not mean the destination is unwritable.
+          log('destDir probe cleanup FAIL: $e');
+        }
+      }
     }
   }
 
@@ -531,6 +576,8 @@ class DownloadService {
     String fileName,
   ) async {
     final destPath = p.join(destDir.path, _dedupedName(destDir, fileName));
+    // Reserve synchronously before rename/copy yields to another download.
+    _reservedTargetPaths.add(destPath);
     final tmp = File(tmpPath);
     try {
       return (await tmp.rename(destPath)).path;
@@ -539,6 +586,8 @@ class DownloadService {
       await tmp.copy(destPath);
       await tmp.delete();
       return destPath;
+    } finally {
+      _reservedTargetPaths.remove(destPath);
     }
   }
 
@@ -547,7 +596,8 @@ class DownloadService {
     final ext = p.extension(fileName);
     var attempt = fileName;
     var i = 1;
-    while (File(p.join(dir.path, attempt)).existsSync()) {
+    while (File(p.join(dir.path, attempt)).existsSync() ||
+        _reservedTargetPaths.contains(p.join(dir.path, attempt))) {
       attempt = '$base ($i)$ext';
       i += 1;
     }

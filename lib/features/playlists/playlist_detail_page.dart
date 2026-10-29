@@ -4,12 +4,11 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/models/enums.dart';
 import '../../core/services/embedded_artwork_cache.dart';
-import '../../core/services/download_service.dart';
+import '../../core/services/batch_download_controller.dart';
 import '../../core/storage/settings_store.dart';
 import '../../core/ui/app_scrollbar.dart';
 import '../../core/ui/app_toast.dart';
@@ -411,49 +410,50 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
             12,
             _batchMode ? 12 : ShellBottomArea.contentPadding(context, 156),
           ),
-          sliver: SlidableAutoCloseBehavior(
-            child: SliverList.separated(
-              itemCount: filtered.length,
-              separatorBuilder: (_, _) => Center(
+          sliver: SliverList.separated(
+            itemCount: filtered.length,
+            separatorBuilder: (_, _) => Center(
+              child: ConstrainedBox(
+                constraints: CarDisplayLayout.contentConstraints(
+                  context,
+                  maxWidth: 900,
+                ),
+                child: const SongListDivider(),
+              ),
+            ),
+            itemBuilder: (context, index) {
+              final item = filtered[index];
+              return Center(
                 child: ConstrainedBox(
                   constraints: CarDisplayLayout.contentConstraints(
                     context,
                     maxWidth: 900,
                   ),
-                  child: const SongListDivider(),
-                ),
-              ),
-              itemBuilder: (context, index) {
-                final item = filtered[index];
-                return Center(
-                  child: ConstrainedBox(
-                    constraints: CarDisplayLayout.contentConstraints(
-                      context,
-                      maxWidth: 900,
-                    ),
-                    child: PlaylistTrackTile(
-                      playlistId: playlist.id,
-                      index: index,
-                      item: item,
-                      playing: false,
-                      batchMode: _batchMode,
-                      batchSubmitting: _batchSubmitting,
-                      selected: _selectedTrackIds.contains(item.track.id),
-                      onToggleSelected: () => _toggleSelection(item),
-                      onPlay: () => _playTrack(context, ref, item, queue),
-                      onDownload: item.track.musicInfo == null
-                          ? null
-                          : () => showQualityPickerSheet(
-                              context,
-                              item.track.musicInfo!,
-                            ),
-                      onRemove: () =>
-                          _removeTrack(context, ref, playlist, item.track),
-                    ),
+                  child: PlaylistTrackTile(
+                    playlistId: playlist.id,
+                    index: index,
+                    item: item,
+                    playing: false,
+                    batchMode: _batchMode,
+                    batchSubmitting: _batchSubmitting,
+                    selected: _selectedTrackIds.contains(item.track.id),
+                    onToggleSelected: () => _toggleSelection(item),
+                    onPlay: () => _playTrack(context, ref, item, queue),
+                    onAddNext: item.queueEntry == null
+                        ? null
+                        : () => _addNext(item.queueEntry!),
+                    onDownload: item.track.musicInfo == null
+                        ? null
+                        : () => showQualityPickerSheet(
+                            context,
+                            item.track.musicInfo!,
+                          ),
+                    onRemove: () =>
+                        _removeTrack(context, ref, playlist, item.track),
                   ),
-                );
-              },
-            ),
+                ),
+              );
+            },
           ),
         ),
     ];
@@ -858,63 +858,38 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
       );
       return;
     }
-    final available = await ensureOnlineMusicSourcesAvailable(
-      context,
-      selected.map((item) => item.track.musicInfo!.source),
-    );
-    if (!available || !mounted) return;
-
-    final qualityPreference = ref.read(settingsProvider).batchDownloadQuality;
-    setState(() {
-      _selectedTrackIds.clear();
-      _batchMode = false;
-    });
-    _restoreToolbarAfterSearchFocus();
-    showAppToast(
-      context,
-      '已加入下载队列：${selected.length} 首，音质：${qualityPreference.label}',
-      type: AppToastType.info,
-    );
-
+    setState(() => _batchSubmitting = true);
     try {
-      final results = await ref
-          .read(downloadServiceProvider)
-          .downloadMany(
+      final available = await ensureOnlineMusicSourcesAvailable(
+        context,
+        selected.map((item) => item.track.musicInfo!.source),
+      );
+      if (!available || !mounted) return;
+      final playlist = _playlistById(
+        ref.read(localPlaylistsProvider),
+        widget.playlistId,
+      );
+      final task = ref
+          .read(batchDownloadProvider.notifier)
+          .create(
             musics: [for (final item in selected) item.track.musicInfo!],
-            embed: const EmbedRequest.richest(),
-            qualityPreference: qualityPreference,
+            title: playlist?.name ?? '批量下载',
+            quality: ref.read(settingsProvider).batchDownloadQuality,
+            skippedCount: preSkipped,
           );
-      if (!mounted) return;
-
-      final failed = results.where((item) => !item.success).toList();
-      final skipped = preSkipped + selected.length - results.length;
-
-      final succeeded = results.length - failed.length;
-      if (failed.isEmpty && skipped == 0) {
-        showAppToast(
-          context,
-          '批量下载完成：$succeeded 首',
-          type: AppToastType.success,
-          duration: const Duration(seconds: 4),
-        );
-      } else if (succeeded == 0 && failed.isNotEmpty) {
-        showAppToast(
-          context,
-          '批量下载失败：${failed.first.music.name}（${failed.first.error}）',
-          type: AppToastType.error,
-          duration: const Duration(seconds: 4),
-        );
-      } else {
-        final parts = <String>['$succeeded 首成功'];
-        if (failed.isNotEmpty) parts.add('${failed.length} 首失败');
-        if (skipped > 0) parts.add('$skipped 首已跳过');
-        showAppToast(
-          context,
-          '批量下载完成：${parts.join('，')}',
-          type: AppToastType.warning,
-          duration: const Duration(seconds: 4),
-        );
-      }
+      setState(() {
+        _selectedTrackIds.clear();
+        _batchMode = false;
+      });
+      _restoreToolbarAfterSearchFocus();
+      showAppToast(
+        context,
+        '已创建任务 ${task.id}：${task.items.length} 首'
+        '${task.skippedCount > 0 ? '，跳过 ${task.skippedCount} 首' : ''}'
+        '，可在下载页管理',
+        type: task.items.isEmpty ? AppToastType.warning : AppToastType.info,
+        duration: const Duration(seconds: 4),
+      );
     } catch (error) {
       if (mounted) {
         showAppToast(
@@ -1101,6 +1076,17 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
         playlistId: widget.playlistId,
       );
     }
+  }
+
+  Future<void> _addNext(DownloadHistoryEntry entry) async {
+    final available = await ensureQueueEntryMusicSourceAvailable(
+      context,
+      entry,
+    );
+    if (!available || !mounted) return;
+    await ref.read(playerControllerProvider.notifier).enqueueNext(entry);
+    if (!mounted) return;
+    showAppToast(context, '已添加到下一首播放', type: AppToastType.success);
   }
 
   Future<void> _removeTrack(

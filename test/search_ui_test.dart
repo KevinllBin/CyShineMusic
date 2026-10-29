@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart' hide SearchController;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:material_symbols_icons/symbols.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:cy_shine_music/core/models/enums.dart';
@@ -12,13 +11,13 @@ import 'package:cy_shine_music/core/models/search_response.dart';
 import 'package:cy_shine_music/core/models/search_category.dart';
 import 'package:cy_shine_music/core/storage/settings_store.dart';
 import 'package:cy_shine_music/core/ui/app_toast.dart';
-import 'package:cy_shine_music/core/ui/expressive_download_button.dart';
 import 'package:cy_shine_music/features/player/player_audio_handler.dart';
 import 'package:cy_shine_music/features/playlists/playlist_store.dart';
 import 'package:cy_shine_music/features/search/search_controller.dart';
 import 'package:cy_shine_music/features/search/search_page.dart';
 import 'package:cy_shine_music/features/search/search_toolbar_state.dart';
 import 'package:cy_shine_music/features/search/widgets/search_result_tile.dart';
+import 'package:cy_shine_music/features/songs/widgets/song_actions_menu.dart';
 import 'package:cy_shine_music/router.dart';
 import 'package:cy_shine_music/theme/app_theme.dart';
 
@@ -83,71 +82,17 @@ void main() {
 
       final firstTile = find.byType(SearchResultTile).first;
       expect(tester.getSize(firstTile).height, 62);
-      final addToPlaylistButton = find.byKey(
-        const ValueKey('search-result-add-to-playlist-page-1-song-01'),
+      final actionsMenu = find.byKey(
+        const ValueKey('search-result-menu-page-1-song-01'),
       );
-      final downloadButton = find.byKey(
-        const ValueKey('search-result-download-page-1-song-01'),
-      );
-      expect(addToPlaylistButton, findsOneWidget);
-      expect(downloadButton, findsOneWidget);
-      expect(tester.getSize(addToPlaylistButton), const Size.square(40));
-      expect(tester.getSize(downloadButton), const Size.square(40));
-      final addAction = tester.widget<ExpressiveDownloadButton>(
-        addToPlaylistButton,
-      );
-      final downloadAction = tester.widget<ExpressiveDownloadButton>(
-        downloadButton,
-      );
-      expect(addAction.size, downloadAction.size);
-      expect(addAction.tapTargetSize, downloadAction.tapTargetSize);
-      expect(addAction.tonal, downloadAction.tonal);
-      expect(addAction.idleIcon, Icons.playlist_add_rounded);
-      expect(
-        find.descendant(
-          of: addToPlaylistButton,
-          matching: find.byIcon(Icons.playlist_add_rounded),
-        ),
-        findsOneWidget,
-      );
-      expect(find.byTooltip('添加到歌单'), findsWidgets);
-      expect(downloadAction.size, 36);
-      expect(downloadAction.tapTargetSize, 40);
-      final addIcon = tester.widget<Icon>(
-        find.descendant(
-          of: addToPlaylistButton,
-          matching: find.byIcon(Icons.playlist_add_rounded),
-        ),
-      );
-      final downloadIcon = tester.widget<Icon>(
-        find.descendant(
-          of: downloadButton,
-          matching: find.byIcon(Symbols.download_rounded),
-        ),
-      );
-      expect(addIcon.size, downloadIcon.size);
-      expect(addIcon.icon?.fontFamily, 'MaterialIcons');
-      expect(
-        find.descendant(
-          of: downloadButton,
-          matching: find.byIcon(Symbols.download_rounded),
-        ),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(
-          of: downloadButton,
-          matching: find.byIcon(Icons.arrow_downward_rounded),
-        ),
-        findsNothing,
-      );
-      expect(
-        find.descendant(
-          of: downloadButton,
-          matching: find.byIcon(Symbols.download_2_rounded),
-        ),
-        findsNothing,
-      );
+      expect(actionsMenu, findsOneWidget);
+      expect(tester.getSize(actionsMenu), const Size.square(44));
+      await tester.tap(actionsMenu);
+      await _pumpUi(tester);
+      expect(find.text('下载'), findsOneWidget);
+      expect(find.text('添加到歌单'), findsOneWidget);
+      await tester.tapAt(const Offset(4, 4));
+      await _pumpUi(tester);
       expect(tester.takeException(), isNull);
     },
   );
@@ -173,10 +118,12 @@ void main() {
       );
       await _pumpUi(tester);
 
-      final addToPlaylistButton = find.byKey(
-        const ValueKey('search-result-add-to-playlist-page-1-song-01'),
+      final actionsMenu = find.byKey(
+        const ValueKey('search-result-menu-page-1-song-01'),
       );
-      await tester.tap(addToPlaylistButton);
+      await tester.tap(actionsMenu);
+      await _pumpUi(tester);
+      await tester.tap(find.text('添加到歌单'));
       await _pumpUi(tester);
       expect(find.text('添加歌曲到'), findsOneWidget);
 
@@ -195,7 +142,9 @@ void main() {
       expect(find.text('已添加到「Online favorites」'), findsOneWidget);
       await tester.pump(const Duration(seconds: 4));
 
-      await tester.tap(addToPlaylistButton);
+      await tester.tap(actionsMenu);
+      await _pumpUi(tester);
+      await tester.tap(find.text('添加到歌单'));
       await _pumpUi(tester);
       expect(find.text('添加歌曲到'), findsOneWidget);
       await tester.tap(find.text('Online favorites'));
@@ -212,7 +161,7 @@ void main() {
   );
 
   testWidgets(
-    'tablet enlarges toolbar and moves paging FAB clear of downloads',
+    'tablet enlarges toolbar and moves paging FAB clear of song menus',
     (tester) async {
       await _usePhoneViewport(tester, size: const Size(1280, 800));
       final prefs = await SharedPreferences.getInstance();
@@ -245,10 +194,8 @@ void main() {
 
       expect(tester.getSize(find.byTooltip('发现')), const Size(96, 60));
       final fabRect = tester.getRect(find.byType(FloatingActionButton));
-      final downloadRect = tester.getRect(
-        find.byType(ExpressiveDownloadButton).last,
-      );
-      expect(fabRect.right, lessThan(downloadRect.left));
+      final menuRect = tester.getRect(find.byType(SongActionsMenu).last);
+      expect(fabRect.right, lessThan(menuRect.left));
       expect(tester.takeException(), isNull);
     },
   );
