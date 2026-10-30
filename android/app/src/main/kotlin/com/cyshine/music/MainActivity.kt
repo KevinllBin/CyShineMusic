@@ -250,6 +250,21 @@ class MainActivity : AudioServiceActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "moveToBack" -> result.success(moveTaskToBack(true))
+                    "exportLog" -> {
+                        val path = call.argument<String>("path")
+                        if (path.isNullOrBlank()) {
+                            result.error("INVALID_ARGS", "缺少日志快照", null)
+                            return@setMethodCallHandler
+                        }
+                        Thread {
+                            try {
+                                val exported = AppLogExport.save(applicationContext, path)
+                                runOnUiThread { result.success(exported) }
+                            } catch (failure: Throwable) {
+                                runOnUiThread { result.error("LOG_EXPORT_FAILED", "无法导出日志", failure.message) }
+                            }
+                        }.start()
+                    }
                     "diagnostics" -> {
                         val power = getSystemService(POWER_SERVICE) as PowerManager
                         result.success(mapOf(

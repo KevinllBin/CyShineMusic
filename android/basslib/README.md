@@ -5,6 +5,7 @@ native playback engine:
 
 - BASS 2.4.18.3
 - BASS FX 2.4.12.6
+- BASSmix 2.4.13
 - BASSFLAC 2.4.6.1
 - BASSAPE 2.4.1
 - BASSALAC 2.4.1
@@ -41,3 +42,11 @@ the equalizer chain are shared. Output diagnostics are logged under `CyShineBass
 BASS is free only for non-commercial use. Review every `*-LICENSE.txt` file in
 this directory and the bundled SSL notices before redistributing or monetizing
 the application.
+
+GrooveShift local playback uses BASSmix for the mixer clock and gain envelopes,
+and BASS FX for tempo, filters and echo. The four ABI copies and Java interface
+were copied unchanged from https://www.un4seen.com/files/bassmix24-android.zip
+on 2026-10-29. Archive SHA-256:
+`b35b32e7d7171b8f6eab4411322fbcfce1a2595929b3eef4cba4ca2a6ece923b`.
+This official BASSmix build is newer than the analysis sample; BASS and BASS FX
+remain unchanged. See BASSMIX-LICENSE.txt and the packaged notice.

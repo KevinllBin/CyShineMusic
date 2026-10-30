@@ -38,6 +38,7 @@ void main() {
       expect(settings.showMiniLyrics, isTrue);
       expect(settings.allowMixWithOthers, isFalse);
       expect(settings.autoPlayOnStartup, isFalse);
+      expect(settings.grooveShiftEnabled, isFalse);
       expect(settings.bluetoothLyricEnabled, isFalse);
       expect(settings.bluetoothFullLyricEnabled, isFalse);
       expect(settings.bluetoothLyricNoticeSeen, isFalse);
@@ -235,6 +236,35 @@ void main() {
       expect(nativeMode.read(settingsProvider).useNativeNavigation, isTrue);
     },
   );
+
+  test('GrooveShift switch persists under its current name', () async {
+    final prefs = await SharedPreferences.getInstance();
+    final container = _settingsContainer(prefs);
+    expect(container.read(settingsProvider).grooveShiftEnabled, isFalse);
+
+    await container.read(settingsProvider.notifier).setGrooveShiftEnabled(true);
+    expect(prefs.getBool('groove_shift_enabled'), isTrue);
+    container.dispose();
+
+    final restored = _settingsContainer(prefs);
+    addTearDown(restored.dispose);
+    expect(restored.read(settingsProvider).grooveShiftEnabled, isTrue);
+  });
+
+  test('GrooveShift can be disabled after restart', () async {
+    SharedPreferences.setMockInitialValues({'groove_shift_enabled': true});
+    final prefs = await SharedPreferences.getInstance();
+    final container = _settingsContainer(prefs);
+    expect(container.read(settingsProvider).grooveShiftEnabled, isTrue);
+    await container
+        .read(settingsProvider.notifier)
+        .setGrooveShiftEnabled(false);
+    container.dispose();
+
+    final restored = _settingsContainer(prefs);
+    addTearDown(restored.dispose);
+    expect(restored.read(settingsProvider).grooveShiftEnabled, isFalse);
+  });
 
   test('player preferences persist', () async {
     final prefs = await SharedPreferences.getInstance();

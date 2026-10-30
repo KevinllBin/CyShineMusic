@@ -17,6 +17,7 @@ import 'package:cy_shine_music/core/music_sources/music_source_models.dart';
 import 'package:cy_shine_music/core/music_sources/music_source_runtime.dart';
 import 'package:cy_shine_music/core/music_sources/music_url_resolver.dart';
 import 'package:cy_shine_music/core/services/app_logger.dart';
+import 'package:cy_shine_music/core/services/log_category.dart';
 import 'package:cy_shine_music/core/storage/settings_store.dart';
 import 'package:cy_shine_music/features/player/player_audio_handler.dart';
 import 'package:cy_shine_music/features/player/player_controller.dart';
@@ -478,6 +479,9 @@ void main() {
   );
 
   test('brief buffering resumes without watchdog interference', () async {
+    AppLogger.configureRecording(await SharedPreferences.getInstance());
+    await AppLogger.setRecordingCategories({AppLogCategory.playback});
+    addTearDown(() => AppLogger.setRecordingCategories({}));
     final harness = await _Harness.create(
       loadFailures: 0,
       stallRecoveryDelay: const Duration(milliseconds: 40),

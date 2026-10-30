@@ -31,3 +31,16 @@ val verifyBassSslLibraries by tasks.registering {
 tasks.named("preBuild") {
     dependsOn(verifyBassSslLibraries)
 }
+
+val verifyBassMixLibraries by tasks.registering {
+    group = "verification"
+    val libraries = listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64").map { abi ->
+        layout.projectDirectory.file("src/main/jniLibs/$abi/libbassmix.so")
+    }
+    inputs.files(libraries)
+    doLast {
+        check(libraries.all { it.asFile.isFile }) { "BASSmix is required for every supported ABI" }
+    }
+}
+
+tasks.named("preBuild") { dependsOn(verifyBassMixLibraries) }

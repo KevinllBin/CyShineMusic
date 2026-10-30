@@ -15,6 +15,8 @@ import 'features/player/music_home_widget_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final prefs = await SharedPreferences.getInstance();
+  AppLogger.configureRecording(prefs);
   await AppLogger.logEnvironment();
   DebugPaintGuard.install();
   if (Platform.isAndroid) {
@@ -32,7 +34,6 @@ Future<void> main() async {
     // waiting here would prevent the player and widget controls from starting.
     unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
   }
-  final prefs = await SharedPreferences.getInstance();
   hydrateNetworkAdapterPreference(prefs);
   final audioHandler = await initializePlayerAudioHandler(
     allowMixWithOthers: readAllowMixWithOthersPreference(prefs),

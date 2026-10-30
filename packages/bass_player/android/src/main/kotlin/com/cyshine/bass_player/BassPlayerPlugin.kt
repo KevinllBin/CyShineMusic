@@ -39,6 +39,34 @@ class BassPlayerPlugin :
     @Volatile private var pendingNetworkRequest: Any? = null
     private val loadGeneration = AtomicInteger()
 
+    private val diagnostics = PlaybackDiagnostics { record ->
+        val value = linkedMapOf<String, Any?>("event" to "diagnostic", "record" to record)
+        mainHandler.post { eventSink?.success(value) }
+    }
+    private var snapshotSequence = 0L
+    private var previousClockSource: String? = null
+    private var previousClockPosition = 0L
+    private var previousClockTime = 0L
+    private val grooveShift: GrooveShiftEngine by lazy {
+        GrooveShiftEngine(applicationContext, engineHandler,
+            { path, flags -> createFileStream(normalizedFormat(null, Uri.parse(path)), path, flags) },
+            { phase, id, details ->
+                val value = LinkedHashMap(snapshot())
+                value["event"] = "groove-shift"
+                value["phase"] = phase
+                value["transitionId"] = id
+                value.putAll(details)
+                if (phase == "handoff" || phase == "finished") {
+                    durationMs = grooveShiftDuration()
+                    value["durationMs"] = durationMs
+                }
+                if (diagnostics.smartTransitionEnabled) {
+                    diagnostics.record("phase_$phase", value.filterKeys { it != "event" } + grooveShift.clockDetails())
+                }
+                mainHandler.post { eventSink?.success(value) }
+            })
+    }
+    private fun grooveShiftDuration(): Long? = grooveShift.duration()
     private var initialized = false
     private var stream = 0
     private var sourceDescriptor: ParcelFileDescriptor? = null
@@ -127,6 +155,17 @@ class BassPlayerPlugin :
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
+            "setDiagnosticRecording" -> postResult(result) {
+                diagnostics.configure(
+                    playback = call.argument<Boolean>("playback") == true,
+                    smartTransition = call.argument<Boolean>("smartTransition") == true,
+                )
+                grooveShift.onDiagnostic = if (diagnostics.smartTransitionEnabled) {
+                    { action, fields -> diagnostics.record(action, fields) }
+                } else null
+                emptyMap<String, Any?>()
+            }
+            "getDiagnostics" -> postResult(result) { mapOf("lines" to diagnostics.recent()) }
             "initialize" -> postResult(result) { initializeEngine() }
             "load" -> {
                 val uri = call.argument<String>("uri")
@@ -141,6 +180,22 @@ class BassPlayerPlugin :
                     .associate { it.key.toString() to it.value.toString() }
                 val formatHint = call.argument<String>("formatHint")
                 postResult(result) { load(uri, headers, formatHint, generation) }
+            }
+            "setGrooveShift" -> postResult(result) {
+                grooveShift.configure(call.argument<Boolean>("enabled") == true)
+                snapshot()
+            }
+            "setGrooveShiftNext" -> postResult(result) {
+                grooveShift.next(call.argument<String>("id"), call.argument<String>("uri"))
+                snapshot()
+            }
+            "confirmGrooveShift" -> postResult(result) {
+                grooveShift.confirm(call.argument<String>("id") ?: "")
+                snapshot()
+            }
+            "cancelGrooveShift" -> {
+                grooveShift.invalidate()
+                postResult(result) { grooveShift.cancel(); snapshot() }
             }
             "play" -> postResult(result) { play() }
             "pause" -> postResult(result) { pause() }
@@ -294,6 +349,7 @@ class BassPlayerPlugin :
         }
 
         releaseStream()
+        grooveShift.resetPlaybackEnded()
         playing = false
         completed = false
         durationMs = null
@@ -307,7 +363,7 @@ class BassPlayerPlugin :
         var openedDescriptor: ParcelFileDescriptor? = null
         var requestToken: Any? = null
         val handle = try {
-            when (parsed.scheme?.lowercase()) {
+            if (!isRemote) grooveShift.load(source) else when (parsed.scheme?.lowercase()) {
                 "http", "https", "ftp" -> {
                     requestToken = Any()
                     pendingNetworkRequest = requestToken
@@ -382,11 +438,15 @@ class BassPlayerPlugin :
     }
 
     private fun play(): Map<String, Any?> {
+        if (diagnostics.playbackEnabled) {
+            diagnostics.record("play", grooveShift.clockDetails(), category = DiagnosticCategory.PLAYBACK)
+        }
         initializeEngine()
         if (stream == 0) failWith(BASS.BASS_ERROR_HANDLE, "play")
+        grooveShift.resetPlaybackEnded()
         if (completed) {
             val position = BASS.BASS_ChannelSeconds2Bytes(stream, 0.0)
-            if (!BASS.BASS_ChannelSetPosition(stream, position, BASS.BASS_POS_BYTE)) {
+            if (!(if (grooveShift.active) grooveShift.seek(0) else BASS.BASS_ChannelSetPosition(stream, position, BASS.BASS_POS_BYTE))) {
                 fail("restart stream")
             }
             completed = false
@@ -401,6 +461,9 @@ class BassPlayerPlugin :
     }
 
     private fun pause(): Map<String, Any?> {
+        if (diagnostics.playbackEnabled) {
+            diagnostics.record("pause", grooveShift.clockDetails(), category = DiagnosticCategory.PLAYBACK)
+        }
         if (stream == 0) return snapshot()
         if (!BASS.BASS_ChannelPause(stream)) fail("pause")
         playing = false
@@ -428,7 +491,7 @@ class BassPlayerPlugin :
             requestedMs.coerceIn(0, end)
         }
         val bytePosition = BASS.BASS_ChannelSeconds2Bytes(stream, targetMs / 1000.0)
-        var success = bytePosition >= 0 && BASS.BASS_ChannelSetPosition(stream, bytePosition, BASS.BASS_POS_BYTE)
+        var success = if (grooveShift.active) grooveShift.seek(targetMs) else bytePosition >= 0 && BASS.BASS_ChannelSetPosition(stream, bytePosition, BASS.BASS_POS_BYTE)
         if (!success && remoteSource && BASS.BASS_ErrorGetCode() == BASS.BASS_ERROR_POSITION) {
             val startWait = SystemClock.uptimeMillis()
             val maxWaitMs = 1500L
@@ -530,6 +593,7 @@ class BassPlayerPlugin :
             engineHandler.post {
                 if (stream != channel || callbackChannel != channel) return@post
                 completed = true
+                grooveShift.markPlaybackEnded()
                 playing = false
                 processingState = STATE_COMPLETED
                 releaseWakeLock()
@@ -634,8 +698,28 @@ class BassPlayerPlugin :
 
     private fun snapshot(): Map<String, Any?> {
         val position = readPositionMs()
+        val sourceId = grooveShift.sourceId() ?: "load-${loadGeneration.get()}"
+        val now = SystemClock.elapsedRealtime()
+        if (diagnostics.smartTransitionEnabled && grooveShift.active && (previousClockSource != sourceId ||
+                position < previousClockPosition - 600 ||
+                position > previousClockPosition + (now - previousClockTime) + 1500)) {
+            diagnostics.record("clock_jump", grooveShift.clockDetails() + mapOf(
+                "fromSource" to previousClockSource, "toSource" to sourceId,
+                "fromMs" to previousClockPosition, "toMs" to position,
+                "elapsedMs" to (now-previousClockTime), "durationMs" to durationMs,
+                "snapshotSeq" to (snapshotSequence+1)), 1000)
+        }
+        previousClockSource = sourceId
+        previousClockPosition = position
+        previousClockTime = now
+        if(diagnostics.smartTransitionEnabled && grooveShift.active) diagnostics.record("clock", grooveShift.clockDetails() + mapOf(
+            "positionMs" to position, "durationMs" to durationMs,
+            "playing" to playing, "state" to processingState), 1000)
         return linkedMapOf(
             "event" to "snapshot",
+            "snapshotSeq" to ++snapshotSequence,
+            "sourceId" to sourceId,
+            "nativeMonoMs" to now,
             "playing" to playing,
             "processingState" to processingState,
             "positionMs" to position,
@@ -660,6 +744,7 @@ class BassPlayerPlugin :
     }
 
     private fun readPositionMs(): Long {
+        if (grooveShift.active) return grooveShift.position()
         if (stream == 0) return 0
         val bytes = BASS.BASS_ChannelGetPosition(stream, BASS.BASS_POS_BYTE)
         if (bytes < 0) return 0
@@ -668,6 +753,7 @@ class BassPlayerPlugin :
     }
 
     private fun readDurationMs(): Long? {
+        if (grooveShift.active) return grooveShift.duration()
         if (stream == 0) return null
         val bytes = BASS.BASS_ChannelGetLength(stream, BASS.BASS_POS_BYTE)
         if (bytes <= 0) return null
@@ -860,6 +946,7 @@ class BassPlayerPlugin :
     }
 
     private fun releaseStream() {
+        grooveShift.close()
         stopTicker()
         releaseWakeLock()
         if (stream != 0) {

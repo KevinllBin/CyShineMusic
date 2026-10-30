@@ -1,8 +1,8 @@
-import 'dart:io';
 import 'dart:typed_data';
 
 import '../../core/models/enums.dart';
 import '../../core/models/lyric_info.dart';
+import '../../core/services/local_audio_source.dart';
 import '../../core/models/music_info.dart';
 import '../../core/services/embedded_audio_tags.dart';
 import '../downloads/download_history_entry.dart';
@@ -108,7 +108,7 @@ class PlayerTrack {
     final hasLocalFile =
         path != null &&
         path.isNotEmpty &&
-        (trustSavedPath || File(path).existsSync());
+        (trustSavedPath || isLocalAudioSourceAvailable(path));
     if (!hasLocalFile && music != null) {
       return PlayerTrack(
         id: '${music.source.code}:${music.id}:remote',

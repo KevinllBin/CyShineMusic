@@ -21,6 +21,7 @@ import '../../core/ui/app_toast.dart';
 import '../../core/ui/car_display_layout.dart';
 import '../../theme/dynamic_color_status.dart';
 import '../discovery/discovery_controller.dart';
+import '../debug/widgets/log_recording_menu.dart';
 import '../equalizer/equalizer_store.dart';
 import '../player/sleep_timer_controller.dart';
 import '../player/widgets/player_sleep_timer_sheet.dart';
@@ -357,6 +358,16 @@ class SettingsPage extends ConsumerWidget {
                                     .setAutoPlayOnStartup(value),
                               ),
                               const SizedBox(height: 4),
+                              SettingsSwitchAction(
+                                key: const ValueKey('groove-shift-setting'),
+                                icon: Icons.auto_awesome_rounded,
+                                title: '智能过渡',
+                                subtitle: '分析节拍与头尾能量，自动安排接歌；仅本地歌曲生效',
+                                value: settings.grooveShiftEnabled,
+                                onChanged: (value) => ref
+                                    .read(settingsProvider.notifier)
+                                    .setGrooveShiftEnabled(value),
+                              ),
                               SettingsSwitchAction(
                                 key: const ValueKey(
                                   'allow-mix-with-others-setting',
@@ -776,12 +787,13 @@ class SettingsPage extends ConsumerWidget {
                                     .read(settingsProvider.notifier)
                                     .setDebugMode(value),
                               ),
+                              const LogRecordingMenu(),
                               if (settings.debugMode) ...[
                                 const SizedBox(height: 12),
                                 SettingsAction(
                                   icon: Icons.terminal_rounded,
                                   title: '日志控制台',
-                                  subtitle: '实时查看播放、缓冲、音源和网络错误',
+                                  subtitle: '实时查看已开启分类的日志，支持复制与导出',
                                   trailing: Symbols.chevron_right,
                                   onTap: () => context.go('/debug'),
                                 ),

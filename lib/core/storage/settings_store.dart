@@ -46,6 +46,7 @@ const String _kDiscoverySourceOrderKey = 'discovery_source_order';
 const String _kOnlinePlaybackQualityKey = 'online_playback_quality';
 const String _kBatchDownloadQualityKey = 'batch_download_quality';
 const String _kShowMiniLyricsKey = 'show_mini_lyrics';
+const String _kGrooveShiftEnabledKey = 'groove_shift_enabled';
 const String _kAllowMixWithOthersKey = 'allow_mix_with_others';
 const String _kBluetoothLyricEnabledKey = 'bluetooth_lyric_enabled';
 const String _kBluetoothFullLyricEnabledKey = 'bluetooth_full_lyric_enabled';
@@ -117,6 +118,7 @@ class AppSettings {
     required this.onlinePlaybackQuality,
     required this.batchDownloadQuality,
     required this.showMiniLyrics,
+    this.grooveShiftEnabled = false,
     required this.allowMixWithOthers,
     required this.bluetoothLyricEnabled,
     required this.bluetoothFullLyricEnabled,
@@ -167,6 +169,7 @@ class AppSettings {
 
   /// Whether playback should avoid taking exclusive audio focus so other apps
   /// can continue playing at the same time.
+  final bool grooveShiftEnabled;
   final bool allowMixWithOthers;
   final bool bluetoothLyricEnabled;
   final bool bluetoothFullLyricEnabled;
@@ -203,6 +206,7 @@ class AppSettings {
     OnlinePlaybackQuality? onlinePlaybackQuality,
     OnlinePlaybackQuality? batchDownloadQuality,
     bool? showMiniLyrics,
+    bool? grooveShiftEnabled,
     bool? allowMixWithOthers,
     bool? bluetoothLyricEnabled,
     bool? bluetoothFullLyricEnabled,
@@ -248,6 +252,7 @@ class AppSettings {
     onlinePlaybackQuality: onlinePlaybackQuality ?? this.onlinePlaybackQuality,
     batchDownloadQuality: batchDownloadQuality ?? this.batchDownloadQuality,
     showMiniLyrics: showMiniLyrics ?? this.showMiniLyrics,
+    grooveShiftEnabled: grooveShiftEnabled ?? this.grooveShiftEnabled,
     allowMixWithOthers: allowMixWithOthers ?? this.allowMixWithOthers,
     bluetoothLyricEnabled: bluetoothLyricEnabled ?? this.bluetoothLyricEnabled,
     bluetoothFullLyricEnabled:
@@ -357,6 +362,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
         _prefs.getString(_kBatchDownloadQualityKey),
       ),
       showMiniLyrics: _prefs.getBool(_kShowMiniLyricsKey) ?? true,
+      grooveShiftEnabled: _prefs.getBool(_kGrooveShiftEnabledKey) ?? false,
       allowMixWithOthers: readAllowMixWithOthersPreference(_prefs),
       bluetoothLyricEnabled:
           _prefs.getBool(_kBluetoothLyricEnabledKey) ?? false,
@@ -774,6 +780,11 @@ class SettingsNotifier extends Notifier<AppSettings> {
   Future<void> setShowMiniLyrics(bool value) async {
     await _prefs.setBool(_kShowMiniLyricsKey, value);
     state = state.copyWith(showMiniLyrics: value);
+  }
+
+  Future<void> setGrooveShiftEnabled(bool value) async {
+    await _prefs.setBool(_kGrooveShiftEnabledKey, value);
+    state = state.copyWith(grooveShiftEnabled: value);
   }
 
   Future<void> setAllowMixWithOthers(bool value) async {

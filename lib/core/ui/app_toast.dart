@@ -89,17 +89,20 @@ void dismissAppToast(
 }) {
   if (handle == null || handle._dismissed) return;
   handle._dismissed = true;
-  toastification.dismiss(
-    handle._item,
-    showRemoveAnimation: showRemoveAnimation,
-  );
+  _dismissToast(handle._item, showRemoveAnimation: showRemoveAnimation);
+}
+
+void _dismissToast(
+  ToastificationItem item, {
+  required bool showRemoveAnimation,
+}) {
+  toastification.dismiss(item, showRemoveAnimation: showRemoveAnimation);
+  // Toastification inserts items after a frame. While the app is backgrounded,
+  // a toast can expire before insertion, so also remove it after that frame.
   WidgetsBinding.instance.addPostFrameCallback((_) {
-    toastification.dismiss(
-      handle._item,
-      showRemoveAnimation: showRemoveAnimation,
-    );
+    toastification.dismiss(item, showRemoveAnimation: showRemoveAnimation);
   });
-  if (identical(_currentToast, handle._item)) _currentToast = null;
+  if (identical(_currentToast, item)) _currentToast = null;
 }
 
 AppToastHandle _showToast({
@@ -112,14 +115,13 @@ AppToastHandle _showToast({
 }) {
   final previous = _currentToast;
   if (previous != null) {
-    toastification.dismiss(previous, showRemoveAnimation: false);
+    _dismissToast(previous, showRemoveAnimation: false);
   }
 
   final stableOverlay = _appToastOverlayKey.currentState;
   final effectiveOverlay = stableOverlay ?? overlayState;
 
-  late final ToastificationItem item;
-  item = toastification.showCustom(
+  final item = toastification.showCustom(
     context: effectiveOverlay == null ? context : null,
     overlayState: effectiveOverlay,
     alignment: position.alignment,
@@ -127,9 +129,8 @@ AppToastHandle _showToast({
     autoCloseDuration: duration,
     animationBuilder: _toastAnimationBuilder,
     callbacks: ToastificationCallbacks(
-      onAutoCompleteCompleted: (_) {
-        if (identical(_currentToast, item)) _currentToast = null;
-      },
+      onAutoCompleteCompleted: (item) =>
+          _dismissToast(item, showRemoveAnimation: false),
     ),
     builder: (context, _) =>
         _ToastViewport(message: message, type: type, position: position),

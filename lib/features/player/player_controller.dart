@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:audio_service/audio_service.dart'
@@ -16,6 +16,7 @@ import '../../core/models/lyric_info.dart';
 import '../../core/models/music_info.dart';
 import '../../core/music_sources/music_url_resolver.dart';
 import '../../core/services/app_logger.dart';
+import '../../core/services/local_audio_source.dart';
 import '../../core/services/tagger.dart';
 import '../../core/storage/settings_store.dart';
 import '../../core/ui/cover_image_source.dart';
@@ -73,6 +74,7 @@ class PlayerController extends StateNotifier<PlayerState>
         _recordPlaybackProgress(position);
         _syncBluetoothMetadata();
         _schedulePositionCheckpoint();
+        _scheduleGrooveShift();
       }),
       _audioHandler.durationStream.listen((duration) {
         if (!mounted || _transportSuppressionToken != null) return;
@@ -105,8 +107,12 @@ class PlayerController extends StateNotifier<PlayerState>
         _updateStallRecovery(playerState);
       }),
       _audioHandler.errorStream.listen(_handlePlaybackError),
+      _audioHandler.grooveShiftStream.listen(_handleGrooveShift),
     ];
     _ref.listen<AppSettings>(settingsProvider, (previous, next) {
+      if (previous?.grooveShiftEnabled != next.grooveShiftEnabled) {
+        unawaited(_configureGrooveShift(next.grooveShiftEnabled));
+      }
       if (previous?.allowMixWithOthers != next.allowMixWithOthers) {
         unawaited(_applyAudioMixingPreference(next.allowMixWithOthers));
       }
@@ -119,6 +125,9 @@ class PlayerController extends StateNotifier<PlayerState>
     _ref.listen<EqualizerSettings>(equalizerProvider, (_, next) {
       _scheduleEqualizerApply(next);
     }, fireImmediately: true);
+    unawaited(
+      _configureGrooveShift(_ref.read(settingsProvider).grooveShiftEnabled),
+    );
     WidgetsBinding.instance.addObserver(this);
 
     final restored = _sessionStore.read();
@@ -144,6 +153,202 @@ class PlayerController extends StateNotifier<PlayerState>
         'apply shared playback setting failed: $error',
       );
     }
+  }
+
+  String? _grooveShiftId;
+  DownloadHistoryEntry? _grooveShiftEntry;
+  bool _grooveShiftMixing = false;
+  int _grooveShiftSerial = 0;
+
+  Future<void> _configureGrooveShift(bool enabled) async {
+    try {
+      await _audioHandler.setGrooveShiftEnabled(enabled);
+      if (!mounted) return;
+      _grooveShiftId = null;
+      if (enabled) _scheduleGrooveShift();
+    } catch (error) {
+      unawaited(AppLogger.write('groove-shift', 'configure failed: $error'));
+    }
+  }
+
+  void _scheduleGrooveShift() {
+    if (!mounted ||
+        _grooveShiftMixing ||
+        state.loading ||
+        _transportSuppressionToken != null) {
+      return;
+    }
+    DownloadHistoryEntry? entry;
+    final path = state.track?.localPath;
+    if (_ref.read(settingsProvider).grooveShiftEnabled &&
+        path != null &&
+        state.duration > Duration.zero &&
+        state.duration - state.position <= const Duration(seconds: 90)) {
+      final index = _nextQueueIndex(automatic: true);
+      if (index != null) {
+        final candidate = _queue[index];
+        final nextPath = candidate.savedPath;
+        if (nextPath != null && isLocalAudioSourceAvailable(nextPath)) {
+          entry = candidate;
+        }
+      }
+    }
+    final identity = entry == null
+        ? null
+        : '${state.track!.id}:${entry.id}:${entry.savedPath}';
+    if (identity == _grooveShiftId) return;
+    _grooveShiftId = identity;
+    _grooveShiftEntry = entry;
+    final id = identity == null ? null : 'mx-${++_grooveShiftSerial}';
+    _grooveShiftNativeId = id;
+    _traceGrooveShift('queue_prepare', {
+      'transition': id,
+      'nextEntry': entry?.id,
+      'nextTitle': entry?.name,
+    });
+    unawaited(
+      _audioHandler
+          .setGrooveShiftNext(
+            id: id,
+            uri: entry == null ? null : localAudioSourceUri(entry.savedPath!),
+          )
+          .catchError((Object error) {
+            unawaited(
+              AppLogger.write('groove-shift', 'prepare failed: $error'),
+            );
+          }),
+    );
+  }
+
+  String? _grooveShiftNativeId;
+  void _traceGrooveShift(
+    String action, [
+    Map<String, Object?> fields = const {},
+  ]) {
+    unawaited(
+      AppLogger.write(
+        'groove-shift-ui',
+        jsonEncode({
+          'action': action,
+          'track': state.track?.id,
+          'title': state.track?.title,
+          'queueIndex': _queueIndex,
+          'positionMs': state.position.inMilliseconds,
+          'durationMs': state.duration.inMilliseconds,
+          'expectedTransition': _grooveShiftNativeId,
+          'transportSuppressed': _transportSuppressionToken != null,
+          ...fields,
+        }),
+      ),
+    );
+  }
+
+  void _handleGrooveShift(Map<Object?, Object?> event) {
+    if (!mounted) return;
+    _traceGrooveShift('phase_received', {
+      'phase': event['phase'],
+      'transition': event['transitionId'],
+      'source': event['sourceId'],
+      'snapshotSeq': event['snapshotSeq'],
+      'nativePositionMs': event['positionMs'],
+      'nativeDurationMs': event['durationMs'],
+      'accepted': event['transitionId'] == _grooveShiftNativeId,
+    });
+    if (event['transitionId'] != _grooveShiftNativeId) return;
+    final phase = event['phase'];
+    if (phase == 'reserve') {
+      final index = _nextQueueIndex(automatic: true);
+      if (_ref.read(settingsProvider).grooveShiftEnabled &&
+          index != null &&
+          _grooveShiftEntry != null &&
+          _sameEntry(_queue[index], _grooveShiftEntry!)) {
+        _grooveShiftMixing = true;
+        unawaited(_audioHandler.confirmGrooveShift(_grooveShiftNativeId!));
+      } else {
+        unawaited(_audioHandler.cancelGrooveShift());
+      }
+    } else if (phase == 'handoff') {
+      if (_transportSuppressionToken != null) return;
+      final entry = _grooveShiftEntry;
+      if (entry == null) return;
+      final index = _queue.indexWhere((item) => _sameEntry(item, entry));
+      if (index < 0) return;
+      final token = Object();
+      _requestToken = token;
+      _queueIndex = index;
+      _alignPlayOrderCursor(index);
+      _currentMusic = entry.musicInfo;
+      _currentQuality = Quality.tryFromCode(entry.qualityCode);
+      _completionHandledForTrackId = null;
+      final track = PlayerTrack.fromHistory(entry);
+      _audioHandler.adoptGrooveShiftTrack(_buildMediaItem(track), index);
+      state = state
+          .beginTrackLoading(
+            nextTrack: track,
+            canPlayPrevious: _canPlayPrevious,
+            canPlayNext: _canPlayNext,
+            queue: List<DownloadHistoryEntry>.unmodifiable(_queue),
+            queueIndex: index,
+          )
+          .copyWith(
+            loading: false,
+            playing: _audioHandler.playing,
+            position: _audioHandler.position,
+            duration: _audioHandler.duration ?? Duration.zero,
+            processingState: PlayerProcessingState.ready,
+          );
+      _traceGrooveShift('handoff_applied');
+      _syncBluetoothMetadata(force: true);
+      _persistFullSession();
+      unawaited(_loadGrooveShiftMetadata(track, entry, token));
+    } else if (phase == 'finished' || phase == 'cancelled') {
+      _grooveShiftMixing = false;
+      _grooveShiftId = null;
+      _grooveShiftNativeId = null;
+      _grooveShiftEntry = null;
+    }
+  }
+
+  Future<void> _loadGrooveShiftMetadata(
+    PlayerTrack track,
+    DownloadHistoryEntry entry,
+    Object token,
+  ) async {
+    final embedded = await _readEmbeddedTagsForLocal(track.localPath!);
+    if (!mounted || !identical(_requestToken, token)) return;
+    final resolved = embedded == null
+        ? track
+        : track.withEmbeddedTags(embedded);
+    state = state.copyWith(track: resolved);
+    _publishMediaMetadata(
+      _buildMediaItem(resolved, duration: _audioHandler.duration),
+    );
+    unawaited(_publishEmbeddedArtworkAfterEntrance(resolved, token));
+    final raw = embedded?.lyrics;
+    if (raw != null && raw.trim().isNotEmpty) {
+      final parsed = await compute(KaraokeLyricsParser.parseEmbedded, raw);
+      if (!mounted || !identical(_requestToken, token)) return;
+      state = state.copyWith(lyrics: parsed, lyricLoading: false);
+    } else if (entry.musicInfo != null) {
+      await _loadLyricsForMusic(
+        entry.musicInfo!,
+        token,
+        logPrefix: 'groove-shift lyric load',
+      );
+    } else {
+      state = state.copyWith(lyricLoading: false);
+    }
+  }
+
+  void _invalidateGrooveShift() {
+    if (_grooveShiftId != null || _grooveShiftMixing) {
+      _traceGrooveShift('invalidate');
+    }
+    _grooveShiftId = null;
+    // Keep the identifier until cancellation is acknowledged: a playback-time
+    // handoff may already be queued ahead of a transport command.
+    _grooveShiftMixing = false;
+    unawaited(_audioHandler.cancelGrooveShift());
   }
 
   final Ref _ref;
@@ -212,6 +417,7 @@ class PlayerController extends StateNotifier<PlayerState>
     _pausedBySleepTimer = false;
     final pauseGeneration = _sleepTimerPauseGeneration;
     final token = Object();
+    _invalidateGrooveShift();
     _requestToken = token;
     _transportSuppressionToken = token;
     final selectedQuality =
@@ -889,12 +1095,13 @@ class PlayerController extends StateNotifier<PlayerState>
     bool showErrors = true,
   }) async {
     final path = track.localPath;
-    if (path == null || path.isEmpty || !File(path).existsSync()) {
+    if (path == null || path.isEmpty || !isLocalAudioSourceAvailable(path)) {
       state = state.copyWith(error: '文件不存在');
       return false;
     }
 
     final token = Object();
+    _invalidateGrooveShift();
     _requestToken = token;
     _transportSuppressionToken = token;
     _pausedBySleepTimer = false;
@@ -934,7 +1141,7 @@ class PlayerController extends StateNotifier<PlayerState>
           track,
           artUri: _networkArtworkUri(track.coverUrl),
         ),
-        sourceUri: File(path).uri,
+        sourceUri: localAudioSourceUri(path),
         queueIndex: _hasCurrentQueueTrack ? _queueIndex : null,
       );
       if (!identical(_requestToken, token)) return false;
@@ -1084,6 +1291,7 @@ class PlayerController extends StateNotifier<PlayerState>
       return;
     }
     final trackId = state.track!.id;
+    _invalidateGrooveShift();
     await _audioHandler.seek(position);
     if (!mounted || state.track?.id != trackId) return;
     state = state.copyWith(position: _audioHandler.position);
@@ -1144,7 +1352,7 @@ class PlayerController extends StateNotifier<PlayerState>
   Future<void> _playQueueEntry(DownloadHistoryEntry entry) {
     _pendingRestoredSession = null;
     final path = entry.savedPath?.trim();
-    if (path != null && path.isNotEmpty && File(path).existsSync()) {
+    if (path != null && path.isNotEmpty && isLocalAudioSourceAvailable(path)) {
       if (state.track?.localPath == path) {
         _syncQueueAvailability();
         return _restartCurrentTrack();
@@ -1216,7 +1424,9 @@ class PlayerController extends StateNotifier<PlayerState>
   bool _isPlayableEntry(DownloadHistoryEntry entry) {
     if (!entry.isCompleted) return false;
     final path = entry.savedPath;
-    if (path != null && path.isNotEmpty && File(path).existsSync()) return true;
+    if (path != null && path.isNotEmpty && isLocalAudioSourceAvailable(path)) {
+      return true;
+    }
     return entry.musicInfo != null;
   }
 
@@ -1352,6 +1562,7 @@ class PlayerController extends StateNotifier<PlayerState>
 
   void _syncQueueAvailability() {
     if (!mounted) return;
+    _invalidateGrooveShift();
     _audioHandler.publishQueue(
       _queue.map(_mediaItemForHistoryEntry).toList(growable: false),
       currentIndex: _hasCurrentQueueTrack ? _queueIndex : null,
@@ -1583,7 +1794,9 @@ class PlayerController extends StateNotifier<PlayerState>
 
     if (restoredTrack.isLocal) {
       final path = restoredTrack.localPath?.trim();
-      if (path != null && path.isNotEmpty && File(path).existsSync()) {
+      if (path != null &&
+          path.isNotEmpty &&
+          isLocalAudioSourceAvailable(path)) {
         restored = await _playLocal(
           restoredTrack,
           fallbackMusic: snapshot.music,
@@ -1909,6 +2122,7 @@ class PlayerController extends StateNotifier<PlayerState>
     _positionCheckpointTimer?.cancel();
     _stallRecoveryTimer?.cancel();
     _audioHandler.unbindTransportCallbacks(this);
+    unawaited(_audioHandler.cancelGrooveShift());
     for (final subscription in _subscriptions) {
       subscription.cancel();
     }

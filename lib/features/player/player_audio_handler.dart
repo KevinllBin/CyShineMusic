@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:audio_service/audio_service.dart';
@@ -12,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../core/services/app_logger.dart';
+import '../../core/services/log_category.dart';
 import 'media_item_copy.dart';
 
 typedef PlayerTransportCallback = Future<void> Function();
@@ -105,6 +107,16 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _errorSubscription = _player.errorStream.listen((error) {
       _broadcastError(error, StackTrace.current);
     });
+    _diagnosticSubscription = _player.diagnosticStream.listen((record) {
+      final scope = record['scope'] == 'player-trace'
+          ? 'player-trace'
+          : 'groove-shift-trace';
+      if (AppLogger.isRecordingScope(scope)) {
+        unawaited(AppLogger.write(scope, jsonEncode(record)));
+      }
+    });
+    AppLogger.recordingCategories.addListener(_syncDiagnosticRecording);
+    _syncDiagnosticRecording();
     _broadcastState(_player.snapshot);
   }
 
@@ -117,6 +129,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   bool _engineInitialized = false;
   BassEqualizerConfiguration? _pendingEqualizer;
   StreamSubscription<BassPlaybackSnapshot>? _playbackSubscription;
+  StreamSubscription<Map<Object?, Object?>>? _diagnosticSubscription;
   StreamSubscription<Duration?>? _durationSubscription;
   StreamSubscription<BassPlayerException>? _errorSubscription;
   StreamSubscription<AudioInterruptionEvent>? _interruptionSubscription;
@@ -124,6 +137,24 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   bool _resumeAfterInterruption = false;
   bool _ducked = false;
   int _pauseGeneration = 0;
+
+  void _syncDiagnosticRecording() {
+    unawaited(
+      _player
+          .setDiagnosticRecording(
+            playback: AppLogger.isRecording(AppLogCategory.playback),
+            smartTransition: AppLogger.isRecording(
+              AppLogCategory.smartTransition,
+            ),
+          )
+          .catchError((Object error) {
+            return AppLogger.write(
+              'player-engine',
+              'diagnostic settings failed: $error',
+            );
+          }),
+    );
+  }
 
   Object? _callbackOwner;
   PlayerTransportCallback? _onPrevious;
@@ -142,6 +173,24 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   // BASS owns one stream at a time. A load can outlive its Dart timeout, so
   // keep a generation to prevent an old timeout from stopping a newer load.
   int _loadGeneration = 0;
+
+  Stream<Map<Object?, Object?>> get grooveShiftStream =>
+      _player.grooveShiftStream;
+  Future<void> setGrooveShiftEnabled(bool enabled) =>
+      _player.setGrooveShiftEnabled(enabled);
+  Future<void> setGrooveShiftNext({String? id, Uri? uri}) =>
+      _player.setGrooveShiftNext(id: id, uri: uri);
+  Future<void> confirmGrooveShift(String id) => _player.confirmGrooveShift(id);
+  Future<void> cancelGrooveShift() => _player.cancelGrooveShift();
+
+  void adoptGrooveShiftTrack(MediaItem item, int index) {
+    ++_loadGeneration;
+    _queueIndex = index;
+    _trackTransitionActive = false;
+    _clearTransitionSnapshot();
+    _currentMediaItem = item;
+    mediaItem.add(item);
+  }
 
   Stream<Duration> get positionStream => _player.positionStream;
   Stream<Duration?> get durationStream => _player.durationStream;
@@ -604,7 +653,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   Future<void> disposeHandler() async {
+    AppLogger.recordingCategories.removeListener(_syncDiagnosticRecording);
     await _playbackSubscription?.cancel();
+    await _diagnosticSubscription?.cancel();
     await _durationSubscription?.cancel();
     await _errorSubscription?.cancel();
     await _interruptionSubscription?.cancel();
