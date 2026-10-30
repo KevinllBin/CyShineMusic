@@ -182,12 +182,27 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
     final granted = await PermissionService.hasExternalStorageWrite();
     await AppLogger.write('app', 'startup permission status granted=$granted');
     if (granted) return true;
+
+    // The startup explanation is shown only before the first storage-permission
+    // decision. A previous denial/dismissal is remembered across app launches.
+    if (await PermissionService.hasStoragePermissionRequestAttempted()) {
+      return true;
+    }
+
     // Wait one frame so the router has a chance to mount its home screen.
     await Future<void>.delayed(const Duration(milliseconds: 50));
+    // Another feature may have initiated the one allowed request meanwhile.
+    if (await PermissionService.hasStoragePermissionRequestAttempted()) {
+      return true;
+    }
     final ctx = rootNavigatorKey.currentContext;
     if (ctx == null || !ctx.mounted) return false;
     final shouldRequest = await _showPermissionDialog(ctx);
-    if (!shouldRequest) return true;
+    if (!shouldRequest) {
+      // "稍后再说" is also a refusal: do not show this dialog again.
+      await PermissionService.markStoragePermissionRequestAttempted();
+      return true;
+    }
 
     final ok = await PermissionService.ensureExternalStorageWrite();
     await AppLogger.write(
