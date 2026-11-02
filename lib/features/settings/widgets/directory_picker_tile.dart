@@ -1,10 +1,8 @@
-import 'dart:io';
-
-import 'package:file_picker/file_picker.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/services/permission_service.dart';
+import '../../../core/services/saf_storage.dart';
 import '../../../core/storage/settings_store.dart';
 import '../../../core/ui/app_toast.dart';
 
@@ -22,7 +20,7 @@ class DirectoryPickerTile extends ConsumerWidget {
           leading: const Icon(Icons.folder_outlined),
           title: const Text('下载位置'),
           subtitle: Text(
-            currentPath,
+            SafStorage.label(currentPath),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
@@ -57,34 +55,32 @@ class DirectoryPickerTile extends ConsumerWidget {
   }
 
   Future<void> _pick(BuildContext context, WidgetRef ref) async {
-    final ok = await PermissionService.ensureExternalStorageWrite();
-    if (!context.mounted) return;
-    if (!ok) {
-      showAppToast(context, '未授予存储权限，将无法写入公共目录', type: AppToastType.warning);
-      return;
-    }
-
-    final path = await FilePicker.platform.getDirectoryPath(
-      dialogTitle: '选择下载目录',
-      lockParentWindow: true,
-    );
-    if (!context.mounted) return;
-    if (path == null || path.isEmpty) return;
-
+    String? path;
     try {
-      final dir = Directory(path);
-      if (!dir.existsSync()) await dir.create(recursive: true);
-      final probe = File('${dir.path}${Platform.pathSeparator}.cyshine_probe');
-      await probe.writeAsString('ok');
-      await probe.delete();
-    } catch (e) {
+      path = await SafStorage.pickDirectory(
+        writable: true,
+        initialLocation: currentPath,
+      );
+      if (!context.mounted || path == null) return;
+      await SafStorage.validateDirectory(path, writable: true);
+    } catch (error) {
       if (!context.mounted) return;
-      showAppToast(context, '该目录不可写: $e', type: AppToastType.error);
+      showAppToast(
+        context,
+        error is PlatformException
+            ? error.message ?? '无法选择文件夹'
+            : '所选文件夹不可写，请重新选择',
+        type: AppToastType.error,
+      );
       return;
     }
 
     await ref.read(settingsProvider.notifier).setDownloadDir(path);
     if (!context.mounted) return;
-    showAppToast(context, '下载目录已切换到 $path', type: AppToastType.success);
+    showAppToast(
+      context,
+      '下载目录已切换到 ${SafStorage.label(path)}',
+      type: AppToastType.success,
+    );
   }
 }

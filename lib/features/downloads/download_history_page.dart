@@ -1,10 +1,10 @@
-import 'dart:io';
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 
+import '../../core/services/saf_storage.dart';
+import '../../core/services/local_audio_source.dart';
 import '../../core/ui/app_toast.dart';
 import '../../core/ui/configurable_m3e_progress.dart';
 import '../../core/ui/cover_image_source.dart';
@@ -138,7 +138,7 @@ class _DownloadHistoryPageState extends ConsumerState<DownloadHistoryPage> {
 
   Future<void> _play(DownloadHistoryEntry entry) async {
     final path = entry.savedPath;
-    if (path == null || path.isEmpty || !File(path).existsSync()) {
+    if (path == null || path.isEmpty || !isLocalAudioSourceAvailable(path)) {
       showAppToast(context, '文件不存在', type: AppToastType.warning);
       return;
     }
@@ -177,7 +177,7 @@ class _DownloadHistoryPageState extends ConsumerState<DownloadHistoryPage> {
         entry.isCompleted &&
         path != null &&
         path.isNotEmpty &&
-        File(path).existsSync();
+        isLocalAudioSourceAvailable(path);
     final choice = await showDialog<_RemoveChoice>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -209,27 +209,35 @@ class _DownloadHistoryPageState extends ConsumerState<DownloadHistoryPage> {
     );
     if (choice == null) return;
 
+    if (!mounted) return;
+    final history = ref.read(downloadHistoryProvider.notifier);
+    final playlists = ref.read(localPlaylistsProvider.notifier);
     var fileDeleted = false;
     if (choice == _RemoveChoice.recordAndFile &&
         path != null &&
         path.isNotEmpty) {
       try {
-        final file = File(path);
-        if (await file.exists()) {
-          await file.delete();
-          fileDeleted = true;
-          await ref
-              .read(localPlaylistsProvider.notifier)
-              .removeLocalPathFromAll(path);
+        final result = await SafStorage.deleteFiles([path]);
+        if (!result.deletedPaths.contains(path)) {
+          if (!mounted) return;
+          showAppToast(
+            context,
+            result.cancelled
+                ? '已取消删除'
+                : result.failed.values.firstOrNull ?? '文件未删除',
+            type: result.cancelled ? AppToastType.info : AppToastType.error,
+          );
+          return;
         }
+        fileDeleted = true;
+        await playlists.removeLocalPathFromAll(path);
       } catch (e) {
         if (!mounted) return;
         showAppToast(context, '文件删除失败：$e', type: AppToastType.error);
         return;
       }
     }
-
-    await ref.read(downloadHistoryProvider.notifier).remove(entry.id);
+    await history.remove(entry.id);
     if (!mounted) return;
     showAppToast(
       context,

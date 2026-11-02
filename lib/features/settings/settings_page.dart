@@ -1,19 +1,19 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
-import 'package:path/path.dart' as p;
 
 import '../../core/app_info.dart';
 import '../../core/api/dio_factory.dart';
 import '../../core/models/enums.dart';
 import '../../core/music_sources/music_source_controller.dart';
 import '../../core/services/permission_service.dart';
+import '../../core/services/saf_storage.dart';
+import '../../core/services/storage_location.dart';
 import '../../core/services/app_icon_service.dart';
 import '../../core/storage/settings_store.dart';
 import '../../core/sync/webdav_sync_controller.dart';
@@ -39,6 +39,7 @@ import 'widgets/discovery_source_order_sheet.dart';
 import 'widgets/player_interface_settings_sheet.dart';
 import 'widgets/settings_action.dart';
 import 'widgets/settings_menu.dart';
+import 'widgets/storage_permission_card.dart';
 import 'widgets/storage_folder_picker_sheet.dart';
 import 'widgets/theme_mode_row.dart';
 import 'widgets/theme_seed_row.dart';
@@ -411,6 +412,10 @@ class SettingsPage extends ConsumerWidget {
                               ),
                             ],
                           ),
+                        if (section == SettingsSection.downloads) ...[
+                          const StoragePermissionCard(),
+                          const SizedBox(height: 24),
+                        ],
                         if (section == SettingsSection.downloads)
                           SettingsCard(
                             title: '下载',
@@ -446,7 +451,9 @@ class SettingsPage extends ConsumerWidget {
                               SettingsAction(
                                 icon: Icons.folder_outlined,
                                 title: '下载位置',
-                                subtitle: settings.downloadDir,
+                                subtitle: SafStorage.label(
+                                  settings.downloadDir,
+                                ),
                                 trailing: Symbols.chevron_right,
                                 onTap: () => _pickDownloadDir(context, ref),
                               ),
@@ -512,7 +519,7 @@ class SettingsPage extends ConsumerWidget {
                                       child: SettingsAction(
                                         icon: Icons.library_music_outlined,
                                         title: '扫描文件夹 ${index + 1}',
-                                        subtitle: directory,
+                                        subtitle: SafStorage.label(directory),
                                         trailing: Symbols.chevron_right,
                                         onTap: () => _pickLocalMusicDir(
                                           context,
@@ -891,39 +898,21 @@ class SettingsPage extends ConsumerWidget {
   }
 
   Future<void> _pickDownloadDir(BuildContext context, WidgetRef ref) async {
-    final ok = await PermissionService.ensureExternalStorageWrite();
-    if (!context.mounted) return;
-    if (!ok) {
-      showAppToast(context, '未授予存储权限，将无法写入公共目录', type: AppToastType.warning);
-      return;
-    }
-
     String? path;
     try {
-      path = await FilePicker.platform.getDirectoryPath(
-        dialogTitle: '选择下载目录',
-        lockParentWindow: true,
+      path = await SafStorage.pickDirectory(
+        writable: true,
+        initialLocation: ref.read(settingsProvider).downloadDir,
       );
-    } on PlatformException catch (_) {
-      if (!context.mounted) return;
-      path = await _showStorageFolderPicker(
-        context,
-        ref,
-        title: '选择下载目录',
-        initialPath: ref.read(settingsProvider).downloadDir,
-      );
-    }
-    if (Platform.isAndroid &&
-        path != null &&
-        path.isNotEmpty &&
-        (path == Platform.pathSeparator || !await Directory(path).exists())) {
-      if (!context.mounted) return;
-      path = await _showStorageFolderPicker(
-        context,
-        ref,
-        title: '选择下载目录',
-        initialPath: ref.read(settingsProvider).downloadDir,
-      );
+    } on PlatformException catch (error) {
+      if (context.mounted) {
+        showAppToast(
+          context,
+          error.message ?? '无法选择文件夹，请重试',
+          type: AppToastType.error,
+        );
+      }
+      return;
     }
     if (!context.mounted) return;
     if (path == null || path.isEmpty) return;
@@ -931,29 +920,31 @@ class SettingsPage extends ConsumerWidget {
     if (!await _validateWritableDirectory(context, path)) return;
     await ref.read(settingsProvider.notifier).setDownloadDir(path);
     if (!context.mounted) return;
-    showAppToast(context, '下载目录已切换到 $path', type: AppToastType.success);
+    showAppToast(
+      context,
+      '下载目录已切换到 ${SafStorage.label(path)}',
+      type: AppToastType.success,
+    );
   }
 
   Future<void> _browseDownloadDir(BuildContext context, WidgetRef ref) async {
-    final ok = await PermissionService.ensureExternalStorageWrite();
-    if (!context.mounted) return;
-    if (!ok) {
-      showAppToast(context, '未授予存储权限，将无法写入公共目录', type: AppToastType.warning);
-      return;
-    }
-
     final path = await _showStorageFolderPicker(
       context,
       ref,
       title: '选择下载目录',
       initialPath: ref.read(settingsProvider).downloadDir,
+      forWrite: true,
     );
     if (!context.mounted || path == null || path.isEmpty) return;
 
     if (!await _validateWritableDirectory(context, path)) return;
     await ref.read(settingsProvider.notifier).setDownloadDir(path);
     if (!context.mounted) return;
-    showAppToast(context, '下载目录已切换到 $path', type: AppToastType.success);
+    showAppToast(
+      context,
+      '下载目录已切换到 ${SafStorage.label(path)}',
+      type: AppToastType.success,
+    );
   }
 
   Future<void> _pickLocalMusicDir(
@@ -961,41 +952,22 @@ class SettingsPage extends ConsumerWidget {
     WidgetRef ref, {
     String? replacing,
   }) async {
-    final ok = await PermissionService.ensureExternalStorageRead();
-    if (!context.mounted) return;
-    if (!ok) {
-      showAppToast(context, '未授予存储权限，将无法读取本地音乐', type: AppToastType.warning);
-      return;
-    }
-
     String? path;
     try {
-      path = await FilePicker.platform.getDirectoryPath(
-        dialogTitle: '选择扫描文件夹',
-        lockParentWindow: true,
-      );
-    } on PlatformException catch (_) {
-      if (!context.mounted) return;
-      path = await _showStorageFolderPicker(
-        context,
-        ref,
-        title: '选择扫描文件夹',
-        initialPath:
+      path = await SafStorage.pickDirectory(
+        writable: false,
+        initialLocation:
             replacing ?? ref.read(settingsProvider).localMusicDirs.last,
       );
-    }
-    if (Platform.isAndroid &&
-        path != null &&
-        path.isNotEmpty &&
-        (path == Platform.pathSeparator || !await Directory(path).exists())) {
-      if (!context.mounted) return;
-      path = await _showStorageFolderPicker(
-        context,
-        ref,
-        title: '选择扫描文件夹',
-        initialPath:
-            replacing ?? ref.read(settingsProvider).localMusicDirs.last,
-      );
+    } on PlatformException catch (error) {
+      if (context.mounted) {
+        showAppToast(
+          context,
+          error.message ?? '无法选择文件夹，请重试',
+          type: AppToastType.error,
+        );
+      }
+      return;
     }
     if (!context.mounted || path == null || path.isEmpty) return;
 
@@ -1003,13 +975,6 @@ class SettingsPage extends ConsumerWidget {
   }
 
   Future<void> _browseLocalMusicDir(BuildContext context, WidgetRef ref) async {
-    final ok = await PermissionService.ensureExternalStorageRead();
-    if (!context.mounted) return;
-    if (!ok) {
-      showAppToast(context, '未授予存储权限，将无法读取本地音乐', type: AppToastType.warning);
-      return;
-    }
-
     final path = await _showStorageFolderPicker(
       context,
       ref,
@@ -1030,11 +995,8 @@ class SettingsPage extends ConsumerWidget {
     if (!await _validateReadableDirectory(context, path)) return;
     if (!context.mounted) return;
     final directories = [...ref.read(settingsProvider).localMusicDirs];
-    final pathContext = path.startsWith('/') ? p.posix : p.context;
-    final normalizedPath = pathContext.normalize(path.trim());
-    if (directories.any(
-      (directory) => pathContext.equals(directory, normalizedPath),
-    )) {
+    final normalizedPath = normalizeStorageLocation(path);
+    if (replacing == null && directories.contains(normalizedPath)) {
       showAppToast(context, '该文件夹已在扫描列表中');
       return;
     }
@@ -1076,10 +1038,25 @@ class SettingsPage extends ConsumerWidget {
     WidgetRef ref, {
     required String title,
     required String initialPath,
+    bool forWrite = false,
   }) async {
+    // Only the app's direct file browser needs broad storage access. This also
+    // covers fallbacks when the system picker cannot return a usable path.
+    final allowed = forWrite
+        ? await PermissionService.hasExternalStorageWrite()
+        : await PermissionService.hasExternalStorageRead();
+    if (!context.mounted) return null;
+    if (!allowed) {
+      showAppToast(
+        context,
+        '无法打开内置目录，请在「设置→权限与目录」中授予存储权限',
+        type: AppToastType.warning,
+      );
+      return null;
+    }
     FocusManager.instance.primaryFocus?.unfocus();
-    var browsePath = initialPath;
-    while (!await Directory(browsePath).exists()) {
+    var browsePath = isContentLocation(initialPath) ? '' : initialPath;
+    while (browsePath.isNotEmpty && !await Directory(browsePath).exists()) {
       final parent = Directory(browsePath).parent.path;
       if (parent == browsePath) {
         browsePath = '';
@@ -1131,14 +1108,16 @@ class SettingsPage extends ConsumerWidget {
     String path,
   ) async {
     try {
-      final dir = Directory(path);
-      if (!await dir.exists()) throw FileSystemException('目录不存在', path);
-      final probe = File('${dir.path}${Platform.pathSeparator}.cyshine_probe');
-      await probe.writeAsString('ok');
-      await probe.delete();
-    } catch (e) {
+      await SafStorage.validateDirectory(path, writable: true);
+    } catch (_) {
       if (!context.mounted) return false;
-      showAppToast(context, '该目录不可写: $e', type: AppToastType.error);
+      showAppToast(
+        context,
+        isContentLocation(path)
+            ? '文件夹不可写或授权已失效，请通过系统选择器重新选择'
+            : '所选文件夹不可写，请重新选择，或在「权限与目录」中授予存储权限',
+        type: AppToastType.error,
+      );
       return false;
     }
     return true;
@@ -1149,14 +1128,16 @@ class SettingsPage extends ConsumerWidget {
     String path,
   ) async {
     try {
-      final dir = Directory(path);
-      if (!await dir.exists()) {
-        throw FileSystemException('目录不存在', path);
-      }
-      await dir.list(followLinks: false).take(1).drain<void>();
-    } catch (e) {
+      await SafStorage.validateDirectory(path, writable: false);
+    } catch (_) {
       if (!context.mounted) return false;
-      showAppToast(context, '该目录不可读取: $e', type: AppToastType.error);
+      showAppToast(
+        context,
+        isContentLocation(path)
+            ? '文件夹不可读取或授权已失效，请通过系统选择器重新选择'
+            : '所选文件夹不可读取，请重新选择，或在「权限与目录」中授予存储权限',
+        type: AppToastType.error,
+      );
       return false;
     }
     return true;

@@ -5,30 +5,6 @@ import 'package:flutter/material.dart';
 
 import 'morphing_menu_motion.dart';
 
-/// How far a list menu may contract towards its anchor before the exit stops
-/// shrinking — as a fraction of the origin→target lerp. Squeezing the whole
-/// menu (text included) into the 44x44 source button reads as mush, so the
-/// tail of the exit is a dissolve from a compact rectangle instead.
-const double listMenuExitFloor = 0.45;
-
-/// Where in the contraction a list menu's content is fully dissolved. Kept
-/// above [listMenuExitFloor] so labels are never seen at tiny scales.
-const double listMenuExitContentFloor = 0.55;
-
-/// Opacity of the list menu's exit dissolve, keyed on the contraction value.
-///
-/// The source button fades back in with `1 - listMenuExitSurfaceOpacity`, so
-/// one curve drives both sides of the handoff.
-double listMenuExitSurfaceOpacity(double size) =>
-    (size / listMenuExitFloor).clamp(0.0, 1.0);
-
-/// The content dissolves while the menu is still large enough to read.
-double listMenuExitContentOpacity(double size) =>
-    ((size - listMenuExitContentFloor) / (1 - listMenuExitContentFloor)).clamp(
-      0.0,
-      1.0,
-    );
-
 /// A moving Material surface, with independently animated center and size.
 class MorphingMenuSurface extends StatelessWidget {
   const MorphingMenuSurface({
@@ -102,14 +78,36 @@ class MorphingMenuSurface extends StatelessWidget {
                 .clamp(safe.top, safe.bottom - height)
                 .toDouble();
         final target = Rect.fromLTWH(left, top, width, height);
-        final originWidth = math.min(anchor.width, width);
-        final originHeight = math.min(anchor.height, height);
+        final isToolbar = motionStyle == MorphingMenuMotionStyle.toolbar;
+        // The Weather source is a horizontal content capsule, not its tap
+        // target. Keep the 44dp button in place and transfer its glyph inside
+        // a capsule with the reference recording's roughly 2:3 width ratio.
+        final originWidth = isToolbar
+            ? math.min(anchor.width, width)
+            : width * 2 / 3;
+        final originHeight = isToolbar
+            ? math.min(anchor.height, height)
+            : math.min(24.0, height);
+        final sourceLeft = isRtl ? anchor.left : anchor.right - originWidth;
         final origin = Rect.fromLTWH(
-          anchor.left.clamp(safe.left, safe.right - originWidth).toDouble(),
-          anchor.top.clamp(safe.top, safe.bottom - originHeight).toDouble(),
+          (isToolbar ? anchor.left : sourceLeft)
+              .clamp(safe.left, safe.right - originWidth)
+              .toDouble(),
+          (isToolbar ? anchor.top : anchor.center.dy - originHeight / 2)
+              .clamp(safe.top, safe.bottom - originHeight)
+              .toDouble(),
           originWidth,
           originHeight,
         );
+        final pivot = isRtl ? origin.topLeft : origin.topRight;
+        // Compensate the wrapper's settled .95 scale so menu width, row height
+        // and typography retain their existing final logical dimensions.
+        final geometryTarget = isToolbar
+            ? target
+            : _scaleRect(target, pivot, 1 / 0.95);
+        final geometrySafe = isToolbar
+            ? safe
+            : _scaleRect(safe, pivot, 1 / 0.95);
         return AnimatedBuilder(
           animation: animation,
           child: RepaintBoundary(
@@ -128,35 +126,33 @@ class MorphingMenuSurface extends StatelessWidget {
           builder: (context, child) {
             final reversing = animation.status == AnimationStatus.reverse;
             final frame = motion();
-            final isToolbar = motionStyle == MorphingMenuMotionStyle.toolbar;
-            // A list menu contracts towards its anchor only as far as a
-            // compact rectangle and dissolves from there; a toolbar menu
-            // keeps morphing all the way home to its button.
-            final contract = isToolbar || !reversing
-                ? frame.size
-                : math.max(frame.size, listMenuExitFloor);
-            final rect = isToolbar
-                ? _toolbarRect(
-                    origin: origin,
-                    target: target,
-                    frame: frame,
-                    safe: safe,
-                  )
-                : Rect.lerp(origin, target, contract)!.intersect(safe);
-            final radius = BorderRadius.circular(
-              ui.lerpDouble(origin.shortestSide / 2, 24, frame.size)!,
+            final geometry = _animatedRect(
+              origin: origin,
+              target: geometryTarget,
+              frame: frame,
+              safe: geometrySafe,
             );
-            final contentBlur = isToolbar ? frame.contentBlur : 0.0;
+            final shrinkScale = isToolbar ? 1.0 : 1 - frame.shrink * 0.05;
+            final rect = isToolbar
+                ? geometry
+                : _fitRect(_scaleRect(geometry, pivot, shrinkScale), safe);
+            final radius = BorderRadius.circular(
+              isToolbar
+                  ? ui.lerpDouble(origin.shortestSide / 2, 24, frame.size)!
+                  : 24 * shrinkScale,
+            );
+            final contentBlur = isToolbar
+                ? frame.contentBlur
+                : 18 * (1 - frame.clarity);
             final surfaceOpacity = isToolbar
                 ? frame.surfaceOpacity
-                : reversing
-                ? listMenuExitSurfaceOpacity(frame.size)
-                : 1.0;
+                : frame.surface;
             final contentOpacity = isToolbar
                 ? frame.contentOpacity
-                : reversing
-                ? listMenuExitContentOpacity(frame.size)
-                : 1.0;
+                : Curves.easeIn.transform(frame.reveal.clamp(0.0, 1.0));
+            final sourceOpacity = isToolbar
+                ? frame.sourceOpacity
+                : frame.source;
 
             return Stack(
               children: [
@@ -184,25 +180,45 @@ class MorphingMenuSurface extends StatelessWidget {
                           children: [
                             // Carry the source glyph with the surface, then
                             // hand it back at the anchor during the last frames.
-                            if (isToolbar && frame.sourceOpacity > 0)
+                            if (sourceOpacity > 0)
                               ExcludeSemantics(
                                 child: Opacity(
-                                  opacity: frame.sourceOpacity,
+                                  opacity: sourceOpacity,
                                   child: OverflowBox(
+                                    alignment: isToolbar
+                                        ? Alignment.center
+                                        : Alignment.topLeft,
                                     minWidth: origin.width,
                                     maxWidth: origin.width,
                                     minHeight: origin.height,
                                     maxHeight: origin.height,
                                     child: Transform.scale(
+                                      alignment: isToolbar
+                                          ? Alignment.center
+                                          : Alignment.topLeft,
                                       scaleX: rect.width / origin.width,
-                                      scaleY: rect.height / origin.height,
+                                      scaleY: isToolbar
+                                          ? rect.height / origin.height
+                                          : rect.width / origin.width,
                                       child: SizedBox.fromSize(
                                         size: origin.size,
-                                        child: Center(
-                                          child: Icon(
-                                            sourceIcon,
-                                            size: 21,
-                                            color: scheme.onSurfaceVariant,
+                                        child: Padding(
+                                          padding: isToolbar
+                                              ? EdgeInsets.zero
+                                              : const EdgeInsetsDirectional.only(
+                                                  end: 11.5,
+                                                ),
+                                          child: Align(
+                                            alignment: isToolbar
+                                                ? Alignment.center
+                                                : isRtl
+                                                ? Alignment.centerLeft
+                                                : Alignment.centerRight,
+                                            child: Icon(
+                                              sourceIcon,
+                                              size: 21,
+                                              color: scheme.onSurfaceVariant,
+                                            ),
                                           ),
                                         ),
                                       ),
@@ -218,10 +234,12 @@ class MorphingMenuSurface extends StatelessWidget {
                               maxHeight: height,
                               child: Transform.scale(
                                 alignment: Alignment.topLeft,
-                                // Scale both axes into the actual surface;
-                                // uniform scaling leaves the group in a corner.
+                                // Weather preserves glyph proportions while
+                                // the changing rounded mask reveals the rows.
                                 scaleX: rect.width / width,
-                                scaleY: rect.height / height,
+                                scaleY: isToolbar
+                                    ? rect.height / height
+                                    : rect.width / width,
                                 child: Opacity(
                                   opacity: contentOpacity,
                                   child: ImageFiltered(
@@ -249,7 +267,25 @@ class MorphingMenuSurface extends StatelessWidget {
     );
   }
 
-  Rect _toolbarRect({
+  Rect _scaleRect(Rect rect, Offset pivot, double scale) => Rect.fromLTWH(
+    pivot.dx + (rect.left - pivot.dx) * scale,
+    pivot.dy + (rect.top - pivot.dy) * scale,
+    rect.width * scale,
+    rect.height * scale,
+  );
+
+  Rect _fitRect(Rect rect, Rect safe) {
+    final width = math.min(rect.width, safe.width);
+    final height = math.min(rect.height, safe.height);
+    return Rect.fromLTWH(
+      rect.left.clamp(safe.left, safe.right - width),
+      rect.top.clamp(safe.top, safe.bottom - height),
+      width,
+      height,
+    );
+  }
+
+  Rect _animatedRect({
     required Rect origin,
     required Rect target,
     required MorphingMenuFrame frame,

@@ -127,19 +127,14 @@ class _MorphingMenuButtonState extends State<MorphingMenuButton> {
 
   /// How much of the source button the menu surface currently covers.
   ///
-  /// A list menu dissolves at the end of its exit instead of collapsing into
-  /// the button, so on the way out the button has to fade back in on the same
-  /// curve the surface fades out — otherwise both ends are invisible while
-  /// the rectangle dissolves.
+  /// Weather transfers the glyph between its moving capsule and this fixed
+  /// button during the final 80ms, independently of the geometry springs.
   double _surfaceCover() {
     final route = _route;
     if (route == null) return 0;
     final frame = route.motion;
-    final dissolving =
-        widget.motionStyle == MorphingMenuMotionStyle.list &&
-        route.animation?.status == AnimationStatus.reverse;
-    return dissolving
-        ? listMenuExitSurfaceOpacity(frame.size)
+    return widget.motionStyle == MorphingMenuMotionStyle.list
+        ? frame.surface
         : frame.surfaceOpacity;
   }
 
@@ -229,21 +224,28 @@ class _MorphingMenuRoute extends PopupRoute<VoidCallback> {
           ? MorphingMenuFrame.open
           : MorphingMenuFrame.closed;
     }
-    if (controller?.lastElapsedDuration == null) {
-      return simulation.forward
+    if (!(controller?.isAnimating ?? false)) {
+      return (controller?.value ?? 0) == 1
           ? MorphingMenuFrame.open
           : MorphingMenuFrame.closed;
     }
+    if (controller?.lastElapsedDuration == null) return simulation.from;
     return simulation.frame(_elapsedSeconds);
   }
 
   @override
-  Duration get transitionDuration =>
-      reduceMotion ? Duration.zero : const Duration(milliseconds: 420);
+  Duration get transitionDuration => reduceMotion
+      ? Duration.zero
+      : Duration(
+          milliseconds: motionStyle == MorphingMenuMotionStyle.list ? 617 : 420,
+        );
 
   @override
-  Duration get reverseTransitionDuration =>
-      reduceMotion ? Duration.zero : const Duration(milliseconds: 400);
+  Duration get reverseTransitionDuration => reduceMotion
+      ? Duration.zero
+      : Duration(
+          milliseconds: motionStyle == MorphingMenuMotionStyle.list ? 220 : 400,
+        );
 
   @override
   Simulation? createSimulation({required bool forward}) {

@@ -1,8 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/services/local_audio_source.dart';
 import '../../core/models/download_capabilities.dart';
 import '../../core/models/enums.dart';
 import '../../core/music_sources/music_source_controller.dart';
@@ -38,7 +37,7 @@ Future<bool> ensureQueueEntryMusicSourceAvailable(
   DownloadHistoryEntry entry,
 ) {
   final path = entry.savedPath?.trim();
-  if (path != null && path.isNotEmpty && File(path).existsSync()) {
+  if (path != null && path.isNotEmpty && isLocalAudioSourceAvailable(path)) {
     return Future<bool>.value(true);
   }
   final music = entry.musicInfo;

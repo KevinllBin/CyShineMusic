@@ -7,6 +7,9 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/services/saf_storage.dart';
+import '../../core/services/local_audio_source.dart';
+import '../../core/services/storage_location.dart';
 import '../../core/models/enums.dart';
 import '../../core/services/embedded_artwork_cache.dart';
 import '../../core/services/tagger.dart';
@@ -491,7 +494,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
   }) async {
     final path = entry.savedPath;
     final hasLocalFile =
-        path != null && path.isNotEmpty && File(path).existsSync();
+        path != null && path.isNotEmpty && isLocalAudioSourceAvailable(path);
     final playlistId = ref.read(songsLibraryPlaylistIdProvider);
     final playlistMode = playlistId != null;
     if (!hasLocalFile && (!playlistMode || entry.musicInfo == null)) {
@@ -630,7 +633,9 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     final playable = songs
         .where((entry) {
           final path = entry.savedPath;
-          return (path != null && path.isNotEmpty && File(path).existsSync()) ||
+          return (path != null &&
+                  path.isNotEmpty &&
+                  isLocalAudioSourceAvailable(path)) ||
               entry.musicInfo != null;
         })
         .toList(growable: false);
@@ -651,7 +656,9 @@ class _SongsPageState extends ConsumerState<SongsPage> {
         .where((entry) => _selectedIds.contains(entry.id))
         .where((entry) {
           final path = entry.savedPath;
-          return (path != null && path.isNotEmpty && File(path).existsSync()) ||
+          return (path != null &&
+                  path.isNotEmpty &&
+                  isLocalAudioSourceAvailable(path)) ||
               entry.musicInfo != null;
         })
         .toList(growable: false);
@@ -669,7 +676,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
   Future<void> _addNext(DownloadHistoryEntry entry) async {
     final path = entry.savedPath;
     final hasLocalFile =
-        path != null && path.isNotEmpty && File(path).existsSync();
+        path != null && path.isNotEmpty && isLocalAudioSourceAvailable(path);
     if (!hasLocalFile && entry.musicInfo == null) {
       showAppToast(context, '文件不存在，无法加入队列', type: AppToastType.warning);
       return;
@@ -737,15 +744,82 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     await _addSongToPlaylist(entry, playlist);
   }
 
-  Future<void> _deleteSong(DownloadHistoryEntry entry) async {
+  bool _deletingFiles = false;
+
+  Future<void> _deleteSong(DownloadHistoryEntry entry) => _deleteSongs([entry]);
+
+  Future<void> _deleteSongs(List<DownloadHistoryEntry> entries) async {
+    if (_deletingFiles) return;
+    final paths = entries
+        .map((e) => e.savedPath)
+        .whereType<String>()
+        .where((p) => p.isNotEmpty)
+        .toSet();
+    if (paths.isEmpty) return;
+    _deletingFiles = true;
+    final history = ref.read(downloadHistoryProvider);
+    final historyNotifier = ref.read(downloadHistoryProvider.notifier);
+    final playlists = ref.read(localPlaylistsProvider.notifier);
+    final scanCache = _scanCache;
+    final directories = ref.read(settingsProvider).localMusicDirs;
+    final wasBatch = _batchMode;
     try {
-      await _deleteSongData(entry);
-      await _scanLocalMusicFolder();
+      final result = await SafStorage.deleteFiles(paths);
+      final deletedKeys = result.deletedPaths.map(_pathKey).toSet();
+      if (deletedKeys.isNotEmpty) {
+        for (final path in result.deletedPaths) {
+          await playlists.removeLocalPathFromAll(path);
+          _forgetTagCache(path);
+        }
+        await historyNotifier.removeMany([
+          for (final item in history)
+            if (item.savedPath != null &&
+                deletedKeys.contains(_pathKey(item.savedPath!)))
+              item.id,
+        ]);
+        await scanCache.refresh(directories: directories);
+        if (mounted && wasBatch) {
+          setState(() {
+            _selectedIds
+              ..clear()
+              ..addAll(
+                entries
+                    .where(
+                      (entry) =>
+                          entry.savedPath != null &&
+                          !deletedKeys.contains(_pathKey(entry.savedPath!)),
+                    )
+                    .map((e) => e.id),
+              );
+            _batchMode = _selectedIds.isNotEmpty;
+          });
+        }
+      }
       if (!mounted) return;
-      showAppToast(context, '歌曲已删除', type: AppToastType.success);
-    } catch (e) {
-      if (!mounted) return;
-      showAppToast(context, '删除失败：$e', type: AppToastType.error);
+      if (result.failed.isNotEmpty) {
+        showAppToast(
+          context,
+          '已删除 ${deletedKeys.length} 个文件，${result.failed.length} 个失败：${result.failed.values.first}',
+          type: deletedKeys.isEmpty ? AppToastType.error : AppToastType.warning,
+        );
+      } else if (result.cancelled) {
+        showAppToast(
+          context,
+          deletedKeys.isEmpty ? '已取消删除' : '已删除 ${deletedKeys.length} 个文件，其余已取消',
+        );
+      } else {
+        showAppToast(
+          context,
+          '已删除 ${deletedKeys.length} 个文件',
+          type: AppToastType.success,
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        showAppToast(context, '删除失败：$error', type: AppToastType.error);
+      }
+    } finally {
+      _deletingFiles = false;
     }
   }
 
@@ -790,24 +864,6 @@ class _SongsPageState extends ConsumerState<SongsPage> {
       _batchMode = false;
     });
     showAppToast(context, '已从歌单移出 $removed 首歌曲', type: AppToastType.success);
-  }
-
-  Future<void> _deleteSongData(DownloadHistoryEntry entry) async {
-    await _deleteSongFile(entry);
-    if (!entry.id.startsWith('file:')) {
-      await ref.read(downloadHistoryProvider.notifier).remove(entry.id);
-    }
-  }
-
-  Future<void> _deleteSongFile(DownloadHistoryEntry entry) async {
-    final path = entry.savedPath;
-    if (path == null || path.isEmpty) return;
-    final file = File(path);
-    if (await file.exists()) await file.delete();
-    await ref
-        .read(localPlaylistsProvider.notifier)
-        .removeLocalPathFromAll(path);
-    _forgetTagCache(path);
   }
 
   Future<void> _openPlaylists() async {
@@ -1035,71 +1091,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
       return;
     }
 
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        icon: const Icon(Icons.delete_outline_rounded),
-        title: const Text('删除已选歌曲？'),
-        content: Text('将删除 ${selected.length} 首本地歌曲文件，并移除对应下载记录。此操作无法撤销。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-
-    final historyIds = <String>[];
-    final deletedIds = <String>[];
-    final failures = <String>[];
-    for (final entry in selected) {
-      try {
-        await _deleteSongFile(entry);
-        deletedIds.add(entry.id);
-        if (!entry.id.startsWith('file:')) historyIds.add(entry.id);
-      } catch (e) {
-        final name = entry.name.trim().isEmpty
-            ? entry.savedPath ?? entry.id
-            : entry.name;
-        failures.add('$name：$e');
-      }
-    }
-
-    if (historyIds.isNotEmpty) {
-      await ref.read(downloadHistoryProvider.notifier).removeMany(historyIds);
-    }
-    await _scanLocalMusicFolder();
-    if (!mounted) return;
-    setState(() {
-      _selectedIds.removeAll(deletedIds);
-      if (failures.isEmpty) {
-        _selectedIds.clear();
-        _batchMode = false;
-      }
-    });
-
-    if (failures.isEmpty) {
-      showAppToast(
-        context,
-        '已删除 ${deletedIds.length} 首歌曲',
-        type: AppToastType.success,
-      );
-    } else {
-      final type = deletedIds.isEmpty
-          ? AppToastType.error
-          : AppToastType.warning;
-      showAppToast(
-        context,
-        '已删除 ${deletedIds.length} 首，${failures.length} 首失败：${failures.first}',
-        type: type,
-      );
-    }
+    await _deleteSongs(selected);
   }
 
   void _syncToolbarState({
@@ -1396,6 +1388,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
 }
 
 String _pathKey(String path) {
+  if (isContentLocation(path)) return contentDocumentKey(path);
   final normalized = path.replaceAll('\\', '/');
   return Platform.isWindows ? normalized.toLowerCase() : normalized;
 }

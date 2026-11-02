@@ -100,6 +100,7 @@ class Tagger {
   }
 
   static Future<bool> _isFlacStream(String path) async {
+    if (Uri.tryParse(path)?.scheme == 'content') return false;
     RandomAccessFile? file;
     try {
       file = await File(path).open(mode: FileMode.read);

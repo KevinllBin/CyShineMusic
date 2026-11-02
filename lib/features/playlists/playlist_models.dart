@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../../core/services/local_audio_source.dart';
+import '../../core/services/storage_location.dart';
 import '../../core/models/enums.dart';
 import '../../core/models/music_info.dart';
 import '../downloads/download_history_store.dart';
@@ -160,7 +162,8 @@ class PlaylistTrack {
 
   DownloadHistoryEntry? toQueueEntry({required String playlistId}) {
     final path = localPath?.trim();
-    final savedPath = path != null && path.isNotEmpty && File(path).existsSync()
+    final savedPath =
+        path != null && path.isNotEmpty && isLocalAudioSourceAvailable(path)
         ? path
         : null;
     if (savedPath == null && musicInfo == null) return null;
@@ -338,6 +341,7 @@ class LocalPlaylist {
 }
 
 String normalizePlaylistPath(String path) {
+  if (isContentLocation(path)) return contentDocumentKey(path);
   final normalized = path.trim().replaceAll('\\', '/');
   return Platform.isWindows ? normalized.toLowerCase() : normalized;
 }

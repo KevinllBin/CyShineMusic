@@ -149,30 +149,12 @@ class _MusicSourcePageState extends ConsumerState<MusicSourcePage> {
       final settings = ref.read(settingsProvider);
       final browser = ref.read(storageBrowserServiceProvider);
       if (settings.useBuiltInSourceFilePicker && browser.isSupported) {
-        if (!await PermissionService.ensureScriptFileRead()) {
+        if (!await PermissionService.hasScriptFileRead()) {
           if (!mounted) return;
-          await showDialog<void>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('需要存储访问权限'),
-              content: const Text(
-                '内置文件选择器需要存储权限才能读取 JS 脚本。'
-                '请在系统设置中允许文件访问，然后重新导入。',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('取消'),
-                ),
-                FilledButton(
-                  onPressed: () async {
-                    Navigator.of(context).pop();
-                    await PermissionService.openSystemAppSettings();
-                  },
-                  child: const Text('打开设置'),
-                ),
-              ],
-            ),
+          showAppToast(
+            context,
+            '无法打开内置目录，请在「设置→权限与目录」中授予存储权限',
+            type: AppToastType.warning,
           );
           return;
         }

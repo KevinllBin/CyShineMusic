@@ -3,9 +3,10 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/storage_location.dart';
+import '../services/saf_storage.dart';
 import '../api/dio_factory.dart';
 import '../models/enums.dart';
 import '../../theme/color_style.dart';
@@ -300,6 +301,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
   AppSettings build() {
     _prefs = ref.read(sharedPreferencesProvider);
     hydrateNetworkAdapterPreference(_prefs);
+    SafStorage.loadLabels(_prefs);
     if (_prefs.containsKey(_kLegacyBaseUrlKey)) {
       unawaited(_prefs.remove(_kLegacyBaseUrlKey));
     }
@@ -395,7 +397,8 @@ class SettingsNotifier extends Notifier<AppSettings> {
   Future<void> setDownloadDir(String value) async {
     final localMusicFollowsDownload =
         state.localMusicDirs.length == 1 &&
-        p.equals(state.localMusicDir, state.downloadDir);
+        normalizeStorageLocation(state.localMusicDir) ==
+            normalizeStorageLocation(state.downloadDir);
     await _prefs.setString(_kDownloadDirKey, value);
     if (localMusicFollowsDownload) {
       final directories = _normalizeLocalMusicDirs([value], fallback: value);
@@ -430,11 +433,8 @@ class SettingsNotifier extends Notifier<AppSettings> {
     for (final value in values) {
       final trimmed = value.trim();
       if (trimmed.isEmpty) continue;
-      final pathContext = trimmed.startsWith('/') ? p.posix : p.context;
-      final directory = pathContext.normalize(trimmed);
-      if (directories.any(
-        (existing) => pathContext.equals(existing, directory),
-      )) {
+      final directory = normalizeStorageLocation(trimmed);
+      if (directories.any((existing) => existing == directory)) {
         continue;
       }
       directories.add(directory);
@@ -443,8 +443,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
       final path = fallback.trim().isEmpty
           ? kDefaultDownloadDir
           : fallback.trim();
-      final pathContext = path.startsWith('/') ? p.posix : p.context;
-      directories.add(pathContext.normalize(path));
+      directories.add(normalizeStorageLocation(path));
     }
     return List.unmodifiable(directories);
   }

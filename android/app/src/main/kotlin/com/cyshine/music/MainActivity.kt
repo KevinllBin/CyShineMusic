@@ -95,6 +95,9 @@ class MainActivity : AudioServiceActivity() {
         if (!flutterEngine.plugins.has(ArtworkColorsPlugin::class.java)) {
             flutterEngine.plugins.add(ArtworkColorsPlugin())
         }
+        if (!flutterEngine.plugins.has(SafStoragePlugin::class.java)) {
+            flutterEngine.plugins.add(SafStoragePlugin())
+        }
         val appIcons = AppIconManager(applicationContext)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "cy_shine_music/app_icon")
             .setMethodCallHandler { call, result ->
@@ -214,16 +217,13 @@ class MainActivity : AudioServiceActivity() {
                             return@setMethodCallHandler
                         }
                         try {
-                            val file = java.io.File(path)
-                            if (!file.exists()) {
-                                result.error("NOT_FOUND", "file does not exist", null)
-                                return@setMethodCallHandler
+                            val uri = if (path.startsWith("content://")) {
+                                Uri.parse(path)
+                            } else {
+                                val file = File(path)
+                                check(file.exists()) { "file does not exist" }
+                                FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
                             }
-                            val uri = FileProvider.getUriForFile(
-                                this,
-                                "$packageName.fileprovider",
-                                file,
-                            )
                             val intent = Intent(Intent.ACTION_VIEW).apply {
                                 setDataAndType(uri, "audio/*")
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -356,24 +356,7 @@ class MainActivity : AudioServiceActivity() {
 
         Thread {
             try {
-                val file = java.io.File(path)
-                if (!file.exists()) {
-                    result.error("NOT_FOUND", "file does not exist", null)
-                    return@Thread
-                }
-
-                val tag = AudioFileIO.read(file).tag
-                val payload = mapOf(
-                    "title" to tag?.getFirst(FieldKey.TITLE),
-                    "artist" to tag?.getFirst(FieldKey.ARTIST),
-                    "album" to tag?.getFirst(FieldKey.ALBUM),
-                    "lyrics" to if (includeLyrics) tag?.getFirst(FieldKey.LYRICS) else null,
-                    "artwork" to if (includeArtwork) {
-                        runCatching { tag?.firstArtwork?.binaryData }.getOrNull()
-                    } else {
-                        null
-                    },
-                )
+                val payload = ContentAudioTags.read(applicationContext, path, includeLyrics, includeArtwork)
                 // MethodChannel.Result is thread-safe. Reply here so encoding a
                 // large artwork ByteArray never runs on Android's main thread.
                 result.success(payload)

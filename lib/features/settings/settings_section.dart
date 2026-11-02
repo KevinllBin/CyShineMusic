@@ -12,9 +12,9 @@ enum SettingsSection {
     icon: Icons.play_circle_outline_rounded,
   ),
   downloads(
-    title: '下载与本地音乐',
-    subtitle: '下载音质、下载位置与多个音乐扫描文件夹',
-    icon: Icons.download_outlined,
+    title: '权限与目录',
+    subtitle: '存储授权、下载音质、下载位置与音乐扫描文件夹',
+    icon: Icons.folder_shared_outlined,
   ),
   appearance(
     title: '外观',

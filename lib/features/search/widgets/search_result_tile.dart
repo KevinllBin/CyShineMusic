@@ -111,33 +111,34 @@ class SearchResultTile extends StatelessWidget {
                                 ),
                               ),
                             ),
-                            if (music.interval?.trim().isNotEmpty ?? false) ...[
-                              const SizedBox(width: 5),
-                              Container(
-                                width: 2,
-                                height: 2,
-                                decoration: BoxDecoration(
-                                  color: scheme.onSurfaceVariant.withValues(
-                                    alpha: 0.46,
-                                  ),
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 5),
-                              Text(
-                                music.interval!,
-                                style: TextStyle(
-                                  color: scheme.onSurfaceVariant.withValues(
-                                    alpha: 0.78,
-                                  ),
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w500,
-                                  fontFeatures: const [
-                                    FontFeature.tabularFigures(),
-                                  ],
-                                ),
-                              ),
-                            ],
+                            // 暂时隐藏歌曲时长，恢复时取消下方整段注释即可。
+                            // if (music.interval?.trim().isNotEmpty ?? false) ...[
+                            //   const SizedBox(width: 5),
+                            //   Container(
+                            //     width: 2,
+                            //     height: 2,
+                            //     decoration: BoxDecoration(
+                            //       color: scheme.onSurfaceVariant.withValues(
+                            //         alpha: 0.46,
+                            //       ),
+                            //       shape: BoxShape.circle,
+                            //     ),
+                            //   ),
+                            //   const SizedBox(width: 5),
+                            //   Text(
+                            //     music.interval!,
+                            //     style: TextStyle(
+                            //       color: scheme.onSurfaceVariant.withValues(
+                            //         alpha: 0.78,
+                            //       ),
+                            //       fontSize: 10.5,
+                            //       fontWeight: FontWeight.w500,
+                            //       fontFeatures: const [
+                            //         FontFeature.tabularFigures(),
+                            //       ],
+                            //     ),
+                            //   ),
+                            // ],
                           ],
                         ),
                       ],

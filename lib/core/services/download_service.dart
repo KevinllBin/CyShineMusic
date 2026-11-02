@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'saf_storage.dart';
+import 'storage_location.dart';
 import '../../features/downloads/download_progress.dart';
 import '../../features/downloads/download_history_store.dart';
 import '../../features/playlists/playlist_store.dart';
@@ -20,7 +22,6 @@ import '../ui/cover_image_source.dart';
 import 'app_logger.dart';
 import 'file_naming.dart';
 import 'lyric_builder.dart';
-import 'permission_service.dart';
 import 'tagger.dart';
 
 class EmbedRequest {
@@ -246,7 +247,7 @@ class DownloadService {
               'step1 OK source=${source.name} url.len=${musicUrl.url.length} '
               'type=${musicUrl.type}',
             );
-            log('step2 destDir=${destDir.path} fileName=$fileName');
+            log('step2 destDir=$destDir fileName=$fileName');
             log('step3 GET source=${source.name} ${_shortUrl(musicUrl.url)}');
             try {
               await dio.download(
@@ -535,29 +536,32 @@ class DownloadService {
     } catch (_) {}
   }
 
-  Future<Directory> _resolveDestinationDir(
+  Future<String> _resolveDestinationDir(
     String requested,
     void Function(String) log,
   ) async {
+    if (isContentLocation(requested)) {
+      await SafStorage.validateDirectory(requested, writable: true);
+      return requested;
+    }
     final dir = Directory(requested);
     Directory? probeDir;
     try {
       if (!dir.existsSync()) {
         log('destDir does not exist, creating: ${dir.path}');
-        await PermissionService.ensureExternalStorageWrite();
         await dir.create(recursive: true);
       }
       // Concurrent downloads must not write/delete each other's probe.
       probeDir = await dir.createTemp('.cyshine-probe-');
       final probe = File(p.join(probeDir.path, 'write-test'));
       await probe.writeAsString('ok');
-      return dir;
+      return dir.path;
     } catch (e) {
       log('destDir FAILED ${dir.path}: $e; falling back to app-private');
       final fallback = await getApplicationDocumentsDirectory();
       final fb = Directory(p.join(fallback.path, 'CyShineMusic'));
       if (!fb.existsSync()) fb.createSync(recursive: true);
-      return fb;
+      return fb.path;
     } finally {
       if (probeDir != null) {
         try {
@@ -572,9 +576,13 @@ class DownloadService {
 
   Future<String> _moveToTarget(
     String tmpPath,
-    Directory destDir,
+    String destination,
     String fileName,
   ) async {
+    if (isContentLocation(destination)) {
+      return SafStorage.saveFile(destination, tmpPath, fileName);
+    }
+    final destDir = Directory(destination);
     final destPath = p.join(destDir.path, _dedupedName(destDir, fileName));
     // Reserve synchronously before rename/copy yields to another download.
     _reservedTargetPaths.add(destPath);
@@ -605,7 +613,7 @@ class DownloadService {
   }
 
   Future<void> _scanMedia(String path) async {
-    if (!Platform.isAndroid) return;
+    if (!Platform.isAndroid || isContentLocation(path)) return;
     try {
       await _mediaScanChannel.invokeMethod('scan', {'path': path});
     } catch (_) {
@@ -620,7 +628,7 @@ class DownloadService {
     void Function(String) log,
   ) async {
     try {
-      final sizeBytes = await File(savedPath).length().catchError((_) => 0);
+      final sizeBytes = await SafStorage.size(savedPath).catchError((_) => 0);
       await _ref
           .read(downloadHistoryProvider.notifier)
           .addCompleted(

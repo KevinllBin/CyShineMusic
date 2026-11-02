@@ -47,6 +47,8 @@ class TaggerPlatformBackend {
       }
     }
 
+    // The legacy plugin accepts file paths only; never pass it an opaque URI.
+    if (Uri.tryParse(path)?.scheme == 'content') return null;
     try {
       final tags = await _tagger.getAllTags(path);
       if (tags == null) return null;

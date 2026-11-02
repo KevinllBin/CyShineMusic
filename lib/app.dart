@@ -181,15 +181,34 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
   Future<bool> _checkPermission() async {
     final granted = await PermissionService.hasExternalStorageWrite();
     await AppLogger.write('app', 'startup permission status granted=$granted');
-    if (granted) return true;
+    if (granted) {
+      await PermissionService.markStoragePermissionRequestAttempted();
+      return true;
+    }
+    if (await PermissionService.hasStoragePermissionRequestAttempted()) {
+      return true;
+    }
     // Wait one frame so the router has a chance to mount its home screen.
     await Future<void>.delayed(const Duration(milliseconds: 50));
     final ctx = rootNavigatorKey.currentContext;
     if (ctx == null || !ctx.mounted) return false;
+    // Remember the explanation itself, including "稍后再说" or dismissal.
+    if (await PermissionService.hasStoragePermissionRequestAttempted()) {
+      return true;
+    }
+    await PermissionService.markStoragePermissionRequestAttempted();
+    if (!ctx.mounted) return false;
     final shouldRequest = await _showPermissionDialog(ctx);
     if (!shouldRequest) return true;
 
-    final ok = await PermissionService.ensureExternalStorageWrite();
+    final ok = await PermissionService.requestExternalStorageWrite();
+    if (ok && mounted) {
+      unawaited(
+        ref
+            .read(localSongScanCacheProvider)
+            .refresh(directories: ref.read(settingsProvider).localMusicDirs),
+      );
+    }
     await AppLogger.write(
       'app',
       'startup permission user-triggered granted=$ok',
@@ -198,7 +217,7 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
     if (root == null || !root.mounted) return false;
     showAppToast(
       root,
-      ok ? '已授予存储权限' : '未授权，可在「设置→打开系统应用设置」手动开启',
+      ok ? '已授予存储权限' : '未授权，可在「设置→权限与目录」中授予权限',
       type: ok ? AppToastType.success : AppToastType.warning,
     );
     // Requesting all-files access can switch to system UI. Avoid showing an
@@ -215,7 +234,8 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
             title: const Text('需要存储权限'),
             content: const Text(
               '为了把下载好的音乐保存到「音乐」目录，'
-              '需要授予存储访问权限。\n\n',
+              '以及使用内置目录选择器，需要授予存储访问权限。\n\n'
+              '暂不授权也可以继续使用，之后可在「设置→权限与目录」中开启。',
             ),
             actions: [
               TextButton(

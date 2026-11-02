@@ -7,6 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../../core/services/saf_storage.dart';
+import '../../core/services/storage_location.dart';
+
 const _audioExtensions = {
   'mp3',
   'flac',
@@ -193,8 +196,36 @@ class LocalSongScanCache extends ChangeNotifier {
         ..sort((a, b) => a.length.compareTo(b.length));
       final completedRoots = <String>[];
       for (final directory in roots) {
-        if (completedRoots.any((root) => p.isWithin(root, directory))) continue;
+        if (!isContentLocation(directory) &&
+            completedRoots.any(
+              (root) => !isContentLocation(root) && p.isWithin(root, directory),
+            )) {
+          continue;
+        }
         try {
+          if (isContentLocation(directory)) {
+            final documents = await SafStorage.scan(directory);
+            if (generation != _scanGeneration) return;
+            for (final document in documents) {
+              final path = document['path'] as String;
+              final name = document['fileName'] as String;
+              final modified = DateTime.fromMillisecondsSinceEpoch(
+                (document['modifiedMs'] as num?)?.toInt() ?? 0,
+              );
+              // Different grants may refer to the same document under overlapping trees.
+              final key = contentDocumentKey(path);
+              files[key] = LocalSongFileSnapshot(
+                path: path,
+                fileName: name,
+                extension: p.extension(name).replaceFirst('.', ''),
+                createdAt: modified,
+                modifiedAt: modified,
+                sizeBytes: (document['sizeBytes'] as num?)?.toInt() ?? 0,
+              );
+            }
+            completedRoots.add(directory);
+            continue;
+          }
           final dir = Directory(directory);
           if (!await dir.exists()) continue;
           await for (final item in dir.list(
@@ -220,7 +251,7 @@ class LocalSongScanCache extends ChangeNotifier {
           }
           completedRoots.add(directory);
         } catch (error) {
-          errors.add('$directory：$error');
+          errors.add('${SafStorage.label(directory)}：$error');
         }
       }
       if (generation != _scanGeneration) return;
@@ -268,11 +299,8 @@ List<String> _normalizeDirectories(List<String> values) {
   for (final value in values) {
     final trimmed = value.trim();
     if (trimmed.isEmpty) continue;
-    final pathContext = trimmed.startsWith('/') ? p.posix : p.context;
-    final directory = pathContext.normalize(trimmed);
-    if (directories.any(
-      (existing) => pathContext.equals(existing, directory),
-    )) {
+    final directory = normalizeStorageLocation(trimmed);
+    if (directories.any((existing) => existing == directory)) {
       continue;
     }
     directories.add(directory);
