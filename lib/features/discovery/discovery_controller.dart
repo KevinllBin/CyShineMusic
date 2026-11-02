@@ -47,9 +47,39 @@ final selectedDiscoverySourceProvider = StateProvider<MusicSource>(
 );
 
 final selectedDiscoveryCategoryProvider =
-    StateProvider.family<String, MusicSource>(
-      (ref, source) => defaultPlaylistCatalogCategoryFor(source).id,
-    );
+    NotifierProvider.family<
+      SelectedDiscoveryCategoryNotifier,
+      String,
+      MusicSource
+    >(SelectedDiscoveryCategoryNotifier.new);
+
+class SelectedDiscoveryCategoryNotifier
+    extends FamilyNotifier<String, MusicSource> {
+  late final _prefs = ref.read(sharedPreferencesProvider);
+
+  String get _storageKey => 'discovery_category_${arg.code}_v1';
+
+  @override
+  String build(MusicSource source) {
+    final savedId = _prefs.getString(_storageKey);
+    return playlistCatalogCategoriesFor(
+          source,
+        ).any((category) => category.id == savedId)
+        ? savedId!
+        : defaultPlaylistCatalogCategoryFor(source).id;
+  }
+
+  Future<void> select(String categoryId) async {
+    if (state == categoryId ||
+        !playlistCatalogCategoriesFor(
+          arg,
+        ).any((category) => category.id == categoryId)) {
+      return;
+    }
+    state = categoryId;
+    await _prefs.setString(_storageKey, categoryId);
+  }
+}
 
 final featuredPlaylistsProvider =
     FutureProvider.family<List<PlaylistSummary>, MusicSource>((ref, source) {

@@ -127,13 +127,12 @@ class _DiscoveryCategoryFabLayerState
                                   enabled: categories[index].id != selected.id,
                                   onPressed: () {
                                     ref
-                                            .read(
-                                              selectedDiscoveryCategoryProvider(
-                                                source,
-                                              ).notifier,
-                                            )
-                                            .state =
-                                        categories[index].id;
+                                        .read(
+                                          selectedDiscoveryCategoryProvider(
+                                            source,
+                                          ).notifier,
+                                        )
+                                        .select(categories[index].id);
                                     _setExpanded(false);
                                   },
                                 ),
