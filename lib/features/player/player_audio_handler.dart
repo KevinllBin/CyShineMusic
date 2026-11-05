@@ -15,6 +15,9 @@ import 'package:path_provider/path_provider.dart';
 import '../../core/services/app_logger.dart';
 import '../../core/services/log_category.dart';
 import 'media_item_copy.dart';
+import 'player_models.dart' show PlayerPlaybackMode;
+import 'vivo_music_metadata.dart';
+import 'vivo_queue_browser.dart';
 
 typedef PlayerTransportCallback = Future<void> Function();
 typedef PlayerQueueItemCallback = Future<void> Function(int index);
@@ -22,6 +25,7 @@ typedef PlayerRepeatModeCallback =
     Future<void> Function(AudioServiceRepeatMode mode);
 typedef PlayerShuffleModeCallback =
     Future<void> Function(AudioServiceShuffleMode mode);
+typedef PlayerVivoLoopModeCallback = Future<void> Function(int mode);
 
 const playerAudioServiceConfig = AudioServiceConfig(
   androidNotificationChannelId: 'com.cyshine.music.channel.audio_playback',
@@ -162,6 +166,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   PlayerQueueItemCallback? _onQueueItem;
   PlayerRepeatModeCallback? _onRepeatMode;
   PlayerShuffleModeCallback? _onShuffleMode;
+  PlayerVivoLoopModeCallback? _onVivoLoopMode;
   int? _queueIndex;
   AudioServiceRepeatMode _repeatMode = AudioServiceRepeatMode.all;
   AudioServiceShuffleMode _shuffleMode = AudioServiceShuffleMode.none;
@@ -188,8 +193,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _queueIndex = index;
     _trackTransitionActive = false;
     _clearTransitionSnapshot();
-    _currentMediaItem = item;
-    mediaItem.add(item);
+    _publishMediaItem(item);
   }
 
   Stream<Duration> get positionStream => _player.positionStream;
@@ -295,6 +299,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     required PlayerQueueItemCallback onQueueItem,
     required PlayerRepeatModeCallback onRepeatMode,
     required PlayerShuffleModeCallback onShuffleMode,
+    PlayerVivoLoopModeCallback? onVivoLoopMode,
   }) {
     _callbackOwner = owner;
     _onPrevious = onPrevious;
@@ -302,6 +307,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _onQueueItem = onQueueItem;
     _onRepeatMode = onRepeatMode;
     _onShuffleMode = onShuffleMode;
+    _onVivoLoopMode = onVivoLoopMode;
     _broadcastState(_player.snapshot);
   }
 
@@ -313,6 +319,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _onQueueItem = null;
     _onRepeatMode = null;
     _onShuffleMode = null;
+    _onVivoLoopMode = null;
   }
 
   Future<void> beginTrackTransition({
@@ -327,8 +334,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     }
     _trackTransitionActive = true;
     _queueIndex = queueIndex;
-    _currentMediaItem = item;
-    mediaItem.add(item);
+    _publishMediaItem(item);
     _broadcastState(_player.snapshot);
     if (_player.playing) {
       _logTransport('pause', reason: 'track_transition');
@@ -341,8 +347,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     final previousItem = _mediaItemBeforeTransition;
     _queueIndex = _queueIndexBeforeTransition;
     if (previousItem != null) {
-      _currentMediaItem = previousItem;
-      mediaItem.add(previousItem);
+      _publishMediaItem(previousItem);
     }
     _trackTransitionActive = false;
     _clearTransitionSnapshot();
@@ -369,8 +374,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _trackTransitionActive = false;
     _clearTransitionSnapshot();
     _queueIndex = queueIndex;
-    _currentMediaItem = item;
-    mediaItem.add(item);
+    _publishMediaItem(item);
     _broadcastState(_player.snapshot);
   }
 
@@ -382,8 +386,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     final loadGeneration = ++_loadGeneration;
     _retryAfterSourceFailure = null;
     _queueIndex = queueIndex;
-    _currentMediaItem = item;
-    mediaItem.add(item);
+    _publishMediaItem(item);
     final resolvedDuration = await _loadSourceBounded(
       sourceUri,
       formatHint: item.extras?['quality']?.toString(),
@@ -460,18 +463,47 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
 
   void updateMediaMetadata(MediaItem item) {
     final resolvedDuration = item.duration ?? _player.duration;
-    _currentMediaItem = resolvedDuration == null
+    final resolved = resolvedDuration == null
         ? item
         : preserveMediaItemArtHeaders(
             item,
             item.copyWith(duration: resolvedDuration),
           );
+    _publishMediaItem(resolved);
+  }
+
+  MediaItem _withVivoPlaybackMode(MediaItem item) {
+    final mode = _shuffleMode != AudioServiceShuffleMode.none
+        ? PlayerPlaybackMode.shuffle
+        : _repeatMode == AudioServiceRepeatMode.one
+        ? PlayerPlaybackMode.repeatOne
+        : PlayerPlaybackMode.sequence;
+    final loopMode = VivoMusicMetadata.loopModeFor(mode);
+    if (item.extras?[VivoMusicMetadata.supportEventsKey] ==
+            VivoMusicMetadata.supportEvents &&
+        item.extras?[VivoMusicMetadata.loopModeKey] == loopMode) {
+      return item;
+    }
+    return preserveMediaItemArtHeaders(
+      item,
+      item.copyWith(
+        extras: {
+          ...?item.extras,
+          VivoMusicMetadata.supportEventsKey: VivoMusicMetadata.supportEvents,
+          VivoMusicMetadata.loopModeKey: loopMode,
+        },
+      ),
+    );
+  }
+
+  void _publishMediaItem(MediaItem item) {
+    _currentMediaItem = _withVivoPlaybackMode(item);
     mediaItem.add(_currentMediaItem);
   }
 
   void publishQueue(List<MediaItem> items, {int? currentIndex}) {
     _queueIndex = currentIndex;
-    queue.add(List<MediaItem>.unmodifiable(items));
+    queue.add(List<MediaItem>.unmodifiable(items.map(_withVivoPlaybackMode)));
     _broadcastState(_player.snapshot);
   }
 
@@ -481,6 +513,8 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   }) {
     _repeatMode = repeatMode;
     _shuffleMode = shuffleMode;
+    final item = _currentMediaItem;
+    if (item != null) _publishMediaItem(item);
     _broadcastState(_player.snapshot);
   }
 
@@ -617,6 +651,47 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   @override
+  Future<List<MediaItem>> getChildren(
+    String parentMediaId, [
+    Map<String, dynamic>? options,
+  ]) async {
+    if (parentMediaId != VivoMusicMetadata.currentListId) {
+      return super.getChildren(parentMediaId, options);
+    }
+    return VivoQueueBrowser.page(
+      VivoQueueBrowser.snapshot(
+        queue: queue.value,
+        current: _currentMediaItem,
+        currentIndex: _queueIndex,
+      ),
+      options,
+    );
+  }
+
+  @override
+  Future<void> playFromMediaId(
+    String mediaId, [
+    Map<String, dynamic>? extras,
+  ]) async {
+    if (mediaId == VivoQueueBrowser.emptyItemId) return;
+    // Resolve against the live queue, including the local-to-online fallback
+    // ID of its active row. Old pages must not dispatch a now-unrelated index.
+    final index = queue.value.indexWhere((item) => item.id == mediaId);
+    if (index >= 0) {
+      await skipToQueueItem(index);
+    } else if (_currentMediaItem?.id == mediaId) {
+      final currentIndex = _queueIndex;
+      if (currentIndex != null &&
+          currentIndex >= 0 &&
+          currentIndex < queue.value.length) {
+        await skipToQueueItem(currentIndex);
+      } else {
+        await play();
+      }
+    }
+  }
+
+  @override
   Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) async {
     _repeatMode = repeatMode;
     _broadcastState(_player.snapshot);
@@ -628,6 +703,22 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     _shuffleMode = shuffleMode;
     _broadcastState(_player.snapshot);
     await _onShuffleMode?.call(shuffleMode);
+  }
+
+  @override
+  Future<dynamic> customAction(
+    String name, [
+    Map<String, dynamic>? extras,
+  ]) async {
+    if (name != VivoMusicMetadata.playModeAction) {
+      return super.customAction(name, extras);
+    }
+    final value = extras?[VivoMusicMetadata.loopModeKey];
+    if (value is! num || (value != 1 && value != 2 && value != 3)) return null;
+    final mode = value.toInt();
+    _logTransport('vivo_play_mode_$mode');
+    await _onVivoLoopMode?.call(mode);
+    return null;
   }
 
   @override
@@ -672,11 +763,9 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
     if (duration == null) return;
     final item = _currentMediaItem;
     if (item == null || item.duration == duration) return;
-    _currentMediaItem = preserveMediaItemArtHeaders(
-      item,
-      item.copyWith(duration: duration),
+    _publishMediaItem(
+      preserveMediaItemArtHeaders(item, item.copyWith(duration: duration)),
     );
-    mediaItem.add(_currentMediaItem);
   }
 
   void _broadcastError(Object error, StackTrace stackTrace) {

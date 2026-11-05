@@ -24,6 +24,7 @@ import 'package:cy_shine_music/features/player/player_controller.dart';
 import 'package:cy_shine_music/features/downloads/download_history_entry.dart';
 import 'package:cy_shine_music/features/player/player_session_snapshot.dart';
 import 'package:cy_shine_music/features/player/player_session_store.dart';
+import 'package:cy_shine_music/features/player/vivo_music_metadata.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -31,6 +32,164 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
   });
+
+  test(
+    'Vivo list selection preserves the full playlist and current song ID',
+    () async {
+      final harness = await _Harness.create(loadFailures: 0);
+      addTearDown(harness.dispose);
+      final entries = _remoteQueue(54);
+      await harness.controller.playFromPlaylistQueue(
+        entries.first,
+        entries,
+        playlistId: 'vivo-queue',
+      );
+      final secondPage = await harness.audio.getChildren(
+        VivoMusicMetadata.currentListId,
+        {VivoMusicMetadata.pageKey: 1},
+      );
+      expect(secondPage, hasLength(4));
+      expect(secondPage.first.title, 'Song 50');
+      await harness.audio.playFromMediaId(secondPage[1].id);
+
+      final state = harness.container.read(playerControllerProvider);
+      expect(state.queueIndex, 51);
+      expect(state.track?.id, secondPage[1].id);
+      expect(state.queue, hasLength(54));
+      expect(harness.controller.queuePlaylistId, 'vivo-queue');
+      await harness.controller.playNext();
+      expect(harness.container.read(playerControllerProvider).queueIndex, 52);
+      final expanded = [...entries, ..._remoteQueue(56).skip(54)];
+      expect(
+        harness.controller.expandPlaylistQueue(
+          expectedQueue: entries,
+          expandedQueue: expanded,
+        ),
+        isTrue,
+      );
+      final updated = await harness.audio.getChildren(
+        VivoMusicMetadata.currentListId,
+        {VivoMusicMetadata.pageKey: 1},
+      );
+      expect(updated, hasLength(6));
+      expect(updated.last.title, 'Song 55');
+    },
+  );
+
+  test(
+    'Vivo playback modes replace shuffle and update both system states',
+    () async {
+      final harness = await _Harness.create(loadFailures: 0);
+      addTearDown(harness.dispose);
+      await harness.controller.playFromMusic(_music());
+      final loads = harness.audio.loadedUris.length;
+
+      Future<void> selectMode(int mode) => harness.audio.customAction(
+        VivoMusicMetadata.playModeAction,
+        {VivoMusicMetadata.loopModeKey: mode},
+      );
+
+      await selectMode(3);
+      expect(
+        harness.container.read(playerControllerProvider).playbackMode,
+        PlayerPlaybackMode.shuffle,
+      );
+      expect(
+        harness.audio.playbackState.value.shuffleMode,
+        AudioServiceShuffleMode.all,
+      );
+      expect(
+        harness.audio.currentMediaItem?.extras?[VivoMusicMetadata.loopModeKey],
+        3,
+      );
+
+      await selectMode(2);
+      expect(
+        harness.container.read(playerControllerProvider).playbackMode,
+        PlayerPlaybackMode.repeatOne,
+      );
+      expect(
+        harness.audio.playbackState.value.shuffleMode,
+        AudioServiceShuffleMode.none,
+      );
+      expect(
+        harness.audio.playbackState.value.repeatMode,
+        AudioServiceRepeatMode.one,
+      );
+      expect(
+        harness.audio.currentMediaItem?.extras?[VivoMusicMetadata.loopModeKey],
+        2,
+      );
+
+      await selectMode(1);
+      expect(
+        harness.container.read(playerControllerProvider).playbackMode,
+        PlayerPlaybackMode.sequence,
+      );
+      expect(
+        harness.audio.playbackState.value.repeatMode,
+        AudioServiceRepeatMode.all,
+      );
+      expect(
+        harness.audio.currentMediaItem?.extras?[VivoMusicMetadata.loopModeKey],
+        1,
+      );
+      harness.controller.setPlaybackMode(PlayerPlaybackMode.shuffle);
+      expect(
+        harness.audio.currentMediaItem?.extras?[VivoMusicMetadata.loopModeKey],
+        3,
+      );
+      expect(harness.audio.loadedUris.length, loads);
+    },
+  );
+
+  test(
+    'Vivo lyrics publish with Bluetooth lyric options disabled and survive mode changes',
+    () async {
+      final harness = await _Harness.create(loadFailures: 0);
+      addTearDown(harness.dispose);
+      expect(
+        harness.container.read(settingsProvider).bluetoothLyricEnabled,
+        isFalse,
+      );
+      expect(
+        harness.container.read(settingsProvider).bluetoothFullLyricEnabled,
+        isFalse,
+      );
+      await harness.controller.playFromMusic(_music());
+      await _waitUntil(
+        () => !harness.container.read(playerControllerProvider).lyricLoading,
+      );
+
+      final item = harness.audio.currentMediaItem!;
+      expect(item.title, 'Test Song');
+      expect(item.extras?[VivoMusicMetadata.lyricKey], '[00:01.00]Test lyric');
+      await harness.audio.customAction(VivoMusicMetadata.playModeAction, {
+        VivoMusicMetadata.loopModeKey: 2,
+      });
+      expect(
+        harness.audio.currentMediaItem?.extras?[VivoMusicMetadata.lyricKey],
+        '[00:01.00]Test lyric',
+      );
+      for (final invalid in [
+        null,
+        '3',
+        0,
+        4,
+        2.5,
+        double.nan,
+        double.infinity,
+      ]) {
+        await harness.audio.customAction(VivoMusicMetadata.playModeAction, {
+          VivoMusicMetadata.loopModeKey: invalid,
+        });
+      }
+      expect(
+        harness.container.read(playerControllerProvider).playbackMode,
+        PlayerPlaybackMode.repeatOne,
+      );
+    },
+  );
 
   test('player track keeps source quality sizes and canonical Hi-Res data', () {
     final music = MusicInfo(

@@ -7,9 +7,120 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:cy_shine_music/features/player/player_audio_handler.dart';
+import 'package:cy_shine_music/features/player/vivo_music_metadata.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('Vivo queue pages use live song IDs beyond the first page', () async {
+    final handler = PlayerAudioHandler(player: _FakeBassPlayer());
+    addTearDown(handler.disposeHandler);
+    final selected = <int>[];
+    handler.bindTransportCallbacks(
+      owner: handler,
+      onPrevious: () async {},
+      onNext: () async {},
+      onQueueItem: (index) async => selected.add(index),
+      onRepeatMode: (_) async {},
+      onShuffleMode: (_) async {},
+    );
+    final items = List.generate(
+      103,
+      (index) => MediaItem(id: 'song-$index', title: 'Song $index'),
+    );
+    handler.publishQueue(items, currentIndex: 0);
+    handler.updateMediaMetadata(items.first);
+
+    final first = await handler.getChildren(VivoMusicMetadata.currentListId);
+    final second = await handler.getChildren(VivoMusicMetadata.currentListId, {
+      VivoMusicMetadata.pageKey: 1,
+    });
+    final last = await handler.getChildren(VivoMusicMetadata.currentListId, {
+      VivoMusicMetadata.pageKey: 2,
+    });
+    expect(first, hasLength(50));
+    expect(first.last.extras?[VivoMusicMetadata.pageKey], 1);
+    expect(first.last.extras?[VivoMusicMetadata.hasMoreKey], isTrue);
+    expect(second.first.id, 'song-50');
+    expect(second.last.id, 'song-99');
+    expect(last.map((item) => item.id), ['song-100', 'song-101', 'song-102']);
+    expect(last.last.extras?[VivoMusicMetadata.hasMoreKey], isFalse);
+    await handler.playFromMediaId(second.last.id);
+    expect(selected, [99]);
+
+    for (final invalidPage in [
+      -1,
+      '1',
+      0.5,
+      double.nan,
+      double.infinity,
+      1e300,
+    ]) {
+      expect(
+        await handler.getChildren(VivoMusicMetadata.currentListId, {
+          VivoMusicMetadata.pageKey: invalidPage,
+        }),
+        isEmpty,
+      );
+    }
+    handler.publishQueue(const [MediaItem(id: 'new-song', title: 'New song')]);
+    await handler.playFromMediaId('song-99');
+    expect(selected, [99]);
+  });
+
+  test(
+    'Vivo queue handles an empty page, standalone lyrics and online fallback',
+    () async {
+      final handler = PlayerAudioHandler(player: _FakeBassPlayer());
+      addTearDown(handler.disposeHandler);
+      final empty = await handler.getChildren(VivoMusicMetadata.currentListId);
+      expect(empty.single.title, '暂无播放队列');
+      expect(empty.single.extras?[VivoMusicMetadata.hasMoreKey], isFalse);
+      await handler.playFromMediaId(empty.single.id);
+
+      handler.updateMediaMetadata(
+        const MediaItem(
+          id: 'song:online',
+          title: '正在唱的歌词',
+          artist: '歌名 - 歌手',
+          extras: {
+            VivoMusicMetadata.songTitleKey: '原始歌名',
+            VivoMusicMetadata.songArtistKey: '原始歌手',
+            VivoMusicMetadata.lyricKey: '[00:01.00]正在唱的歌词',
+          },
+        ),
+      );
+      final standalone = await handler.getChildren(
+        VivoMusicMetadata.currentListId,
+      );
+      expect(standalone.single.id, 'song:online');
+      expect(standalone.single.title, '原始歌名');
+      expect(standalone.single.artist, '原始歌手');
+      expect(
+        standalone.single.extras,
+        isNot(contains(VivoMusicMetadata.lyricKey)),
+      );
+      final selected = <int>[];
+      handler.bindTransportCallbacks(
+        owner: handler,
+        onPrevious: () async {},
+        onNext: () async {},
+        onQueueItem: (index) async => selected.add(index),
+        onRepeatMode: (_) async {},
+        onShuffleMode: (_) async {},
+      );
+      handler.publishQueue(const [
+        MediaItem(id: 'song:local', title: '原始歌名', artist: '原始歌手'),
+        MediaItem(id: 'next', title: '下一首'),
+      ], currentIndex: 0);
+      final fallback = await handler.getChildren(
+        VivoMusicMetadata.currentListId,
+      );
+      expect(fallback.first.id, 'song:online');
+      await handler.playFromMediaId(fallback.first.id);
+      expect(selected, [0]);
+    },
+  );
 
   test('shared playback skips Android focus and enables iOS mixing', () {
     expect(

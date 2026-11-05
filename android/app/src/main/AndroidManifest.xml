@@ -150,6 +150,9 @@
             <intent-filter>
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="com.vivo.musicwidgetmix.support.service" />
+            </intent-filter>
         </service>
         <receiver
             android:name="com.ryanheise.audioservice.MediaButtonReceiver"

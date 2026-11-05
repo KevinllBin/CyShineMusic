@@ -54,6 +54,11 @@ dev_dependencies:
   test: ^1.25.7
   flutter_launcher_icons: ^0.14.3
 
+dependency_overrides:
+  # The player and music_home_widget must use the same patched MediaSession.
+  audio_service:
+    path: packages/audio_service
+
 flutter:
   uses-material-design: true
   assets:

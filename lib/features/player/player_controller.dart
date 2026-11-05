@@ -24,10 +24,12 @@ import '../downloads/download_history_store.dart';
 import '../equalizer/equalizer_store.dart';
 import 'bluetooth_lyric_metadata.dart';
 import 'lyric_parser.dart';
+import 'media_item_copy.dart';
 import 'player_audio_handler.dart';
 import 'player_models.dart';
 import 'player_session_snapshot.dart';
 import 'player_session_store.dart';
+import 'vivo_music_metadata.dart';
 
 export 'player_models.dart';
 
@@ -66,6 +68,7 @@ class PlayerController extends StateNotifier<PlayerState>
       onQueueItem: playQueueItem,
       onRepeatMode: _handleSystemRepeatMode,
       onShuffleMode: _handleSystemShuffleMode,
+      onVivoLoopMode: _handleVivoLoopMode,
     );
     _subscriptions = [
       _audioHandler.positionStream.listen((position) {
@@ -329,6 +332,7 @@ class PlayerController extends StateNotifier<PlayerState>
       final parsed = await compute(KaraokeLyricsParser.parseEmbedded, raw);
       if (!mounted || !identical(_requestToken, token)) return;
       state = state.copyWith(lyrics: parsed, lyricLoading: false);
+      _syncBluetoothMetadata(force: true);
     } else if (entry.musicInfo != null) {
       await _loadLyricsForMusic(
         entry.musicInfo!,
@@ -384,6 +388,7 @@ class PlayerController extends StateNotifier<PlayerState>
   Stopwatch? _bufferingStopwatch;
   final BluetoothLyricMetadataCoordinator _bluetoothLyricMetadata =
       BluetoothLyricMetadataCoordinator();
+  final VivoLyricEncoder _vivoLyricEncoder = VivoLyricEncoder();
 
   MusicInfo? get currentMusic => _currentMusic;
 
@@ -1636,12 +1641,21 @@ class PlayerController extends StateNotifier<PlayerState>
         'trackKind': track.kind.name,
         'source': track.sourceLabel,
         'quality': track.qualityLabel,
+        VivoMusicMetadata.songTitleKey: track.title.trim().isEmpty
+            ? '未知歌曲'
+            : track.title.trim(),
+        VivoMusicMetadata.songArtistKey: track.artist.trim().isEmpty
+            ? '未知歌手'
+            : track.artist.trim(),
+        VivoMusicMetadata.lyricKey: track.id == state.track?.id
+            ? _vivoLyricEncoder.encode(state.lyrics)
+            : '',
       },
     );
   }
 
   void _publishMediaMetadata(MediaItem item) {
-    _audioHandler.updateMediaMetadata(item);
+    _audioHandler.updateMediaMetadata(_withVivoLyrics(item));
     _bluetoothLyricMetadata.reset();
     _syncBluetoothMetadata(force: true);
   }
@@ -1670,6 +1684,7 @@ class PlayerController extends StateNotifier<PlayerState>
     }
     final fullLyric = state.lyricInfo?.lyric.trim();
     try {
+      final lrc = _vivoLyricEncoder.encode(state.lyrics);
       final item = _bluetoothLyricMetadata.next(
         current: current,
         track: track,
@@ -1678,16 +1693,27 @@ class PlayerController extends StateNotifier<PlayerState>
         fullLyricEnabled: settings.bluetoothFullLyricEnabled,
         activeLine: activeLine,
         fullLyric: fullLyric,
-        force: force,
+        force: force || current.extras?[VivoMusicMetadata.lyricKey] != lrc,
       );
       if (item == null) return;
-      _audioHandler.updateMediaMetadata(item);
+      _audioHandler.updateMediaMetadata(_withVivoLyrics(item));
     } catch (error) {
       _bluetoothLyricMetadata.reset();
       unawaited(
         AppLogger.write('player', 'bluetooth lyric metadata failed: $error'),
       );
     }
+  }
+
+  MediaItem _withVivoLyrics(MediaItem item) {
+    final lrc = item.id == state.track?.id
+        ? _vivoLyricEncoder.encode(state.lyrics)
+        : '';
+    if (item.extras?[VivoMusicMetadata.lyricKey] == lrc) return item;
+    return preserveMediaItemArtHeaders(
+      item,
+      item.copyWith(extras: {...?item.extras, VivoMusicMetadata.lyricKey: lrc}),
+    );
   }
 
   Uri? _networkArtworkUri(String? value) {
@@ -1734,6 +1760,13 @@ class PlayerController extends StateNotifier<PlayerState>
               ? PlayerPlaybackMode.sequence
               : state.playbackMode
         : PlayerPlaybackMode.shuffle;
+    setPlaybackMode(next);
+    _publishPlaybackMode();
+  }
+
+  Future<void> _handleVivoLoopMode(int mode) async {
+    final next = VivoMusicMetadata.playbackModeFor(mode);
+    if (next == null) return;
     setPlaybackMode(next);
     _publishPlaybackMode();
   }
