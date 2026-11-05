@@ -6,6 +6,7 @@ import 'dart:io';
 // ignore_for_file: deprecated_member_use
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dynamic_color/dynamic_color.dart';
@@ -13,6 +14,8 @@ import 'package:material_color_utilities/material_color_utilities.dart';
 
 import 'core/services/app_logger.dart';
 import 'core/services/permission_service.dart';
+import 'core/services/saf_storage.dart';
+import 'core/services/storage_location.dart';
 import 'core/storage/settings_store.dart';
 import 'core/sync/webdav_sync_controller.dart';
 import 'core/ui/app_toast.dart';
@@ -21,6 +24,7 @@ import 'features/downloads/download_history_store.dart';
 import 'core/music_sources/music_source_controller.dart';
 import 'features/music_sources/music_source_update_prompt.dart';
 import 'features/player/player_controller.dart';
+import 'features/playlists/playlist_store.dart';
 import 'features/player/music_home_widget_service.dart';
 import 'features/songs/local_song_scan_cache.dart';
 import 'features/startup/startup_gate.dart';
@@ -79,12 +83,7 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
       ref.read(webDavSyncControllerProvider);
       ref.read(playerControllerProvider.notifier);
       if (Platform.isAndroid) ref.read(musicHomeWidgetSyncProvider);
-      final scanCache = ref.read(localSongScanCacheProvider);
-      unawaited(
-        scanCache.ensureScan(
-          directories: ref.read(settingsProvider).localMusicDirs,
-        ),
-      );
+      unawaited(_initializeLocalLibrary());
     });
   }
 
@@ -96,8 +95,47 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
     super.dispose();
   }
 
+  Future<void> _initializeLocalLibrary() async {
+    final cache = ref.read(localSongScanCacheProvider);
+    final selected = ref.read(settingsProvider).localMusicDirs;
+    final directories = <String>[];
+    for (final directory in selected) {
+      directories.add(
+        isContentLocation(directory)
+            ? await SafStorage.resolveLocalPath(
+                    directory,
+                    requireReadable: false,
+                  ) ??
+                  directory
+            : directory,
+      );
+    }
+    if (!mounted) return;
+    // Do not overwrite a folder selection changed while migration was pending.
+    if (!listEquals(selected, ref.read(settingsProvider).localMusicDirs)) {
+      return;
+    }
+    if (!listEquals(selected, directories)) {
+      await ref.read(settingsProvider.notifier).setLocalMusicDirs(directories);
+    }
+    await cache.ensureScan(directories: directories);
+    if (!mounted) return;
+    await cache.linkKnownPaths([
+      for (final entry in ref.read(downloadHistoryProvider))
+        if (entry.savedPath != null) entry.savedPath!,
+      for (final playlist in ref.read(localPlaylistsProvider))
+        for (final track in playlist.tracks)
+          if (track.localPath != null) track.localPath!,
+    ]);
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (mounted &&
+        (state == AppLifecycleState.paused ||
+            state == AppLifecycleState.inactive)) {
+      unawaited(ref.read(localSongScanCacheProvider).flush());
+    }
     if (state != AppLifecycleState.resumed || !mounted) return;
     unawaited(ref.read(webDavSyncControllerProvider.notifier).onAppResumed());
   }
@@ -179,13 +217,13 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
   }
 
   Future<bool> _checkPermission() async {
-    final granted = await PermissionService.hasExternalStorageWrite();
+    final granted = await PermissionService.hasAudioLibraryRead();
     await AppLogger.write('app', 'startup permission status granted=$granted');
     if (granted) {
-      await PermissionService.markStoragePermissionRequestAttempted();
+      await PermissionService.markAudioPermissionRequestAttempted();
       return true;
     }
-    if (await PermissionService.hasStoragePermissionRequestAttempted()) {
+    if (await PermissionService.hasAudioPermissionRequestAttempted()) {
       return true;
     }
     // Wait one frame so the router has a chance to mount its home screen.
@@ -193,15 +231,15 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
     final ctx = rootNavigatorKey.currentContext;
     if (ctx == null || !ctx.mounted) return false;
     // Remember the explanation itself, including "稍后再说" or dismissal.
-    if (await PermissionService.hasStoragePermissionRequestAttempted()) {
+    if (await PermissionService.hasAudioPermissionRequestAttempted()) {
       return true;
     }
-    await PermissionService.markStoragePermissionRequestAttempted();
+    await PermissionService.markAudioPermissionRequestAttempted();
     if (!ctx.mounted) return false;
     final shouldRequest = await _showPermissionDialog(ctx);
     if (!shouldRequest) return true;
 
-    final ok = await PermissionService.requestExternalStorageWrite();
+    final ok = await PermissionService.requestAudioLibraryRead();
     if (ok && mounted) {
       unawaited(
         ref
@@ -217,11 +255,10 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
     if (root == null || !root.mounted) return false;
     showAppToast(
       root,
-      ok ? '已授予存储权限' : '未授权，可在「设置→权限与目录」中授予权限',
+      ok ? '已允许读取本地音乐' : '未授权，可在「设置→权限与目录」中开启音乐和音频权限',
       type: ok ? AppToastType.success : AppToastType.warning,
     );
-    // Requesting all-files access can switch to system UI. Avoid showing an
-    // update dialog behind it; the next cold start will check normally.
+    // Let the user return to the library after handling the permission prompt.
     return false;
   }
 
@@ -230,11 +267,10 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
           context: context,
           barrierDismissible: false,
           builder: (ctx) => AlertDialog(
-            icon: const Icon(Icons.folder_shared_outlined, size: 36),
-            title: const Text('需要存储权限'),
+            icon: const Icon(Icons.library_music_outlined, size: 36),
+            title: const Text('读取本地音乐'),
             content: const Text(
-              '为了把下载好的音乐保存到「音乐」目录，'
-              '以及使用内置目录选择器，需要授予存储访问权限。\n\n'
+              '允许读取设备上的音乐和音频，在选定文件夹中查找歌曲及封面。\n\n'
               '暂不授权也可以继续使用，之后可在「设置→权限与目录」中开启。',
             ),
             actions: [

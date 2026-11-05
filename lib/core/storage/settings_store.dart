@@ -395,13 +395,26 @@ class SettingsNotifier extends Notifier<AppSettings> {
   }
 
   Future<void> setDownloadDir(String value) async {
+    final previousLocalPath = await SafStorage.resolveLocalPath(
+      state.downloadDir,
+      requireReadable: false,
+    );
+    final nextLocalPath = await SafStorage.resolveLocalPath(
+      value,
+      requireReadable: false,
+    );
     final localMusicFollowsDownload =
         state.localMusicDirs.length == 1 &&
-        normalizeStorageLocation(state.localMusicDir) ==
-            normalizeStorageLocation(state.downloadDir);
+        (normalizeStorageLocation(state.localMusicDir) ==
+                normalizeStorageLocation(state.downloadDir) ||
+            (previousLocalPath != null &&
+                normalizeStorageLocation(state.localMusicDir) ==
+                    normalizeStorageLocation(previousLocalPath)));
     await _prefs.setString(_kDownloadDirKey, value);
-    if (localMusicFollowsDownload) {
-      final directories = _normalizeLocalMusicDirs([value], fallback: value);
+    if (localMusicFollowsDownload && nextLocalPath != null) {
+      final directories = _normalizeLocalMusicDirs([
+        nextLocalPath,
+      ], fallback: nextLocalPath);
       await _persistLocalMusicDirs(directories);
       state = state.copyWith(downloadDir: value, localMusicDirs: directories);
     } else {

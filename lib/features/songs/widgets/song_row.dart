@@ -36,7 +36,7 @@ class SongRow extends ConsumerWidget {
   });
 
   final DownloadHistoryEntry entry;
-  final int? artworkVersion;
+  final Object? artworkVersion;
   final bool playing;
   final bool playingActive;
   final bool batchMode;
@@ -321,7 +321,7 @@ class _SongCover extends StatefulWidget {
   const _SongCover({required this.entry, required this.artworkVersion});
 
   final DownloadHistoryEntry entry;
-  final int? artworkVersion;
+  final Object? artworkVersion;
 
   @override
   State<_SongCover> createState() => _SongCoverState();
@@ -363,6 +363,7 @@ class _SongCoverState extends State<_SongCover> {
     final path = widget.entry.savedPath?.trim();
     if (path == null || path.isEmpty) return;
     final version = widget.artworkVersion;
+    _artworkBytes = EmbeddedArtworkCache.peek(path, version: version);
     final request = EmbeddedArtworkCache.subscribe(path, version: version);
     _artworkRequest = request;
     unawaited(

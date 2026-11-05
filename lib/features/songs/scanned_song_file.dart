@@ -1,14 +1,6 @@
 import '../../core/services/tagger.dart';
 import 'local_song_scan_cache.dart';
 
-/// Process-wide snapshot of embedded-tag reads keyed by normalized path.
-/// Intentionally top-level (library-scoped singletons): the songs page copies
-/// them into its per-instance caches on rebuild so tags read in a previous
-/// visit render instantly. Exactly one copy of each map must exist in the
-/// app.
-final Map<String, EmbeddedAudioTags?> songTagCacheSnapshot = {};
-final Map<String, DateTime> songTagModifiedAtSnapshot = {};
-
 String _baseNameOf(String fileName) {
   final dot = fileName.lastIndexOf('.');
   return dot > 0 ? fileName.substring(0, dot) : fileName;
@@ -22,33 +14,47 @@ class ScannedSongFile {
     required this.createdAt,
     required this.modifiedAt,
     required this.sizeBytes,
-  });
+    this.tags,
+    this.metadataRead = false,
+    String? identityPath,
+  }) : _identityPath = identityPath;
 
   factory ScannedSongFile.fromSnapshot(LocalSongFileSnapshot snapshot) {
     return ScannedSongFile(
-      path: snapshot.path,
+      path: snapshot.playbackPath,
+      identityPath: snapshot.path,
       fileName: snapshot.fileName,
       extension: snapshot.extension,
       createdAt: snapshot.createdAt,
       modifiedAt: snapshot.modifiedAt,
       sizeBytes: snapshot.sizeBytes,
+      tags: snapshot.tags,
+      metadataRead: snapshot.metadataRead,
     );
   }
 
   final String path;
+  final String? _identityPath;
+  String get identityPath => _identityPath ?? path;
   final String fileName;
   final String extension;
   final DateTime createdAt;
   final DateTime modifiedAt;
   final int sizeBytes;
+  final EmbeddedAudioTags? tags;
+  final bool metadataRead;
+  String get fingerprint => '${modifiedAt.microsecondsSinceEpoch}:$sizeBytes';
 
   LocalSongFileSnapshot toSnapshot() => LocalSongFileSnapshot(
-    path: path,
+    path: identityPath,
+    contentUri: path == identityPath ? null : path,
     fileName: fileName,
     extension: extension,
     createdAt: createdAt,
     modifiedAt: modifiedAt,
     sizeBytes: sizeBytes,
+    tags: tags,
+    metadataRead: metadataRead,
   );
 
   String get baseName => _baseNameOf(fileName);

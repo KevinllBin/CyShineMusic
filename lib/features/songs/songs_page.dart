@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -9,10 +8,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/services/saf_storage.dart';
 import '../../core/services/local_audio_source.dart';
-import '../../core/services/storage_location.dart';
 import '../../core/models/enums.dart';
 import '../../core/services/embedded_artwork_cache.dart';
-import '../../core/services/tagger.dart';
+import '../../core/services/embedded_audio_tags.dart';
 import '../../core/storage/settings_store.dart';
 import '../../core/ui/app_scrollbar.dart';
 import '../../core/ui/app_toast.dart';
@@ -40,8 +38,6 @@ import 'widgets/songs_batch_action_bar.dart';
 import 'widgets/songs_placeholders.dart';
 import 'widgets/songs_sort_sheet.dart';
 
-const _songTagReadTimeout = Duration(seconds: 8);
-const _songScanCacheTtl = Duration(seconds: 12);
 const _songSortModeKey = 'songs_sort_mode_v1';
 const _songSortAscendingKey = 'songs_sort_ascending_v1';
 
@@ -69,23 +65,16 @@ class _SongsPageState extends ConsumerState<SongsPage> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode(debugLabel: 'songs-search');
   bool? _toolbarVisibilityBeforeSearchFocus;
-  bool _tabActive = false;
   List<DownloadHistoryEntry> _visibleSongs = const [];
   Map<String, PlaylistTrack> _visiblePlaylistTracks = const {};
   final Set<String> _selectedIds = <String>{};
   final Set<String> _updatingPlaylistIds = <String>{};
-  final Map<String, EmbeddedAudioTags?> _tagCache = {};
-  final Map<String, DateTime> _tagModifiedAt = {};
-  final Set<String> _tagLoadingKeys = <String>{};
   List<ScannedSongFile>? _scannedFiles;
   String? _scanError;
-  int _scanGeneration = 0;
-  Timer? _tagFlushTimer;
   ProviderSubscription<List<String>>? _localMusicDirSubscription;
   late final StateController<SongsToolbarState> _toolbarStateController;
   late final StateController<bool> _shellToolbarController;
   late final LocalSongScanCache _scanCache;
-  late final Future<void> _firstRouteTransitionSettled;
 
   @override
   void initState() {
@@ -100,7 +89,6 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     _seedFromScanCache();
     _scanCache.addListener(_handleScanCacheChanged);
     if (_searchMode) _enableSearchFocusHandling();
-    _firstRouteTransitionSettled = _waitForFirstRouteTransition();
     _localMusicDirSubscription = ref.listenManual(
       settingsProvider.select((settings) => settings.localMusicDirs),
       (previous, next) {
@@ -108,7 +96,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
         // Keep the currently rendered library in place while the new folders are
         // scanned, then swap the result in one frame. This avoids a loading
         // flash when the local music folder changes from Settings.
-        unawaited(_scanLocalMusicFolder());
+        unawaited(_scanCache.ensureScan(directories: next));
       },
     );
     unawaited(_initializeScan());
@@ -128,8 +116,6 @@ class _SongsPageState extends ConsumerState<SongsPage> {
       for (final file in snapshot.files) ScannedSongFile.fromSnapshot(file),
     ];
     _scanError = snapshot.error;
-    _tagCache.addAll(songTagCacheSnapshot);
-    _tagModifiedAt.addAll(songTagModifiedAtSnapshot);
   }
 
   @override
@@ -144,43 +130,18 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     }
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final active = TickerMode.valuesOf(context).enabled;
-    final resumes = active && !_tabActive;
-    _tabActive = active;
-    if (!resumes) return;
-    final files = _scannedFiles;
-    if (files != null && files.isNotEmpty) {
-      unawaited(_resumeCachedHydration(files, _scanGeneration));
-    }
-  }
-
   Future<void> _initializeScan() async {
-    await _scanCache.ensureLoaded();
-    if (!mounted) return;
-
-    _handleScanCacheChanged();
-    final snapshot = _scanCache.snapshot;
-    final currentDirectories = ref.read(settingsProvider).localMusicDirs;
-    final shouldRefresh =
-        snapshot == null ||
-        !snapshot.matchesDirectories(currentDirectories) ||
-        snapshot.error != null ||
-        DateTime.now().difference(snapshot.cachedAt) >= _songScanCacheTtl;
-    if (shouldRefresh) {
-      unawaited(_scanCache.refresh(directories: currentDirectories));
-    }
+    await _scanCache.ensureScan(
+      directories: ref.read(settingsProvider).localMusicDirs,
+    );
+    if (mounted) _handleScanCacheChanged();
   }
 
   @override
   void dispose() {
-    _scanGeneration++;
     _disableSearchFocusHandling(deferRestore: true);
     _scanCache.removeListener(_handleScanCacheChanged);
     _localMusicDirSubscription?.close();
-    _tagFlushTimer?.cancel();
     _scrollController.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
@@ -237,39 +198,6 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     }
   }
 
-  Future<void> _waitForFirstRouteTransition() async {
-    await WidgetsBinding.instance.endOfFrame;
-    final reduceMotion = WidgetsBinding
-        .instance
-        .platformDispatcher
-        .accessibilityFeatures
-        .disableAnimations;
-    if (!reduceMotion) await Future<void>.delayed(AppMotion.long);
-  }
-
-  bool _isActiveScan(int generation) {
-    if (!mounted || generation != _scanGeneration) return false;
-    return _isSongsRouteActive();
-  }
-
-  bool _isSongsRouteActive() {
-    if (!mounted || !_tabActive) return false;
-    final path = GoRouter.of(context).routeInformationProvider.value.uri.path;
-    // The player now covers this live route rather than disposing it. Keep
-    // metadata hydration alive so returning cannot strand a half-loaded list.
-    return path == '/player' ||
-        path == (widget.searchMode ? '/songs/search' : '/songs');
-  }
-
-  Future<void> _resumeCachedHydration(
-    List<ScannedSongFile> files,
-    int generation,
-  ) async {
-    await _firstRouteTransitionSettled;
-    if (!_isActiveScan(generation)) return;
-    await _hydrateScannedTags(files, generation);
-  }
-
   void _handleScanCacheChanged() {
     if (!mounted) return;
     final snapshot = _scanCache.snapshot;
@@ -280,33 +208,10 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     final files = [
       for (final file in snapshot.files) ScannedSongFile.fromSnapshot(file),
     ];
-    final previousFiles = _scannedFiles ?? const <ScannedSongFile>[];
-    final nextFilesByKey = {
-      for (final file in files) _pathKey(file.path): file,
-    };
-    for (final previous in previousFiles) {
-      final next = nextFilesByKey[_pathKey(previous.path)];
-      if (next == null || next.modifiedAt != previous.modifiedAt) {
-        EmbeddedArtworkCache.evictPath(previous.path);
-      }
-    }
-
-    final generation = ++_scanGeneration;
     setState(() {
       _scannedFiles = files;
       _scanError = snapshot.error;
-      final currentKeys = nextFilesByKey.keys.toSet();
-      _tagCache.removeWhere((key, _) => !currentKeys.contains(key));
-      _tagModifiedAt.removeWhere((key, _) => !currentKeys.contains(key));
-      _tagLoadingKeys.clear();
-      _selectedIds.clear();
-      _batchMode = false;
-      _tagCache.addAll(songTagCacheSnapshot);
-      _tagModifiedAt.addAll(songTagModifiedAtSnapshot);
     });
-    if (files.isNotEmpty) {
-      unawaited(_resumeCachedHydration(files, generation));
-    }
   }
 
   Future<void> _scanLocalMusicFolder() {
@@ -329,7 +234,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     final seen = <String>{};
     for (final file in scannedFiles) {
       final key = _pathKey(file.path);
-      final tags = _tagCache[key];
+      final tags = file.tags;
       final historyEntry = historyByPath[key];
       final entry = historyEntry == null
           ? _syntheticEntryFor(file, tags)
@@ -422,8 +327,8 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     EmbeddedAudioTags? tags,
   ) {
     return DownloadHistoryEntry(
-      id: 'file:${file.path}',
-      musicId: file.path,
+      id: 'file:${file.identityPath}',
+      musicId: file.identityPath,
       name: _preferTag(tags?.title, file.title),
       singer: _preferTag(tags?.artist, file.artist),
       albumName: _preferTag(tags?.album, ''),
@@ -434,57 +339,6 @@ class _SongsPageState extends ConsumerState<SongsPage> {
       savedPath: file.path,
       sizeBytes: file.sizeBytes,
     );
-  }
-
-  Future<void> _hydrateScannedTags(
-    List<ScannedSongFile> files,
-    int generation,
-  ) async {
-    for (final file in files) {
-      if (!_isActiveScan(generation)) return;
-      final key = _pathKey(file.path);
-      if (_tagCache.containsKey(key) &&
-          _tagModifiedAt[key] == file.modifiedAt) {
-        continue;
-      }
-      if (!_tagLoadingKeys.add(key)) continue;
-      EmbeddedAudioTags? tags;
-      try {
-        tags = await Tagger.readEmbeddedTags(
-          file.path,
-          includeLyrics: false,
-          includeArtwork: false,
-        ).timeout(_songTagReadTimeout);
-      } catch (_) {
-        tags = null;
-      }
-      if (!_isActiveScan(generation)) {
-        _tagLoadingKeys.remove(key);
-        return;
-      }
-      _tagLoadingKeys.remove(key);
-      if (tags == null) {
-        _tagCache.remove(key);
-        _tagModifiedAt.remove(key);
-        songTagCacheSnapshot.remove(key);
-        songTagModifiedAtSnapshot.remove(key);
-      } else {
-        _tagCache[key] = tags;
-        _tagModifiedAt[key] = file.modifiedAt;
-        songTagCacheSnapshot[key] = tags;
-        songTagModifiedAtSnapshot[key] = file.modifiedAt;
-      }
-      // One setState per file means N full list rebuild+sorts while a large
-      // library hydrates; coalesce text metadata into small batches.
-      _scheduleTagFlush();
-    }
-  }
-
-  void _scheduleTagFlush() {
-    _tagFlushTimer ??= Timer(const Duration(milliseconds: 90), () {
-      _tagFlushTimer = null;
-      if (_isSongsRouteActive()) setState(() {});
-    });
   }
 
   Future<void> _play(
@@ -761,14 +615,16 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     final historyNotifier = ref.read(downloadHistoryProvider.notifier);
     final playlists = ref.read(localPlaylistsProvider.notifier);
     final scanCache = _scanCache;
-    final directories = ref.read(settingsProvider).localMusicDirs;
     final wasBatch = _batchMode;
     try {
       final result = await SafStorage.deleteFiles(paths);
       final deletedKeys = result.deletedPaths.map(_pathKey).toSet();
       if (deletedKeys.isNotEmpty) {
         for (final path in result.deletedPaths) {
-          await playlists.removeLocalPathFromAll(path);
+          await playlists.removeLocalPathFromAll(
+            path,
+            pathKey: scanCache.pathKey,
+          );
           _forgetTagCache(path);
         }
         await historyNotifier.removeMany([
@@ -777,7 +633,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
                 deletedKeys.contains(_pathKey(item.savedPath!)))
               item.id,
         ]);
-        await scanCache.refresh(directories: directories);
+        await scanCache.flush();
         if (mounted && wasBatch) {
           setState(() {
             _selectedIds
@@ -1039,13 +895,9 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     showAppToast(context, '已加入 $added 首歌曲', type: AppToastType.success);
   }
 
+  String _pathKey(String path) => _scanCache.pathKey(path);
+
   void _forgetTagCache(String path) {
-    final key = _pathKey(path);
-    _tagCache.remove(key);
-    _tagModifiedAt.remove(key);
-    _tagLoadingKeys.remove(key);
-    songTagCacheSnapshot.remove(key);
-    songTagModifiedAtSnapshot.remove(key);
     EmbeddedArtworkCache.evictPath(path);
   }
 
@@ -1209,9 +1061,9 @@ class _SongsPageState extends ConsumerState<SongsPage> {
         );
       }),
     );
-    final artworkVersionByPath = <String, int>{
+    final artworkVersionByPath = <String, String>{
       for (final file in _scannedFiles ?? const <ScannedSongFile>[])
-        _pathKey(file.path): file.modifiedAt.microsecondsSinceEpoch,
+        _pathKey(file.path): file.fingerprint,
     };
     final selectedCount = songs
         .where((entry) => _selectedIds.contains(entry.id))
@@ -1385,12 +1237,6 @@ class _SongsPageState extends ConsumerState<SongsPage> {
       ),
     );
   }
-}
-
-String _pathKey(String path) {
-  if (isContentLocation(path)) return contentDocumentKey(path);
-  final normalized = path.replaceAll('\\', '/');
-  return Platform.isWindows ? normalized.toLowerCase() : normalized;
 }
 
 String _preferTag(String? value, String fallback) {

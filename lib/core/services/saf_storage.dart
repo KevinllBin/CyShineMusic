@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'storage_location.dart';
+import 'local_audio_library_events.dart';
 
 /// The stored location is either a legacy filesystem path or an opaque SAF URI.
 class SafStorage {
@@ -77,6 +78,42 @@ class SafStorage {
     ];
   }
 
+  /// Only the system external-storage provider has a known local mapping.
+  /// Other providers remain opaque and cannot filter the local media library.
+  static Future<String?> resolveLocalPath(
+    String location, {
+    bool requireReadable = true,
+  }) async {
+    if (!isContentLocation(location)) return normalizeStorageLocation(location);
+    if (!Platform.isAndroid) return null;
+    try {
+      return await _channel.invokeMethod<String>('resolveLocalPath', {
+        'uri': location,
+        'requireReadable': requireReadable,
+      });
+    } on PlatformException {
+      return null;
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> metadata(String location) async {
+    if (isContentLocation(location)) {
+      return _channel.invokeMapMethod<String, dynamic>('metadata', {
+        'uri': location,
+      });
+    }
+    final stat = await File(location).stat();
+    if (stat.type != FileSystemEntityType.file) return null;
+    return {
+      'fileName': File(location).uri.pathSegments.last,
+      'sizeBytes': stat.size,
+      'modifiedMs': stat.modified.millisecondsSinceEpoch,
+      'createdMs': stat.changed.millisecondsSinceEpoch,
+    };
+  }
+
   static Future<String> saveFile(
     String tree,
     String source,
@@ -109,13 +146,15 @@ class SafStorage {
       {'paths': locations.where((p) => p.isNotEmpty).toSet().toList()},
     );
     if (result == null) throw StateError('未收到删除结果');
-    return FileDeletionResult(
+    final deletion = FileDeletionResult(
       deletedPaths: Set<String>.from(
         result['deletedPaths'] as List? ?? const [],
       ),
       failed: Map<String, String>.from(result['failed'] as Map? ?? const {}),
       cancelled: result['cancelled'] == true,
     );
+    await LocalAudioLibraryEvents.deleted(deletion.deletedPaths);
+    return deletion;
   }
 }
 

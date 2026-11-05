@@ -98,6 +98,9 @@ class MainActivity : AudioServiceActivity() {
         if (!flutterEngine.plugins.has(SafStoragePlugin::class.java)) {
             flutterEngine.plugins.add(SafStoragePlugin())
         }
+        if (!flutterEngine.plugins.has(MediaLibraryPlugin::class.java)) {
+            flutterEngine.plugins.add(MediaLibraryPlugin())
+        }
         val appIcons = AppIconManager(applicationContext)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "cy_shine_music/app_icon")
             .setMethodCallHandler { call, result ->

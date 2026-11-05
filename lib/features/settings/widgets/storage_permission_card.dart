@@ -19,7 +19,8 @@ class StoragePermissionCard extends ConsumerStatefulWidget {
 
 class _StoragePermissionCardState extends ConsumerState<StoragePermissionCard>
     with WidgetsBindingObserver {
-  bool? _granted;
+  bool? _audioGranted;
+  bool? _wideGranted;
   bool _requesting = false;
   bool _checkFailed = false;
 
@@ -38,21 +39,25 @@ class _StoragePermissionCardState extends ConsumerState<StoragePermissionCard>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      unawaited(_refreshPermission());
-    }
+    if (state == AppLifecycleState.resumed) unawaited(_refreshPermission());
   }
 
   Future<void> _refreshPermission() async {
     try {
-      final granted = await PermissionService.hasExternalStorageWrite();
+      final status = await Future.wait([
+        PermissionService.hasAudioLibraryRead(),
+        PermissionService.hasExternalStorageWrite(),
+      ]);
       if (!mounted) return;
-      final wasGranted = _granted;
+      final newlyGranted =
+          (status[0] && _audioGranted == false) ||
+          (status[1] && _wideGranted == false);
       setState(() {
-        _granted = granted;
+        _audioGranted = status[0];
+        _wideGranted = status[1];
         _checkFailed = false;
       });
-      if (granted && wasGranted == false) {
+      if (newlyGranted) {
         unawaited(
           ref
               .read(localSongScanCacheProvider)
@@ -64,21 +69,31 @@ class _StoragePermissionCardState extends ConsumerState<StoragePermissionCard>
     }
   }
 
-  Future<void> _requestPermission() async {
+  Future<void> _requestPermission({bool compatibility = false}) async {
     if (_requesting) return;
     setState(() => _requesting = true);
     try {
-      final granted = await PermissionService.requestExternalStorageWrite();
+      if (compatibility) {
+        await PermissionService.openExternalStorageSettings();
+        await _refreshPermission();
+        return;
+      }
+      if (_audioGranted == true) {
+        await PermissionService.openSystemAppSettings();
+        return;
+      }
+      final granted = await PermissionService.requestAudioLibraryRead();
       await _refreshPermission();
       if (!mounted) return;
       showAppToast(
         context,
-        granted ? '已授予存储权限' : '未授予存储权限，内置目录暂不可用',
+        granted ? '已允许读取本地音乐' : '未允许读取本地音乐，可稍后重新授权',
         type: granted ? AppToastType.success : AppToastType.warning,
       );
     } catch (_) {
-      if (!mounted) return;
-      showAppToast(context, '权限申请失败，请稍后重试或在系统设置中开启', type: AppToastType.error);
+      if (mounted) {
+        showAppToast(context, '权限申请失败，请在系统设置中检查', type: AppToastType.error);
+      }
     } finally {
       if (mounted) setState(() => _requesting = false);
     }
@@ -86,27 +101,34 @@ class _StoragePermissionCardState extends ConsumerState<StoragePermissionCard>
 
   @override
   Widget build(BuildContext context) {
-    final granted = _granted == true;
-    final subtitle = _checkFailed
-        ? '无法读取权限状态，点击重新申请'
-        : _requesting
-        ? '请在系统界面允许存储访问，返回后会自动检查'
-        : _granted == null
-        ? '正在检查存储权限'
-        : granted
-        ? '可使用内置目录选择器、下载音乐和扫描本地文件夹'
-        : '未授权；仍可通过系统选择器单独授权下载和扫描文件夹';
     return SettingsCard(
       title: '权限',
       children: [
         SettingsAction(
-          icon: Icons.folder_shared_outlined,
-          title: granted ? '存储权限已授予' : '授予存储权限',
-          subtitle: subtitle,
-          trailing: granted
+          icon: Icons.library_music_outlined,
+          title: '音乐和音频',
+          subtitle: _checkFailed
+              ? '无法读取权限状态，点击重试'
+              : _audioGranted == null
+              ? '正在检查读取权限'
+              : _audioGranted == true
+              ? '已允许读取选定文件夹中的音乐和封面'
+              : '允许读取本地歌曲，在线听歌不受影响',
+          trailing: _audioGranted == true
               ? Icons.check_circle_outline_rounded
               : Icons.chevron_right_rounded,
-          onTap: _requestPermission,
+          onTap: () => _requestPermission(),
+        ),
+        SettingsAction(
+          icon: Icons.folder_shared_outlined,
+          title: '所有文件访问（兼容）',
+          subtitle: _wideGranted == true
+              ? '已开启；用于旧系统、U盘或未入库的文件'
+              : '可选，用于旧系统、U盘和系统音乐库无法读取的位置',
+          trailing: _wideGranted == true
+              ? Icons.check_circle_outline_rounded
+              : Icons.chevron_right_rounded,
+          onTap: () => _requestPermission(compatibility: true),
         ),
       ],
     );

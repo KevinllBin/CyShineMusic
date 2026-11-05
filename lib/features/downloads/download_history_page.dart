@@ -11,6 +11,7 @@ import '../../core/ui/cover_image_source.dart';
 import '../../theme/app_motion.dart';
 import '../player/player_controller.dart';
 import '../playlists/playlist_store.dart';
+import '../songs/local_song_scan_cache.dart';
 import 'download_history_store.dart';
 import 'download_progress.dart';
 import 'widgets/batch_download_tasks_sheet.dart';
@@ -212,6 +213,7 @@ class _DownloadHistoryPageState extends ConsumerState<DownloadHistoryPage> {
     if (!mounted) return;
     final history = ref.read(downloadHistoryProvider.notifier);
     final playlists = ref.read(localPlaylistsProvider.notifier);
+    final index = ref.read(localSongScanCacheProvider);
     var fileDeleted = false;
     if (choice == _RemoveChoice.recordAndFile &&
         path != null &&
@@ -230,7 +232,7 @@ class _DownloadHistoryPageState extends ConsumerState<DownloadHistoryPage> {
           return;
         }
         fileDeleted = true;
-        await playlists.removeLocalPathFromAll(path);
+        await playlists.removeLocalPathFromAll(path, pathKey: index.pathKey);
       } catch (e) {
         if (!mounted) return;
         showAppToast(context, '文件删除失败：$e', type: AppToastType.error);

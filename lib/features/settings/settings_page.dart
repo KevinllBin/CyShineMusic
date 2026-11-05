@@ -884,15 +884,29 @@ class SettingsPage extends ConsumerWidget {
     await ref
         .read(settingsProvider.notifier)
         .setDownloadDir(kDefaultDownloadDir);
+    unawaited(
+      ref
+          .read(localSongScanCacheProvider)
+          .ensureScan(directories: ref.read(settingsProvider).localMusicDirs),
+    );
     if (!context.mounted) return;
     showAppToast(context, '已恢复默认下载位置', type: AppToastType.success);
   }
 
   Future<void> _resetLocalMusicDir(BuildContext context, WidgetRef ref) async {
     final downloadDir = ref.read(settingsProvider).downloadDir;
+    final localDir = await SafStorage.resolveLocalPath(
+      downloadDir,
+      requireReadable: false,
+    );
+    if (!context.mounted) return;
+    if (localDir == null) {
+      showAppToast(context, '下载位置没有可直接读取的本地路径，请选择本地扫描文件夹');
+      return;
+    }
     final scanCache = ref.read(localSongScanCacheProvider);
-    await ref.read(settingsProvider.notifier).setLocalMusicDirs([downloadDir]);
-    unawaited(scanCache.refresh(directories: [downloadDir]));
+    await ref.read(settingsProvider.notifier).setLocalMusicDirs([localDir]);
+    unawaited(scanCache.ensureScan(directories: [localDir]));
     if (!context.mounted) return;
     showAppToast(context, '已恢复为下载位置', type: AppToastType.success);
   }
@@ -919,6 +933,11 @@ class SettingsPage extends ConsumerWidget {
 
     if (!await _validateWritableDirectory(context, path)) return;
     await ref.read(settingsProvider.notifier).setDownloadDir(path);
+    unawaited(
+      ref
+          .read(localSongScanCacheProvider)
+          .ensureScan(directories: ref.read(settingsProvider).localMusicDirs),
+    );
     if (!context.mounted) return;
     showAppToast(
       context,
@@ -933,7 +952,6 @@ class SettingsPage extends ConsumerWidget {
       ref,
       title: '选择下载目录',
       initialPath: ref.read(settingsProvider).downloadDir,
-      forWrite: true,
     );
     if (!context.mounted || path == null || path.isEmpty) return;
 
@@ -952,9 +970,9 @@ class SettingsPage extends ConsumerWidget {
     WidgetRef ref, {
     String? replacing,
   }) async {
-    String? path;
+    String? selected;
     try {
-      path = await SafStorage.pickDirectory(
+      selected = await SafStorage.pickDirectory(
         writable: false,
         initialLocation:
             replacing ?? ref.read(settingsProvider).localMusicDirs.last,
@@ -963,13 +981,29 @@ class SettingsPage extends ConsumerWidget {
       if (context.mounted) {
         showAppToast(
           context,
-          error.message ?? '无法选择文件夹，请重试',
+          error.message ?? '无法打开系统目录选择器，请重试',
           type: AppToastType.error,
         );
       }
       return;
     }
-    if (!context.mounted || path == null || path.isEmpty) return;
+    if (!context.mounted || selected == null || selected.isEmpty) return;
+
+    // The system picker grants a URI; MediaStore filters by its local path.
+    // Resolving it must not require broad access to enumerate the directory.
+    final path = await SafStorage.resolveLocalPath(
+      selected,
+      requireReadable: false,
+    );
+    if (!context.mounted) return;
+    if (path == null) {
+      showAppToast(
+        context,
+        '请选择内部存储、SD卡或U盘中的本地文件夹',
+        type: AppToastType.warning,
+      );
+      return;
+    }
 
     await _applyLocalMusicDir(context, ref, path, replacing: replacing);
   }
@@ -1009,7 +1043,7 @@ class SettingsPage extends ConsumerWidget {
     }
     final scanCache = ref.read(localSongScanCacheProvider);
     await ref.read(settingsProvider.notifier).setLocalMusicDirs(directories);
-    unawaited(scanCache.refresh(directories: directories));
+    unawaited(scanCache.ensureScan(directories: directories));
     if (!context.mounted) return;
     showAppToast(
       context,
@@ -1028,7 +1062,7 @@ class SettingsPage extends ConsumerWidget {
     directories.remove(path);
     final scanCache = ref.read(localSongScanCacheProvider);
     await ref.read(settingsProvider.notifier).setLocalMusicDirs(directories);
-    unawaited(scanCache.refresh(directories: directories));
+    unawaited(scanCache.ensureScan(directories: directories));
     if (!context.mounted) return;
     showAppToast(context, '已移除扫描文件夹', type: AppToastType.success);
   }
@@ -1038,20 +1072,11 @@ class SettingsPage extends ConsumerWidget {
     WidgetRef ref, {
     required String title,
     required String initialPath,
-    bool forWrite = false,
   }) async {
-    // Only the app's direct file browser needs broad storage access. This also
-    // covers fallbacks when the system picker cannot return a usable path.
-    final allowed = forWrite
-        ? await PermissionService.hasExternalStorageWrite()
-        : await PermissionService.hasExternalStorageRead();
+    final allowed = await PermissionService.hasExternalStorageWrite();
     if (!context.mounted) return null;
     if (!allowed) {
-      showAppToast(
-        context,
-        '无法打开内置目录，请在「设置→权限与目录」中授予存储权限',
-        type: AppToastType.warning,
-      );
+      showAppToast(context, '浏览完整存储或U盘，请先开启兼容存储访问', type: AppToastType.warning);
       return null;
     }
     FocusManager.instance.primaryFocus?.unfocus();
@@ -1127,6 +1152,11 @@ class SettingsPage extends ConsumerWidget {
     BuildContext context,
     String path,
   ) async {
+    if (Platform.isAndroid &&
+        !isContentLocation(path) &&
+        await PermissionService.hasAudioLibraryRead()) {
+      return true;
+    }
     try {
       await SafStorage.validateDirectory(path, writable: false);
     } catch (_) {

@@ -88,10 +88,14 @@ internal class NativeFileDeletion(
                             operation.media.addFirst(batch)
                         } else try {
                             current.startIntentSenderForResult(request.intentSender, REQUEST_MEDIA, null, 0, 0, 0)
-                        } catch (error: Exception) { failBatch(operation, batch, error) }
+                        } catch (error: Exception) {
+                            fallbackBatch(operation, batch)
+                        }
                     }
                 } catch (error: Exception) {
-                    main.post { failBatch(operation, batch, error) }
+                    // No system result exists when request creation fails. This
+                    // is the safe point to use the existing app-confirmed path.
+                    main.post { fallbackBatch(operation, batch) }
                 }
             }
             return
@@ -118,10 +122,15 @@ internal class NativeFileDeletion(
             .show()
     }
 
-    private fun failBatch(operation: Operation, batch: List<MediaDeleteTarget>, error: Exception) {
+    /**
+     * A failure before the system request is launched is a capability failure,
+     * so these items may use the app's explicit fallback confirmation. Once the
+     * system request has been launched, onActivityResult owns the decision and
+     * cancellation must finish the operation without deleting anything else.
+     */
+    private fun fallbackBatch(operation: Operation, batch: List<MediaDeleteTarget>) {
         if (pending !== operation) return
-        // Never silently bypass a failed or cancelled system consent request.
-        batch.forEach { operation.failed[it.path] = errorMessage(error) }
+        operation.direct.addAll(batch)
         operation.activeMedia = null
         next(operation)
     }
@@ -186,7 +195,7 @@ internal class NativeFileDeletion(
                 main.post {
                     if (pending !== operation) return@post
                     operation.directRunning = false
-                    if (Build.VERSION.SDK_INT == 29 && error is RecoverableSecurityException &&
+                    if (Build.VERSION.SDK_INT >= 29 && error is RecoverableSecurityException &&
                         !operation.recoveryGranted) {
                         try {
                             val host = checkNotNull(activity()) { "删除确认已中断，请重试" }

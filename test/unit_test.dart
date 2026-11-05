@@ -404,6 +404,11 @@ void main() {
         final audioFrames = Uint8List.fromList(
           List<int>.generate(8192, (i) => (i * 31) & 0xFF),
         );
+        final coverBytes = base64Decode(
+          'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAAXNSR0IArs4c6QAA'
+          'AARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAASSURBVBhXY7ij'
+          'rPsfhKEM3f8ATTgIrTbBk9sAAAAASUVORK5CYII=',
+        );
         final file = File('${dir.path}/song.flac');
         await file.writeAsBytes(
           _buildFlacFile(
@@ -423,12 +428,13 @@ void main() {
           artist: 'new artist',
           album: 'new album',
           lyrics: '[00:01.00]new lyric',
-          pictureBytes: Uint8List.fromList([9, 8, 7, 6]),
+          pictureBytes: coverBytes,
+          pictureMimeType: 'image/png',
         );
 
         expect(result, isNotNull);
         expect(result!.lyricsLength, '[00:01.00]new lyric'.length);
-        expect(result.artworkLength, 4);
+        expect(result.artworkLength, coverBytes.length);
 
         final summary = await FlacMetadataWriter.readSummary(file.path);
         expect(summary, isNotNull);
@@ -437,8 +443,8 @@ void main() {
         expect(summary.firstComment('ALBUM'), 'new album');
         expect(summary.firstComment('LYRICS'), '[00:01.00]new lyric');
         expect(summary.firstComment('COMMENT'), 'keep me');
-        expect(summary.artworkLength, 4);
-        expect(summary.artworkBytes, [9, 8, 7, 6]);
+        expect(summary.artworkLength, coverBytes.length);
+        expect(summary.artworkBytes, coverBytes);
 
         final librarySummary = await FlacMetadataWriter.readSummary(
           file.path,
@@ -447,7 +453,7 @@ void main() {
         expect(librarySummary, isNotNull);
         expect(librarySummary!.firstComment('TITLE'), 'new title');
         expect(librarySummary.firstComment('LYRICS'), isNull);
-        expect(librarySummary.artworkBytes, [9, 8, 7, 6]);
+        expect(librarySummary.artworkBytes, coverBytes);
 
         final textOnlySummary = await FlacMetadataWriter.readSummary(
           file.path,
@@ -474,7 +480,8 @@ void main() {
           file.path,
           version: 1,
         );
-        expect(lazyArtwork, [9, 8, 7, 6]);
+        expect(lazyArtwork, isNotNull);
+        expect(imageMimeTypeFromBytes(lazyArtwork), 'image/png');
         expect(
           await EmbeddedArtworkCache.load(file.path, version: 1),
           same(lazyArtwork),
@@ -494,8 +501,8 @@ void main() {
         );
         cancelled.cancel();
         expect(await cancelled.future, isNull);
-        expect(await queuedA.future, [9, 8, 7, 6]);
-        expect(await queuedB.future, [9, 8, 7, 6]);
+        expect(await queuedA.future, lazyArtwork);
+        expect(await queuedB.future, lazyArtwork);
         queuedA.cancel();
         queuedB.cancel();
 

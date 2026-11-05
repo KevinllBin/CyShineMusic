@@ -345,8 +345,12 @@ class LocalPlaylistNotifier extends Notifier<List<LocalPlaylist>> {
     return removed;
   }
 
-  Future<int> removeLocalPathFromAll(String path) async {
-    final normalizedPath = normalizePlaylistPath(path);
+  Future<int> removeLocalPathFromAll(
+    String path, {
+    String Function(String)? pathKey,
+  }) async {
+    final keyFor = pathKey ?? normalizePlaylistPath;
+    final normalizedPath = keyFor(path);
     var affected = 0;
     var changed = false;
     final now = DateTime.now();
@@ -357,8 +361,7 @@ class LocalPlaylistNotifier extends Notifier<List<LocalPlaylist>> {
       for (final track in playlist.tracks) {
         final localPath = track.localPath;
         final matches =
-            localPath != null &&
-            normalizePlaylistPath(localPath) == normalizedPath;
+            localPath != null && keyFor(localPath) == normalizedPath;
         if (!matches) {
           tracks.add(track);
           continue;

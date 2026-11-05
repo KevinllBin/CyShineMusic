@@ -1,5 +1,6 @@
 package com.cyshine.music
 
+import android.media.MediaScannerConnection
 import android.content.ContentUris
 import android.content.Context
 import android.database.Cursor
@@ -121,14 +122,22 @@ internal class MediaDeleteTargets(private val context: Context) {
     fun deleteDirect(target: MediaDeleteTarget) {
         if (isMissing(target.path)) return
         val uri = Uri.parse(target.path)
+        var scannedFile: String? = null
         when {
             uri.scheme == "content" && DocumentsContract.isDocumentUri(context, uri) ->
                 check(DocumentsContract.deleteDocument(resolver, uri)) { "文件提供方拒绝删除" }
             uri.scheme == "content" -> check(resolver.delete(uri, null, null) > 0) { "文件未删除" }
             target.mediaUri != null -> check(resolver.delete(target.mediaUri, null, null) > 0) { "文件未删除" }
-            else -> check(file(target.path).delete()) { "文件删除失败，请检查目录授权" }
+            else -> {
+                val localFile = file(target.path)
+                check(localFile.delete()) { "文件删除失败，请检查目录授权" }
+                scannedFile = localFile.absolutePath
+            }
         }
         check(isMissing(target.path)) { "文件仍存在，未标记为删除成功" }
+        // File.delete() bypasses MediaStore. Ask the media scanner to remove
+        // stale rows so other players do not keep showing a ghost song.
+        scannedFile?.let { MediaScannerConnection.scanFile(context, arrayOf(it), null, null) }
     }
 
     private fun file(path: String): File {

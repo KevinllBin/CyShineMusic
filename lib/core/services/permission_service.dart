@@ -1,14 +1,69 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'media_library.dart';
 
 class PermissionService {
   const PermissionService._();
 
+  static const _storageSettingsChannel = MethodChannel(
+    'cy_shine_music/saf_storage',
+  );
   static const _storagePermissionAttemptedKey =
       'storage_permission_request_attempted_v1';
   static Future<bool>? _pendingStoragePermissionRequest;
+  static Future<bool>? _pendingAudioPermissionRequest;
+  static const _audioPermissionAttemptedKey =
+      'audio_library_permission_attempted_v1';
+
+  static Future<Permission> _audioPermission() async =>
+      await MediaLibrary.sdk >= 33 ? Permission.audio : Permission.storage;
+
+  static Future<bool> hasAudioLibraryRead() async {
+    if (!Platform.isAndroid) return true;
+    return (await _audioPermission()).isGranted;
+  }
+
+  static Future<bool> hasAudioPermissionRequestAttempted() async =>
+      (await SharedPreferences.getInstance()).getBool(
+        _audioPermissionAttemptedKey,
+      ) ??
+      false;
+
+  static Future<void> markAudioPermissionRequestAttempted() async {
+    await (await SharedPreferences.getInstance()).setBool(
+      _audioPermissionAttemptedKey,
+      true,
+    );
+  }
+
+  static Future<bool> requestAudioLibraryRead() async {
+    if (!Platform.isAndroid) return true;
+    final running = _pendingAudioPermissionRequest;
+    if (running != null) return running;
+    final request = _requestAudioLibraryRead();
+    _pendingAudioPermissionRequest = request;
+    try {
+      return await request;
+    } finally {
+      _pendingAudioPermissionRequest = null;
+    }
+  }
+
+  static Future<bool> _requestAudioLibraryRead() async {
+    await markAudioPermissionRequestAttempted();
+    final permission = await _audioPermission();
+    final status = await permission.status;
+    if (status.isGranted) return true;
+    if (status.isPermanentlyDenied) {
+      await openSystemAppSettings();
+      return permission.isGranted;
+    }
+    return (await permission.request()).isGranted;
+  }
 
   static Future<bool> hasStoragePermissionRequestAttempted() async {
     if (!Platform.isAndroid) return false;
@@ -78,6 +133,22 @@ class PermissionService {
     }
     // The callback may describe READ only; also verify the WRITE group status.
     return Permission.storage.isGranted;
+  }
+
+  /// Open the all-files switch even when access is already granted.
+  /// Legacy Android has only its regular storage permission instead.
+  static Future<void> openExternalStorageSettings() async {
+    if (!Platform.isAndroid) return;
+    if (await MediaLibrary.sdk >= 30) {
+      await markStoragePermissionRequestAttempted();
+      await _storageSettingsChannel.invokeMethod<void>(
+        'openAllFilesAccessSettings',
+      );
+    } else if (await hasExternalStorageWrite()) {
+      await openSystemAppSettings();
+    } else {
+      await requestExternalStorageWrite();
+    }
   }
 
   static Future<void> openSystemAppSettings() => openAppSettings();

@@ -23,6 +23,8 @@ import 'app_logger.dart';
 import 'file_naming.dart';
 import 'lyric_builder.dart';
 import 'tagger.dart';
+import 'local_audio_library_events.dart';
+import 'media_library.dart';
 
 class EmbedRequest {
   const EmbedRequest({
@@ -412,6 +414,15 @@ class DownloadService {
       progress.updateStage(taskId, DownloadStage.finishing);
       final finalPath = await _moveToTarget(tmpPath, destDir, fileName);
       await _scanMedia(finalPath);
+      await LocalAudioLibraryEvents.saved(
+        finalPath,
+        tags: EmbeddedAudioTags(
+          title: music.name,
+          artist: music.singer,
+          album: music.albumName,
+          artworkBytes: embed.embedCover ? coverBytes : null,
+        ),
+      );
 
       log('DONE $finalPath');
       progress.finish(taskId, finalPath);
@@ -544,6 +555,7 @@ class DownloadService {
       await SafStorage.validateDirectory(requested, writable: true);
       return requested;
     }
+    if (await MediaLibrary.canSave(requested)) return requested;
     final dir = Directory(requested);
     Directory? probeDir;
     try {
@@ -581,6 +593,9 @@ class DownloadService {
   ) async {
     if (isContentLocation(destination)) {
       return SafStorage.saveFile(destination, tmpPath, fileName);
+    }
+    if (await MediaLibrary.canSave(destination)) {
+      return MediaLibrary.save(destination, tmpPath, fileName);
     }
     final destDir = Directory(destination);
     final destPath = p.join(destDir.path, _dedupedName(destDir, fileName));
