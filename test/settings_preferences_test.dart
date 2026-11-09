@@ -14,6 +14,9 @@ import 'package:cy_shine_music/features/settings/widgets/settings_action.dart';
 import 'package:cy_shine_music/features/settings/widgets/settings_style.dart';
 import 'package:cy_shine_music/theme/app_theme.dart';
 import 'package:cy_shine_music/theme/color_style.dart';
+import 'package:prism_ui/prism_ui.dart' as prism;
+
+import 'helpers/prism_test_environment.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -314,6 +317,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
+          builder: buildPrismTestEnvironment,
           theme: AppTheme.light(),
           home: const SettingsPage(section: SettingsSection.playback),
         ),
@@ -322,7 +326,10 @@ void main() {
     await tester.pumpAndSettle();
 
     final row = find.byKey(const ValueKey('bluetooth-lyric-setting'));
-    final toggle = find.descendant(of: row, matching: find.byType(Switch));
+    final toggle = find.descendant(
+      of: row,
+      matching: find.byType(prism.Switch),
+    );
     await tester.ensureVisible(toggle);
     await tester.pumpAndSettle();
     await tester.tap(toggle);
@@ -346,6 +353,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
+        builder: buildPrismTestEnvironment,
         theme: AppTheme.light(),
         home: Scaffold(
           body: Column(
@@ -427,6 +435,7 @@ void main() {
           UncontrolledProviderScope(
             container: container,
             child: MaterialApp(
+              builder: buildPrismTestEnvironment,
               theme: AppTheme.light(),
               home: SettingsPage(section: section),
             ),
@@ -441,7 +450,7 @@ void main() {
         const ValueKey('source-file-picker-setting'),
       );
       await tester.tap(
-        find.descendant(of: pickerSetting, matching: find.byType(Switch)),
+        find.descendant(of: pickerSetting, matching: find.byType(prism.Switch)),
       );
       await tester.pumpAndSettle();
       expect(
@@ -455,10 +464,10 @@ void main() {
       expect(find.text('允许与其他 APP 共同播放'), findsOneWidget);
       await pumpSection(SettingsSection.downloads);
       expect(find.text('批量下载音质'), findsOneWidget);
-      expect(find.text('扫描文件夹 1'), findsOneWidget);
+      expect(find.text('目录'), findsOneWidget);
       expect(find.text('浏览U盘'), findsOneWidget);
       expect(find.text('添加 U 盘文件夹'), findsOneWidget);
-      expect(find.byIcon(Icons.folder_outlined), findsOneWidget);
+      expect(find.text('下载位置'), findsOneWidget);
       await pumpSection(SettingsSection.about);
       expect(find.text('检查更新'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -618,6 +627,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
+            builder: buildPrismTestEnvironment,
             theme: AppTheme.light(),
             home: const Scaffold(body: SourceFilterChips()),
           ),
@@ -657,169 +667,78 @@ void main() {
     },
   );
 
-  testWidgets(
-    'anchored menu uses the staggered Material radio menu animation',
-    (tester) async {
-      await tester.binding.setSurfaceSize(const Size(430, 900));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      final prefs = await SharedPreferences.getInstance();
-      final container = _settingsContainer(prefs);
-      addTearDown(container.dispose);
+  testWidgets('Prism menus apply network and quality choices and can reopen', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(430, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final container = _settingsContainer(await SharedPreferences.getInstance());
+    addTearDown(container.dispose);
 
+    Future<void> pumpSection(SettingsSection section) async {
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp(
+            builder: buildPrismTestEnvironment,
             theme: AppTheme.light(),
-            home: const SettingsPage(section: SettingsSection.network),
+            home: SettingsPage(section: section),
           ),
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.byIcon(Icons.cable_rounded), findsOneWidget);
-      expect(Icons.cable_rounded.fontFamily, 'MaterialIcons');
+    }
 
-      final anchor = find.byKey(const ValueKey('network-adapter-menu-anchor'));
-      final anchorRect = tester.getRect(anchor);
-      final leftTouch = Offset(anchorRect.left + 12, anchorRect.center.dy);
-      await tester.tapAt(leftTouch);
-      await tester.pump();
+    await pumpSection(SettingsSection.network);
+    final anchor = find.byKey(const ValueKey('network-adapter-menu-anchor'));
+    await tester.tap(anchor);
+    await tester.pumpAndSettle();
+    expect(find.byType(prism.PopupMenu), findsOneWidget);
+    expect(
+      tester
+          .widget<prism.PopupMenu>(find.byType(prism.PopupMenu))
+          .items
+          .singleWhere((item) => item.label == NetworkAdapterMode.system.label)
+          .checked,
+      isTrue,
+    );
+    await tester.tap(find.text(NetworkAdapterMode.io.label));
+    await tester.pumpAndSettle();
+    expect(
+      container.read(settingsProvider).networkAdapterMode,
+      NetworkAdapterMode.io,
+    );
+    expect(find.byType(prism.PopupMenu), findsNothing);
+    await tester.tap(anchor);
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<prism.PopupMenu>(find.byType(prism.PopupMenu))
+          .items
+          .singleWhere((item) => item.label == NetworkAdapterMode.io.label)
+          .checked,
+      isTrue,
+    );
+    expect(await tester.binding.handlePopRoute(), isTrue);
+    await tester.pumpAndSettle();
 
-      final panel = find.byKey(const ValueKey('network-adapter-menu-panel'));
-      final fade = find.byKey(const ValueKey('network-adapter-menu-fade'));
-      final reveal = find.byKey(const ValueKey('network-adapter-menu-reveal'));
-      final firstOptionFade = find.byKey(
-        const ValueKey('network-adapter-menu-option-system-fade'),
-      );
-      final middleOptionFade = find.byKey(
-        const ValueKey('network-adapter-menu-option-io-fade'),
-      );
-      final lastOptionFade = find.byKey(
-        const ValueKey('network-adapter-menu-option-native-fade'),
-      );
-      expect(panel, findsOneWidget);
-      final initialPanelRect = tester.getRect(panel);
-      expect(
-        tester.widget<FadeTransition>(fade).opacity.value,
-        closeTo(0, 0.001),
-      );
-      expect(tester.widget<Align>(reveal).heightFactor, closeTo(0, 0.001));
-      expect(
-        tester.widget<FadeTransition>(firstOptionFade).opacity.value,
-        closeTo(0, 0.001),
-      );
-
-      await tester.pump(const Duration(milliseconds: 50));
-      expect(
-        tester.widget<FadeTransition>(fade).opacity.value,
-        closeTo(1, 0.001),
-      );
-      expect(tester.widget<Align>(reveal).heightFactor, inExclusiveRange(0, 1));
-
-      await tester.pump(const Duration(milliseconds: 75));
-      expect(
-        tester.widget<FadeTransition>(firstOptionFade).opacity.value,
-        closeTo(0.5, 0.001),
-      );
-      expect(
-        tester.widget<FadeTransition>(middleOptionFade).opacity.value,
-        closeTo(0, 0.001),
-      );
-      expect(
-        tester.widget<FadeTransition>(lastOptionFade).opacity.value,
-        closeTo(0, 0.001),
-      );
-
-      await tester.pump(const Duration(milliseconds: 125));
-      expect(
-        tester.widget<FadeTransition>(firstOptionFade).opacity.value,
-        closeTo(1, 0.001),
-      );
-      expect(
-        tester.widget<FadeTransition>(middleOptionFade).opacity.value,
-        closeTo(0.5, 0.001),
-      );
-      expect(
-        tester.widget<FadeTransition>(lastOptionFade).opacity.value,
-        closeTo(0, 0.001),
-      );
-
-      await tester.pumpAndSettle();
-      expect(find.byType(BottomSheet), findsNothing);
-      expect(
-        tester.widget<FadeTransition>(fade).opacity.value,
-        closeTo(1, 0.001),
-      );
-      expect(tester.widget<Align>(reveal).heightFactor, closeTo(1, 0.001));
-      expect(
-        tester.widget<FadeTransition>(lastOptionFade).opacity.value,
-        closeTo(1, 0.001),
-      );
-      final leftPanelRect = tester.getRect(panel);
-      expect(leftPanelRect.width, closeTo(initialPanelRect.width, 0.01));
-      expect(leftPanelRect.top, closeTo(initialPanelRect.top, 0.01));
-      expect(leftPanelRect.left, greaterThanOrEqualTo(leftTouch.dx));
-      expect(leftPanelRect.width, lessThanOrEqualTo(184.01));
-
-      await tester.tapAt(const Offset(420, 880));
-      await tester.pumpAndSettle();
-      expect(panel, findsNothing);
-
-      final rightTouch = Offset(anchorRect.right - 12, anchorRect.center.dy);
-      await tester.tapAt(rightTouch);
-      await tester.pumpAndSettle();
-      final rightPanelRect = tester.getRect(panel);
-      expect(rightPanelRect.right, lessThanOrEqualTo(rightTouch.dx));
-      await tester.tap(
-        find.byKey(const ValueKey('network-adapter-menu-option-io')),
-      );
-      await tester.pumpAndSettle();
-      expect(
-        container.read(settingsProvider).networkAdapterMode,
-        NetworkAdapterMode.io,
-      );
-      expect(panel, findsNothing);
-      await tester.pump(const Duration(seconds: 4));
-
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: container,
-          child: MaterialApp(
-            theme: AppTheme.light(),
-            home: const SettingsPage(section: SettingsSection.playback),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.byIcon(Icons.manage_search_rounded), findsOneWidget);
-      expect(find.byIcon(Icons.high_quality_rounded), findsOneWidget);
-      expect(Icons.manage_search_rounded.fontFamily, 'MaterialIcons');
-      expect(Icons.high_quality_rounded.fontFamily, 'MaterialIcons');
-
-      final qualityAnchor = find.byKey(
-        const ValueKey('online-quality-menu-anchor'),
-      );
-      await tester.tap(qualityAnchor);
-      await tester.pumpAndSettle();
-      expect(find.byType(BottomSheet), findsNothing);
-      final qualityPanel = find.byKey(
-        const ValueKey('online-quality-menu-panel'),
-      );
-      expect(qualityPanel, findsOneWidget);
-      expect(tester.getSize(qualityPanel).width, lessThanOrEqualTo(184.01));
-      await tester.tap(
-        find.byKey(const ValueKey('online-quality-menu-option-flac')),
-      );
-      await tester.pumpAndSettle();
-      expect(
-        container.read(settingsProvider).onlinePlaybackQuality,
-        OnlinePlaybackQuality.lossless,
-      );
-      expect(qualityPanel, findsNothing);
-      expect(tester.takeException(), isNull);
-      await tester.pump(const Duration(seconds: 4));
-    },
-  );
+    await pumpSection(SettingsSection.playback);
+    final qualityAnchor = find.byKey(
+      const ValueKey('online-quality-menu-anchor'),
+    );
+    await tester.tap(qualityAnchor);
+    await tester.pumpAndSettle();
+    expect(find.byType(prism.PopupMenu), findsOneWidget);
+    await tester.tap(find.text(OnlinePlaybackQuality.lossless.label));
+    await tester.pumpAndSettle();
+    expect(
+      container.read(settingsProvider).onlinePlaybackQuality,
+      OnlinePlaybackQuality.lossless,
+    );
+    expect(find.byType(prism.PopupMenu), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(seconds: 4));
+  });
 
   testWidgets('search source management stays open for multi-selection', (
     tester,
@@ -834,6 +753,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
+          builder: buildPrismTestEnvironment,
           theme: AppTheme.light(),
           home: const SettingsPage(section: SettingsSection.playback),
         ),
@@ -844,13 +764,10 @@ void main() {
     final anchor = find.byKey(const ValueKey('search-source-menu-anchor'));
     await tester.tap(anchor);
     await tester.pumpAndSettle();
-    final panel = find.byKey(const ValueKey('search-source-menu-panel'));
-    final miguOption = find.byKey(
-      const ValueKey('search-source-menu-option-mg'),
-    );
+    final panel = find.byType(prism.PopupMenu);
+    final miguOption = find.text('咪咕');
     expect(panel, findsOneWidget);
-    expect(tester.getSize(panel).width, lessThanOrEqualTo(184.01));
-    expect(tester.getSize(miguOption).height, closeTo(48, 0.01));
+    expect(tester.getSize(panel).width, lessThanOrEqualTo(280));
     await tester.tap(miguOption);
     await tester.pumpAndSettle();
 
@@ -860,13 +777,13 @@ void main() {
     );
     expect(panel, findsOneWidget);
     expect(miguOption, findsOneWidget);
+    await tester.tap(miguOption);
+    await tester.pumpAndSettle();
     expect(
-      find.descendant(
-        of: miguOption,
-        matching: find.byIcon(Icons.check_box_rounded),
-      ),
-      findsOneWidget,
+      container.read(settingsProvider).enabledSearchSources,
+      isNot(contains(MusicSource.mg)),
     );
+    expect(panel, findsOneWidget);
     expect(await tester.binding.handlePopRoute(), isTrue);
     await tester.pumpAndSettle();
     expect(panel, findsNothing);

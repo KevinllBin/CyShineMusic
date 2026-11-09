@@ -73,6 +73,9 @@ jobs:
       - name: Analyze
         run: flutter analyze
 
+      - name: Test
+        run: flutter test
+
       - name: Build arm64 APK
         env:
           APP_CHANNEL: main

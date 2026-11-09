@@ -22,6 +22,8 @@ import 'package:cy_shine_music/features/playlists/playlist_store.dart';
 import 'package:cy_shine_music/features/shell/shell_route_utils.dart';
 import 'package:cy_shine_music/router.dart';
 
+import 'helpers/prism_test_environment.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -877,6 +879,7 @@ Future<_SeededPlayerController> _pumpLyricsPanel(
         ),
       ],
       child: MaterialApp(
+        builder: buildPrismTestEnvironment,
         theme: _theme(),
         home: const Scaffold(body: LyricsPanel()),
       ),
@@ -908,6 +911,7 @@ Future<_RouterHarness> _pumpRoutedApp(
         ),
       ],
       child: MaterialApp.router(
+        builder: buildPrismTestEnvironment,
         debugShowCheckedModeBanner: false,
         theme: _theme(),
         routerConfig: router,
@@ -964,8 +968,10 @@ Future<_SeededPlayerController> _pumpPlayer(
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         theme: _theme(),
-        builder: (context, child) =>
-            AppToastOverlay(child: child ?? const SizedBox.shrink()),
+        builder: (context, child) => buildPrismTestEnvironment(
+          context,
+          AppToastOverlay(child: child ?? const SizedBox.shrink()),
+        ),
         home: PlayerPage(
           returnLocation: '/songs',
           progress: const AlwaysStoppedAnimation<double>(1),

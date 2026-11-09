@@ -21,11 +21,13 @@ import 'package:cy_shine_music/features/songs/widgets/song_actions_menu.dart';
 import 'package:cy_shine_music/router.dart';
 import 'package:cy_shine_music/theme/app_theme.dart';
 
+import 'helpers/prism_test_environment.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({'use_native_navigation': true});
   });
 
   test('app theme uses the platform system font', () {
@@ -63,6 +65,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp.router(
+            builder: buildPrismTestEnvironment,
             debugShowCheckedModeBanner: false,
             theme: _testTheme(),
             routerConfig: router,
@@ -71,7 +74,7 @@ void main() {
       );
       await _pumpUi(tester);
 
-      final toolbarActionTop = tester.getTopLeft(find.byTooltip('发现')).dy;
+      final toolbarActionTop = tester.getTopLeft(find.byType(NavigationBar)).dy;
       final fullyVisibleRows = find
           .byType(SearchResultTile)
           .evaluate()
@@ -86,7 +89,7 @@ void main() {
         const ValueKey('search-result-menu-page-1-song-01'),
       );
       expect(actionsMenu, findsOneWidget);
-      expect(tester.getSize(actionsMenu), const Size.square(44));
+      expect(tester.getSize(actionsMenu), const Size.square(48));
       await tester.tap(actionsMenu);
       await _pumpUi(tester);
       expect(find.text('下载'), findsOneWidget);
@@ -184,6 +187,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MaterialApp.router(
+            builder: buildPrismTestEnvironment,
             debugShowCheckedModeBanner: false,
             theme: _testTheme(),
             routerConfig: router,
@@ -192,7 +196,7 @@ void main() {
       );
       await _pumpUi(tester);
 
-      expect(tester.getSize(find.byTooltip('发现')), const Size(96, 60));
+      expect(tester.getSize(find.byType(NavigationBar)).width, 1280);
       final fabRect = tester.getRect(find.byType(FloatingActionButton));
       final menuRect = tester.getRect(find.byType(SongActionsMenu).last);
       expect(fabRect.right, lessThan(menuRect.left));
@@ -318,8 +322,10 @@ Widget _testAppWithContainer(ProviderContainer container, Widget home) {
     child: MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: _testTheme(),
-      builder: (context, child) =>
-          AppToastOverlay(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) => buildPrismTestEnvironment(
+        context,
+        AppToastOverlay(child: child ?? const SizedBox.shrink()),
+      ),
       home: home,
     ),
   );

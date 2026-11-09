@@ -9,6 +9,8 @@ import 'package:cy_shine_music/features/equalizer/equalizer_store.dart';
 import 'package:cy_shine_music/features/equalizer/equalizer_page.dart';
 import 'package:cy_shine_music/features/shell/shell_toolbar_visibility.dart';
 
+import 'helpers/prism_test_environment.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -129,7 +131,10 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [sharedPreferencesProvider.overrideWithValue(preferences)],
-        child: const MaterialApp(home: Scaffold(body: EqualizerPage())),
+        child: const MaterialApp(
+          builder: buildPrismTestEnvironment,
+          home: Scaffold(body: EqualizerPage()),
+        ),
       ),
     );
 
@@ -157,14 +162,21 @@ void main() {
       addTearDown(container.dispose);
 
       container.read(equalizerProvider.notifier).setEnabled(true);
-      container.read(equalizerProvider.notifier).applyPreset(
-        equalizerPresets.firstWhere((p) => p.id == 'builtin.studio_reference'),
-      );
+      container
+          .read(equalizerProvider.notifier)
+          .applyPreset(
+            equalizerPresets.firstWhere(
+              (p) => p.id == 'builtin.studio_reference',
+            ),
+          );
 
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: container,
-          child: const MaterialApp(home: Scaffold(body: EqualizerPage())),
+          child: const MaterialApp(
+            builder: buildPrismTestEnvironment,
+            home: Scaffold(body: EqualizerPage()),
+          ),
         ),
       );
       await tester.pumpAndSettle();
@@ -194,7 +206,7 @@ void main() {
       expect(find.text('删除此频段'), findsOneWidget);
 
       // Close the sheet
-      await tester.tap(find.byTooltip('关闭'));
+      expect(await tester.binding.handlePopRoute(), isTrue);
       await tester.pumpAndSettle();
 
       // Toolbar should be restored!

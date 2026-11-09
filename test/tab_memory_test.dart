@@ -13,6 +13,8 @@ import 'package:cy_shine_music/features/playlists/playlist_models.dart';
 import 'package:cy_shine_music/features/playlists/playlist_store.dart';
 import 'package:cy_shine_music/router.dart';
 
+import 'helpers/prism_test_environment.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -27,12 +29,12 @@ void main() {
     final router = await _pumpApp(tester, initialLocation: '/playlists/night');
 
     // 记录初始位置后切到设置。
-    await tester.tap(find.byTooltip('设置'));
+    await tester.tap(floatingShellTab('设置'));
     await _pumpUi(tester);
     expect(router.routeInformationProvider.value.uri.path, '/settings');
 
     // 点歌曲 tab 回到记忆中的歌单视图，而不是 /songs。
-    await tester.tap(find.byTooltip('歌曲'));
+    await tester.tap(floatingShellTab('歌曲'));
     await _pumpUi(tester);
     expect(
       router.routeInformationProvider.value.uri.toString(),
@@ -40,7 +42,7 @@ void main() {
     );
 
     // 已在歌曲 tab 内再点一次 → 回 tab 根。
-    await tester.tap(find.byTooltip('歌曲'));
+    await tester.tap(floatingShellTab('歌曲'));
     await _pumpUi(tester);
     expect(router.routeInformationProvider.value.uri.path, '/songs');
     expect(tester.takeException(), isNull);
@@ -53,7 +55,7 @@ void main() {
     final router = await _pumpApp(tester, initialLocation: '/songs');
 
     // 经歌单管理进入详情，路由带 ?from=manage。
-    await tester.tap(find.byTooltip('歌单'));
+    await tester.tap(find.byTooltip('歌单管理'));
     await _pumpUi(tester);
     await tester.tap(find.text('歌单管理'));
     await _pumpUi(tester);
@@ -64,9 +66,9 @@ void main() {
       '/playlists/night?from=manage',
     );
 
-    await tester.tap(find.byTooltip('设置'));
+    await tester.tap(floatingShellTab('设置'));
     await _pumpUi(tester);
-    await tester.tap(find.byTooltip('歌曲'));
+    await tester.tap(floatingShellTab('歌曲'));
     await _pumpUi(tester);
     expect(
       router.routeInformationProvider.value.uri.toString(),
@@ -81,7 +83,7 @@ void main() {
     await _usePhoneViewport(tester);
     final router = await _pumpApp(tester, initialLocation: '/playlists/night');
 
-    await tester.tap(find.byTooltip('播放页'));
+    router.go('/player', extra: '/playlists/night');
     await _pumpUi(tester);
     expect(router.routeInformationProvider.value.uri.path, '/player');
 
@@ -89,9 +91,9 @@ void main() {
     await _pumpUi(tester);
     expect(router.routeInformationProvider.value.uri.path, '/playlists/night');
 
-    await tester.tap(find.byTooltip('设置'));
+    await tester.tap(floatingShellTab('设置'));
     await _pumpUi(tester);
-    await tester.tap(find.byTooltip('歌曲'));
+    await tester.tap(floatingShellTab('歌曲'));
     await _pumpUi(tester);
     expect(router.routeInformationProvider.value.uri.path, '/playlists/night');
     expect(tester.takeException(), isNull);
@@ -117,6 +119,7 @@ Future<GoRouter> _pumpApp(
         playerAudioHandlerProvider.overrideWithValue(audioHandler),
       ],
       child: MaterialApp.router(
+        builder: buildPrismTestEnvironment,
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           useMaterial3: true,

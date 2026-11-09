@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'helpers/prism_test_environment.dart';
+
 void main() {
   testWidgets('preset timer survives closing the sheet and can be cancelled', (
     tester,
@@ -49,13 +51,16 @@ void main() {
       final container = await _pumpHarness(tester);
       await tester.tap(find.text('打开定时'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('自定义'));
+      final custom = find.byKey(const ValueKey('sleep-timer-custom'));
+      await tester.ensureVisible(custom);
+      await tester.pumpAndSettle();
+      await tester.tap(custom);
       await tester.pumpAndSettle();
       tester.view.viewInsets = const FakeViewPadding(bottom: 260);
       await tester.pumpAndSettle();
 
       final input = find.byType(TextField);
-      final start = find.widgetWithText(FilledButton, '开启定时');
+      final start = find.byKey(const ValueKey('sleep-timer-start'));
       expect(tester.widget<FilledButton>(start).onPressed, isNull);
       for (final invalid in ['0', '181']) {
         await tester.enterText(input, invalid);
@@ -90,6 +95,7 @@ Future<ProviderContainer> _pumpHarness(WidgetTester tester) async {
         ),
       ],
       child: MaterialApp(
+        builder: buildPrismTestEnvironment,
         home: Scaffold(
           body: Consumer(
             builder: (context, ref, _) => Center(

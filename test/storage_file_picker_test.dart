@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'helpers/prism_test_environment.dart';
+
 const _channel = MethodChannel('test/storage_browser');
 
 class _TestBrowser extends StorageBrowserService {
@@ -186,6 +188,7 @@ Future<void> _openPicker(
 }) async {
   await tester.pumpWidget(
     MaterialApp(
+      builder: buildPrismTestEnvironment,
       home: Scaffold(
         body: Builder(
           builder: (context) => TextButton(

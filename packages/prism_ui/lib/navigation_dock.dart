@@ -1241,12 +1241,13 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
     if (index == null) {
       return;
     }
+    final tapped = !_dragging;
     _pressedIndex = null;
     _dragging = false;
     _dropping = true;
     _lens.springTo((commit ? index : _selectedIndex).toDouble(), _travelSpring);
     _dropLift();
-    if (commit && index != widget.selectedIndex) {
+    if (commit && (index != widget.selectedIndex || tapped)) {
       widget.onSelected(index);
     }
   }

@@ -14,6 +14,8 @@ import 'package:cy_shine_music/features/playlists/playlist_models.dart';
 import 'package:cy_shine_music/features/playlists/playlist_store.dart';
 import 'package:cy_shine_music/router.dart';
 
+import 'helpers/prism_test_environment.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -40,6 +42,7 @@ void main() {
           playerAudioHandlerProvider.overrideWithValue(audioHandler),
         ],
         child: MaterialApp.router(
+          builder: buildPrismTestEnvironment,
           debugShowCheckedModeBanner: false,
           theme: ThemeData(
             useMaterial3: true,
@@ -60,7 +63,7 @@ void main() {
     await _pumpUi(tester);
     expect(router.routeInformationProvider.value.uri.path, '/playlists/night');
     expect(find.byKey(const ValueKey('header-search-field')), findsOneWidget);
-    expect(find.byTooltip('退出搜索'), findsOneWidget);
+    expect(find.byTooltip('取消'), findsOneWidget);
 
     // 第一次返回键：关闭搜索，仍在歌单页。
     expect(await tester.binding.handlePopRoute(), isTrue);

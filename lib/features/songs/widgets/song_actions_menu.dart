@@ -109,7 +109,6 @@ class SongActionsMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => prism.PopupAnchor(
-    key: key,
     targetBuilder: (open) => prism.IconButton(
       tooltip: '歌曲操作',
       onPressed: open,

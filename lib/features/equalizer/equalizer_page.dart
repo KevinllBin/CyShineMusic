@@ -373,13 +373,12 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      color: scheme.surfaceContainerHighest.withValues(
-                        alpha: 0.45,
-                      ),
-                      borderRadius: BorderRadius.circular(16),
+                  Material(
+                    color: scheme.surfaceContainerHighest.withValues(
+                      alpha: 0.45,
                     ),
+                    borderRadius: BorderRadius.circular(16),
+                    clipBehavior: Clip.antiAlias,
                     child: SwitchListTile(
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 16,
