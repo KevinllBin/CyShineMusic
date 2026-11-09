@@ -107,6 +107,13 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Let local dev builds replace the installed dev release without
+            // clearing its playlists and settings.
+            if (isDevChannel && releaseSigningReady) {
+                signingConfig = signingConfigs.getByName("channelRelease")
+            }
+        }
         release {
             if (releaseSigningReady) {
                 signingConfig = signingConfigs.getByName("channelRelease")

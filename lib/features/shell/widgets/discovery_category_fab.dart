@@ -71,15 +71,13 @@ class _DiscoveryCategoryFabLayerState
         _ => 82,
       },
     );
-    final glass = prism.LiquidGlassScope.of(context);
     final categoryFab = FloatingActionButton.extended(
       key: const ValueKey('discovery-category-fab'),
       heroTag: 'discovery-category-fab',
       tooltip: _expanded ? '收起分类菜单' : '切换歌单分类',
-      elevation: glass ? 0 : 3,
-      highlightElevation: glass ? 0 : 4,
-      backgroundColor: glass ? Colors.transparent : scheme.secondaryContainer,
-      foregroundColor: glass ? scheme.onSecondaryContainer : null,
+      elevation: 3,
+      highlightElevation: 4,
+      backgroundColor: scheme.secondaryContainer,
       icon: AnimatedSwitcher(
         duration: AppMotion.short,
         child: Icon(
@@ -93,19 +91,6 @@ class _DiscoveryCategoryFabLayerState
       ),
       onPressed: () => _setExpanded(!_expanded),
     );
-    final categoryControl = glass
-        ? ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: prism.LiquidGlass(
-              borderRadius: BorderRadius.circular(999),
-              style: prism.LiquidGlassStyle.pill(
-                prism.Theme.of(context).colorScheme,
-              ),
-              child: categoryFab,
-            ),
-          )
-        : categoryFab;
-
     return Stack(
       children: [
         if (_expanded)
@@ -141,46 +126,54 @@ class _DiscoveryCategoryFabLayerState
                       );
                     },
                     child: _expanded
-                        ? Column(
+                        ? prism.LiquidGlassScope(
                             key: const ValueKey('discovery-category-menu-open'),
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              for (
-                                var index = 0;
-                                index < categories.length;
-                                index++
-                              ) ...[
-                                if (index > 0) const SizedBox(height: 10),
-                                ShellFabMenuAction(
-                                  key: ValueKey(
-                                    'discovery-category-${categories[index].id}',
+                            enabled: false,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                for (
+                                  var index = 0;
+                                  index < categories.length;
+                                  index++
+                                ) ...[
+                                  if (index > 0) const SizedBox(height: 10),
+                                  ShellFabMenuAction(
+                                    key: ValueKey(
+                                      'discovery-category-${categories[index].id}',
+                                    ),
+                                    icon: categories[index].id == selected.id
+                                        ? Icons.check_rounded
+                                        : _categoryIcon(
+                                            categories[index].label,
+                                          ),
+                                    label: categories[index].label,
+                                    enabled:
+                                        categories[index].id != selected.id,
+                                    selected:
+                                        categories[index].id == selected.id,
+                                    onPressed: () {
+                                      ref
+                                          .read(
+                                            selectedDiscoveryCategoryProvider(
+                                              source,
+                                            ).notifier,
+                                          )
+                                          .select(categories[index].id);
+                                      _setExpanded(false);
+                                    },
                                   ),
-                                  icon: categories[index].id == selected.id
-                                      ? Icons.check_rounded
-                                      : _categoryIcon(categories[index].label),
-                                  label: categories[index].label,
-                                  enabled: categories[index].id != selected.id,
-                                  onPressed: () {
-                                    ref
-                                        .read(
-                                          selectedDiscoveryCategoryProvider(
-                                            source,
-                                          ).notifier,
-                                        )
-                                        .select(categories[index].id);
-                                    _setExpanded(false);
-                                  },
-                                ),
+                                ],
                               ],
-                            ],
+                            ),
                           )
                         : const SizedBox.shrink(
                             key: ValueKey('discovery-category-menu-closed'),
                           ),
                   ),
                   const SizedBox(height: 10),
-                  categoryControl,
+                  categoryFab,
                 ],
               ),
             ),

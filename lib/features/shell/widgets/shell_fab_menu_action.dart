@@ -10,17 +10,19 @@ class ShellFabMenuAction extends StatelessWidget {
     required this.label,
     required this.enabled,
     required this.onPressed,
+    this.selected = false,
   });
 
   final IconData icon;
   final String label;
   final bool enabled;
   final VoidCallback onPressed;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final foreground = enabled
+    final foreground = enabled || selected
         ? scheme.onSecondaryContainer
         : scheme.onSurfaceVariant.withValues(alpha: 0.38);
     final surface = Material(
@@ -65,17 +67,17 @@ class ShellFabMenuAction extends StatelessWidget {
             ),
           )
         : Material(
-            color: enabled
+            color: enabled || selected
                 ? scheme.secondaryContainer
                 : scheme.surfaceContainerHighest,
-            elevation: 3,
+            elevation: selected ? 0 : 3,
             shadowColor: scheme.shadow.withValues(alpha: 0.16),
             borderRadius: BorderRadius.circular(999),
             child: surface,
           );
     return AnimatedOpacity(
       duration: AppMotion.short,
-      opacity: enabled ? 1 : 0.62,
+      opacity: enabled || selected ? 1 : 0.62,
       child: content,
     );
   }

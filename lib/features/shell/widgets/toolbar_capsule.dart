@@ -47,7 +47,7 @@ class ToolbarCapsule extends StatelessWidget {
                   color: toolbarCapsuleColor(scheme),
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(
-                    color: scheme.outlineVariant.withValues(alpha: 0.52),
+                    color: scheme.outlineVariant.withValues(alpha: 0.32),
                   ),
                   boxShadow: [
                     BoxShadow(
@@ -56,8 +56,8 @@ class ToolbarCapsule extends StatelessWidget {
                             ? 0.08
                             : 0.18,
                       ),
-                      blurRadius: 28,
-                      offset: const Offset(0, 10),
+                      blurRadius: 20,
+                      offset: const Offset(0, 6),
                     ),
                   ],
                 ),
@@ -82,10 +82,7 @@ class ToolbarCapsule extends StatelessWidget {
             opacity: 1 - PlayerMotion.interval(p, 0, 0.20),
             child: padding == EdgeInsets.zero
                 ? child
-                : Padding(
-                    padding: padding,
-                    child: child,
-                  ),
+                : Padding(padding: padding, child: child),
           ),
         ),
       ],
@@ -105,12 +102,11 @@ class ToolbarCapsule extends StatelessWidget {
   }
 }
 
-Color toolbarCapsuleColor(ColorScheme scheme) => Color.alphaBlend(
-  scheme.primary.withValues(
-    alpha: scheme.brightness == Brightness.light ? 0.025 : 0.04,
-  ),
-  scheme.surfaceContainerHigh.withValues(alpha: 0.90),
-);
+// Match the solid NavigationDock's floating surface roles.
+Color toolbarCapsuleColor(ColorScheme scheme) =>
+    scheme.brightness == Brightness.light
+    ? scheme.surfaceBright
+    : scheme.surfaceContainerHigh;
 
 /// Position updates rebuild only the border, retaining the capsule subtree.
 class _ToolbarProgressBorder extends ConsumerWidget {

@@ -46,17 +46,14 @@ class MiniPlayerBar extends ConsumerWidget {
     final canControl = track != null && !vm.loading;
     // Narrow capsules (small screens at min action width) drop the artist
     // line and shrink the artwork/buttons so everything still fits.
-    // Shorter capsules (the secondary player in dual capsule mode) scale the
-    // artwork and buttons down so they keep an even inset inside the pill.
+    // Shorter capsules scale the artwork and buttons down so they keep an
+    // even inset inside the pill.
     final compact = width < 240;
-    final coverSlotSize = math.min(compact ? 36.0 : 44.0, height - 8);
+    final coverSlotSize = math.min(compact ? 36.0 : 40.0, height - 8);
     final coverSize = coverSlotSize * (square ? 0.82 : 1.0);
     final buttonSize = math.min(compact ? 36.0 : 40.0, height - 6);
-    // Keep the circular cover concentric with the capsule's rounded stadium end:
-    // with outer radius = height / 2, setting the leading margin to (height - coverSlotSize) / 2
-    // ensures the cover's center sits exactly at (height / 2, height / 2),
-    // resulting in a completely uniform margin along the entire semicircle.
-    final leadingMargin = (height - coverSlotSize) / 2;
+    // Square artwork needs more leading space than circular artwork.
+    final leadingMargin = square ? 15.0 : 5.0;
     final trailingMargin = (height - buttonSize) / 2;
 
     return Row(
@@ -189,7 +186,7 @@ class _TrackLabels extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
           color: scheme.onSurfaceVariant.withValues(alpha: 0.72),
-          fontSize: 13,
+          fontSize: 14,
           fontWeight: FontWeight.w600,
         ),
       );
@@ -205,7 +202,7 @@ class _TrackLabels extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: scheme.onSurface,
-            fontSize: 13,
+            fontSize: 14,
             fontWeight: FontWeight.w600,
             height: 1.2,
           ),
@@ -218,7 +215,7 @@ class _TrackLabels extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: scheme.onSurfaceVariant,
-              fontSize: 10.5,
+              fontSize: 11.5,
               fontWeight: FontWeight.w500,
               height: 1.2,
             ),
@@ -280,7 +277,7 @@ class _MiniPlayButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final color = scheme.onSurfaceVariant.withValues(
+    final color = scheme.onPrimaryContainer.withValues(
       alpha: canControl ? 1 : 0.35,
     );
     final Widget glyph;
@@ -288,10 +285,7 @@ class _MiniPlayButton extends StatelessWidget {
       glyph = SizedBox.square(
         key: const ValueKey('mini-play:spinner'),
         dimension: 16,
-        child: CircularProgressIndicator(
-          strokeWidth: 2.4,
-          color: scheme.onSurfaceVariant,
-        ),
+        child: CircularProgressIndicator(strokeWidth: 2.4, color: color),
       );
     } else {
       final icon = ended
@@ -306,7 +300,7 @@ class _MiniPlayButton extends StatelessWidget {
         color: color,
       );
     }
-    return IconButton(
+    return IconButton.filledTonal(
       tooltip: ended
           ? '重播'
           : playing
@@ -317,6 +311,13 @@ class _MiniPlayButton extends StatelessWidget {
           : null,
       padding: EdgeInsets.zero,
       constraints: BoxConstraints.tightFor(width: size, height: size),
+      style: IconButton.styleFrom(
+        backgroundColor: scheme.primaryContainer,
+        disabledBackgroundColor: scheme.onSurface.withValues(alpha: 0.05),
+        shape: const CircleBorder(),
+        minimumSize: Size.square(size),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
       icon: AnimatedSwitcher(
         duration: MediaQuery.disableAnimationsOf(context)
             ? Duration.zero

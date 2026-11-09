@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:go_router/go_router.dart';
@@ -149,10 +151,17 @@ class SettingsAction extends StatelessWidget {
         closedBuilder: (_, open) =>
             prism.ItemPositionProvider(position: position, child: row(open)),
         // The destination is supplied by router.dart, the owner of page imports.
-        onOpen: (createRoute) => context.push<void>(
-          location,
-          extra: SettingsContainerOrigin(createRoute),
-        ),
+        onOpen: (createRoute) {
+          // A native-tab tap can replace this route with `go('/settings')`
+          // instead of popping it. Do not keep OpenContainer's opening lock
+          // waiting for the push future, which only completes after a pop.
+          unawaited(
+            context.push<void>(
+              location,
+              extra: SettingsContainerOrigin(createRoute),
+            ),
+          );
+        },
       );
     }
     return _positionedRow(context, row(onTap));

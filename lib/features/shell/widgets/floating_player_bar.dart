@@ -157,7 +157,6 @@ class _FloatingPlayerBarState extends ConsumerState<FloatingPlayerBar>
           child: ToolbarCapsule(
             scheme: Theme.of(context).colorScheme,
             height: widget.height,
-            liquidGlass: false,
             padding: EdgeInsets.zero,
             // Keep the sliding contents inside the capsule's rounded ends.
             child: ClipRRect(

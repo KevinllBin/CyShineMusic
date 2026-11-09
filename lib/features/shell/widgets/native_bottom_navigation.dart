@@ -16,7 +16,7 @@ const double _playerVerticalPadding = 6;
 
 double miniPlayerHeight(BuildContext context) {
   final scaler = MediaQuery.textScalerOf(context);
-  return math.max(46, (scaler.scale(13) + scaler.scale(10.5)) * 1.1 + 6);
+  return math.max(46, (scaler.scale(14) + scaler.scale(11.5)) * 1.2 + 9);
 }
 
 /// Height of the floating player strip. Content scrolls underneath it, so

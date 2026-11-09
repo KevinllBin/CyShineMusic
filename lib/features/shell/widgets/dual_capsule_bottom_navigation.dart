@@ -12,11 +12,11 @@ import '../shell_navigation.dart';
 import 'floating_player_bar.dart';
 import 'toolbar_metrics.dart';
 
-// The player capsule above the dock is secondary and therefore reads visibly
-// smaller: shorter and narrower. The dock itself is Prism UI's liquid,
-// draggable navigation surface from prism_ui.
-const double _playerHorizontalInset = 38;
-const double _playerBottomGap = 8;
+// NavigationDock reserves 21dp at either side of its visible surface. Keep the
+// player 16dp inside those edges so it stays secondary to the dock.
+const double _navigationDockHorizontalInset = 21;
+const double _playerHorizontalInset = 16;
+// The dock's own shadow room supplies the visible gap above its surface.
 const double _navigationDockShadowRoom = 8;
 const double _floatingDockMaxWidth = 360;
 
@@ -32,8 +32,8 @@ double dualCapsulePlayerHeight(BuildContext context) {
   return math.max(
     // Keep enough room for the mini player's title and artist at large text
     // scales while the dock remains visually compact.
-    44,
-    (scaler.scale(13) + scaler.scale(10.5)) * 1.2 + 9,
+    50,
+    (scaler.scale(14) + scaler.scale(11.5)) * 1.2 + 13,
   );
 }
 
@@ -42,7 +42,7 @@ double floatingCapsuleBottomAreaHeight(
   required bool showPlayer,
 }) =>
     floatingCapsuleNavBarHeight(context) +
-    (showPlayer ? dualCapsulePlayerHeight(context) + _playerBottomGap : 0);
+    (showPlayer ? dualCapsulePlayerHeight(context) : 0);
 
 // Legacy helper name retained while downstream callers migrate.
 double dualCapsuleBottomAreaHeight(
@@ -76,53 +76,47 @@ class FloatingCapsuleBottomNavigation extends ConsumerWidget {
         : ReverseAnimation(
             transition.progress.drive(const PlayerPhase(0, 0.2)),
           );
-    final controls = Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (showPlayer)
-          SafeArea(
-            top: false,
-            bottom: false,
-            minimum: const EdgeInsets.symmetric(horizontal: 14),
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: _playerBottomGap),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final navWidth = math.min(
-                    constraints.maxWidth,
-                    _floatingDockMaxWidth,
-                  );
-                  return Center(
-                    child: FloatingPlayerBar(
-                      routeLocation: routeLocation,
-                      width: navWidth - _playerHorizontalInset * 2,
-                      height: dualCapsulePlayerHeight(context),
+    final controls = SafeArea(
+      top: false,
+      bottom: false,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final dockWidth = math.min(
+            constraints.maxWidth,
+            _floatingDockMaxWidth,
+          );
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (showPlayer)
+                Center(
+                  child: FloatingPlayerBar(
+                    routeLocation: routeLocation,
+                    width: math.max(
+                      0,
+                      dockWidth -
+                          (_navigationDockHorizontalInset +
+                                  _playerHorizontalInset) *
+                              2,
                     ),
-                  );
-                },
-              ),
-            ),
-          ),
-        FadeTransition(
-          opacity: navOpacity,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final width = math.min(
-                constraints.maxWidth,
-                _floatingDockMaxWidth,
-              );
-              return Center(
-                child: _FloatingCapsuleNavBar(
-                  location: location,
-                  routeLocation: routeLocation,
-                  width: width,
-                  height: floatingCapsuleNavBarHeight(context),
+                    height: dualCapsulePlayerHeight(context),
+                  ),
                 ),
-              );
-            },
-          ),
-        ),
-      ],
+              FadeTransition(
+                opacity: navOpacity,
+                child: Center(
+                  child: _FloatingCapsuleNavBar(
+                    location: location,
+                    routeLocation: routeLocation,
+                    width: dockWidth,
+                    height: floatingCapsuleNavBarHeight(context),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
 
     final travel = floatingCapsuleBottomAreaHeight(
