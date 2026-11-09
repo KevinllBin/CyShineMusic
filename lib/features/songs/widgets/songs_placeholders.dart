@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/ui/expressive_loading_status.dart';
+import 'package:prism_ui/prism_ui.dart' as prism;
 import '../../shell/shell_bottom_area.dart';
 import '../songs_toolbar_state.dart';
 
@@ -56,13 +57,14 @@ class SongsListSummary extends StatelessWidget {
               onPressed: onOpenSort,
               icon: const Icon(Icons.sort_rounded, size: 21),
             ),
-          _SummaryIconButton(
-            key: const ValueKey('songs-batch-button'),
-            tooltip: batchMode ? '退出批量操作' : '批量操作',
-            onPressed: onToggleBatch,
-            active: batchMode,
-            icon: const Icon(Icons.checklist_rounded, size: 21),
-          ),
+          if (!batchMode)
+            _SummaryIconButton(
+              key: const ValueKey('songs-batch-button'),
+              tooltip: '批量操作',
+              onPressed: onToggleBatch,
+              active: false,
+              icon: const Icon(Icons.checklist_rounded, size: 21),
+            ),
         ],
       ),
     );
@@ -125,41 +127,16 @@ class SongsSearchBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return SearchBar(
+    return prism.SearchField(
       key: const ValueKey('songs-search-bar'),
       controller: controller,
       focusNode: focusNode,
-      autoFocus: autofocus,
+      autofocus: autofocus,
       hintText: '搜索歌曲、歌手或专辑',
-      leading: Icon(
-        Icons.search_rounded,
-        size: 21,
-        color: scheme.onSurfaceVariant,
-      ),
-      trailing: query.isEmpty
-          ? null
-          : [
-              IconButton(
-                tooltip: '清除搜索',
-                onPressed: onClear,
-                icon: const Icon(Icons.close_rounded, size: 20),
-              ),
-            ],
       onChanged: onChanged,
-      onSubmitted: (_) => FocusManager.instance.primaryFocus?.unfocus(),
-      elevation: const WidgetStatePropertyAll(0),
-      backgroundColor: WidgetStatePropertyAll(scheme.surfaceContainerLow),
-      side: WidgetStatePropertyAll(
-        BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.56)),
-      ),
-      shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      ),
-      constraints: const BoxConstraints(minHeight: 50, maxHeight: 50),
-      padding: const WidgetStatePropertyAll(
-        EdgeInsets.symmetric(horizontal: 14),
-      ),
+      onSubmitted: () => FocusManager.instance.primaryFocus?.unfocus(),
+      height: 50,
+      fill: Theme.of(context).colorScheme.surfaceContainerLow,
     );
   }
 }

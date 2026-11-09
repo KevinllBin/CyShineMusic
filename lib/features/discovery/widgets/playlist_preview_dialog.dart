@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/models/playlist_summary.dart';
 import '../../../core/ui/container_transform.dart';
+import '../../../core/ui/widgets/app_navigation_button.dart';
 import '../discovery_controller.dart';
 import 'discovery_helpers.dart';
 import 'discovery_playlist_cover.dart';
@@ -86,10 +87,8 @@ class PlaylistPreviewDialog extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  IconButton(
-                    tooltip: '关闭',
+                  AppNavigationButton.close(
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close_rounded),
                   ),
                 ],
               ),

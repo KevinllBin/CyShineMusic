@@ -30,11 +30,18 @@ class ShellBottomArea extends InheritedWidget {
     final area = maybeOf(context);
     if (area == null) return legacyPadding;
     return switch (area.navigationMode) {
-      AppNavigationMode.singleCapsule => legacyPadding,
       AppNavigationMode.native => 16 + area.floatingExtent,
-      AppNavigationMode.dualCapsule =>
+      AppNavigationMode.floatingCapsule =>
         area.extent > 0 ? area.extent + 16 : legacyPadding,
     };
+  }
+
+  /// Margins a scrollable keeps clear when it brings an item fully into view
+  /// (e.g. the card a detail page collapses back into). Reads without
+  /// subscribing, so it is safe in tap handlers.
+  static EdgeInsets revealPaddingOf(BuildContext context) {
+    final area = context.getInheritedWidgetOfExactType<ShellBottomArea>();
+    return EdgeInsets.only(top: 8, bottom: (area?.floatingExtent ?? 0) + 8);
   }
 
   @override

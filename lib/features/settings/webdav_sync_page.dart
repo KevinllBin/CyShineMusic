@@ -1,3 +1,5 @@
+import '../../theme/app_theme.dart';
+import 'widgets/settings_sheet.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -61,6 +63,7 @@ class _WebDavSyncPageState extends ConsumerState<WebDavSyncPage> {
     final autoSync = configured ? syncState!.config.autoSync : _autoSync;
 
     return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.appSettingsSurface,
       body: CustomScrollView(
         key: const PageStorageKey('webdav-sync-scroll'),
         physics: const BouncingScrollPhysics(
@@ -70,9 +73,9 @@ class _WebDavSyncPageState extends ConsumerState<WebDavSyncPage> {
           const SliverToBoxAdapter(child: ScrollHeaderSpacer()),
           SliverPadding(
             padding: EdgeInsets.fromLTRB(
-              28,
-              2,
-              28,
+              16,
+              0,
+              16,
               ShellBottomArea.contentPadding(context, 126),
             ),
             sliver: SliverToBoxAdapter(
@@ -86,6 +89,7 @@ class _WebDavSyncPageState extends ConsumerState<WebDavSyncPage> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       SettingsCard(
+                        insetContent: true,
                         title: '连接',
                         children: [
                           TextField(
@@ -148,7 +152,6 @@ class _WebDavSyncPageState extends ConsumerState<WebDavSyncPage> {
                           SettingsSwitchAction(
                             icon: Icons.sync_rounded,
                             title: '自动同步',
-                            subtitle: '启动、回到前台及相关数据变化后同步',
                             value: autoSync,
                             onChanged: busy
                                 ? (_) {}
@@ -181,6 +184,7 @@ class _WebDavSyncPageState extends ConsumerState<WebDavSyncPage> {
                       ),
                       const SizedBox(height: 30),
                       SettingsCard(
+                        insetContent: true,
                         title: '同步状态',
                         children: [
                           _SyncStatusRow(state: asyncState),
@@ -272,7 +276,7 @@ class _WebDavSyncPageState extends ConsumerState<WebDavSyncPage> {
 
   Future<void> _unlink() async {
     final confirmed =
-        await showDialog<bool>(
+        await showSettingsDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
             icon: const Icon(Icons.link_off_rounded),
@@ -302,7 +306,7 @@ class _WebDavSyncPageState extends ConsumerState<WebDavSyncPage> {
   }
 
   Future<bool> _confirmInsecureConnection() async {
-    return await showDialog<bool>(
+    return await showSettingsDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
             icon: const Icon(Icons.warning_amber_rounded),
@@ -324,7 +328,7 @@ class _WebDavSyncPageState extends ConsumerState<WebDavSyncPage> {
   }
 
   Future<bool?> _chooseInitialDirection(WebDavLinkPreview preview) {
-    return showDialog<bool>(
+    return showSettingsDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => PopScope(
@@ -411,11 +415,9 @@ class _SyncStatusRow extends StatelessWidget {
                 : scheme.primary,
           ),
           title: Text(title),
-          subtitle: Text(
-            subtitle,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-          ),
+          subtitle: value.phase == WebDavSyncPhase.failure
+              ? Text(subtitle, maxLines: 3, overflow: TextOverflow.ellipsis)
+              : null,
         );
       },
     );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:prism_ui/prism_ui.dart' as prism;
 
 import '../../../core/models/enums.dart';
 import '../../../core/storage/settings_store.dart';
@@ -24,54 +25,76 @@ class SourceFilterChips extends ConsumerWidget {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final duration = reduceMotion ? Duration.zero : AppMotion.medium;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Container(
-        key: const ValueKey('search-source-filter'),
-        height: 36,
-        padding: const EdgeInsets.all(2),
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainer,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: scheme.outlineVariant.withValues(alpha: 0.2),
-          ),
-        ),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final itemWidth = constraints.maxWidth / sources.length;
-            return Stack(
+    final content = LayoutBuilder(
+      builder: (context, constraints) {
+        final itemWidth = constraints.maxWidth / sources.length;
+        return Stack(
+          children: [
+            AnimatedPositioned(
+              left: (selectedIndex < 0 ? 0 : selectedIndex) * itemWidth,
+              top: 0,
+              bottom: 0,
+              width: itemWidth,
+              duration: duration,
+              curve: AppMotion.emphasized,
+              child: const _SourceSlidingIndicator(
+                key: ValueKey('search-source-indicator'),
+              ),
+            ),
+            Row(
               children: [
-                AnimatedPositioned(
-                  left: (selectedIndex < 0 ? 0 : selectedIndex) * itemWidth,
-                  top: 0,
-                  bottom: 0,
-                  width: itemWidth,
-                  duration: duration,
-                  curve: AppMotion.emphasized,
-                  child: const _SourceSlidingIndicator(
-                    key: ValueKey('search-source-indicator'),
+                for (final source in sources)
+                  Expanded(
+                    child: _SourceChip(
+                      key: ValueKey('search-source-${source.code}'),
+                      source: source,
+                      selected: selected == source,
+                      onTap: () => ref
+                          .read(searchControllerProvider.notifier)
+                          .setSource(source),
+                    ),
                   ),
-                ),
-                Row(
-                  children: [
-                    for (final source in sources)
-                      Expanded(
-                        child: _SourceChip(
-                          key: ValueKey('search-source-${source.code}'),
-                          source: source,
-                          selected: selected == source,
-                          onTap: () => ref
-                              .read(searchControllerProvider.notifier)
-                              .setSource(source),
-                        ),
-                      ),
-                  ],
+              ],
+            ),
+          ],
+        );
+      },
+    );
+    final liquidGlass = prism.LiquidGlassScope.of(context);
+    final surface = liquidGlass
+        ? ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: prism.LiquidGlass(
+              borderRadius: BorderRadius.circular(16),
+              style: prism.LiquidGlassStyle.pill(
+                prism.Theme.of(context).colorScheme,
+              ),
+              child: content,
+            ),
+          )
+        : DecoratedBox(
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: scheme.outlineVariant.withValues(alpha: 0.28),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: scheme.shadow.withValues(alpha: 0.07),
+                  blurRadius: 16,
+                  offset: const Offset(0, 5),
                 ),
               ],
-            );
-          },
-        ),
+            ),
+            child: content,
+          );
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: SizedBox(
+        key: const ValueKey('search-source-filter'),
+        height: 42,
+        child: Padding(padding: const EdgeInsets.all(3), child: surface),
       ),
     );
   }
@@ -86,8 +109,16 @@ class _SourceSlidingIndicator extends StatelessWidget {
     return IgnorePointer(
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: scheme.secondaryContainer,
-          borderRadius: BorderRadius.circular(9),
+          color: scheme.secondaryContainer.withValues(alpha: 0.9),
+          borderRadius: BorderRadius.circular(13),
+          border: Border.all(color: scheme.primary.withValues(alpha: 0.10)),
+          boxShadow: [
+            BoxShadow(
+              color: scheme.primary.withValues(alpha: 0.10),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
       ),
     );
@@ -153,7 +184,7 @@ class _SourceChipState extends State<_SourceChip>
         excludeSemantics: true,
         child: Material(
           color: Colors.transparent,
-          borderRadius: BorderRadius.circular(9),
+          borderRadius: BorderRadius.circular(13),
           clipBehavior: Clip.antiAlias,
           child: AnimatedBuilder(
             animation: _scale,
@@ -163,7 +194,7 @@ class _SourceChipState extends State<_SourceChip>
               onTap: widget.onTap,
               onHighlightChanged: (highlighted) =>
                   _springTo(highlighted ? 0.94 : 1),
-              borderRadius: BorderRadius.circular(9),
+              borderRadius: BorderRadius.circular(13),
               overlayColor: WidgetStateProperty.resolveWith((states) {
                 if (states.contains(WidgetState.pressed)) {
                   return scheme.primary.withValues(alpha: 0.12);
@@ -179,7 +210,7 @@ class _SourceChipState extends State<_SourceChip>
                 curve: AppMotion.emphasized,
                 style: TextStyle(
                   color: foreground,
-                  fontSize: 11.5,
+                  fontSize: 12,
                   fontWeight: widget.selected
                       ? FontWeight.w600
                       : FontWeight.w500,

@@ -15,6 +15,16 @@ import 'features/player/music_home_widget_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  AppLogger.installErrorHandlers();
+  try {
+    await _startApp();
+  } catch (error, stack) {
+    await AppLogger.recordUnhandledError('startup', error, stack);
+    rethrow;
+  }
+}
+
+Future<void> _startApp() async {
   final prefs = await SharedPreferences.getInstance();
   AppLogger.configureRecording(prefs);
   await AppLogger.logEnvironment();

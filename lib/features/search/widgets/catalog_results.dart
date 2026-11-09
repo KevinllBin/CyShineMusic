@@ -207,6 +207,7 @@ class CatalogResultTile extends StatelessWidget {
                 context,
                 borderRadius: BorderRadius.circular(16),
                 color: scheme.surface,
+                revealPadding: ShellBottomArea.revealPaddingOf(context),
               ),
             ),
           );

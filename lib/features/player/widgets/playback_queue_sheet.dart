@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/tagger.dart';
 import '../../../core/ui/cover_image_source.dart';
+import '../../../core/ui/widgets/app_navigation_button.dart';
 import '../../../theme/app_motion.dart';
 import '../../downloads/download_history_store.dart';
 import '../player_controller.dart';
@@ -180,11 +181,10 @@ class _PlaybackQueueSheet extends ConsumerWidget {
                         ],
                       ),
                     ),
-                    IconButton(
+                    AppNavigationButton.close(
                       tooltip: '关闭播放列表',
                       onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close_rounded),
-                      color: playerInk(context),
+                      foregroundColor: playerInk(context),
                     ),
                   ],
                 ),

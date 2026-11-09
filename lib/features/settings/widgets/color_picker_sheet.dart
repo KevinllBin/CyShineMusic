@@ -1,3 +1,4 @@
+import 'settings_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -12,11 +13,13 @@ Future<Color?> showColorPickerSheet(
   Widget Function(Color)? previewBuilder,
   bool allowAlpha = true,
 }) {
-  return showModalBottomSheet<Color>(
+  return showSettingsSheet<Color>(
     context: context,
     useRootNavigator: true,
-    isScrollControlled: true,
     showDragHandle: true,
+    heightFraction: 0.9,
+    maxHeight: 720,
+    detents: const [0.9],
     builder: (ctx) => _ColorPickerSheet(
       initial: initial,
       style: style,

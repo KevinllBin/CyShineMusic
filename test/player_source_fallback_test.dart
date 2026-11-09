@@ -637,6 +637,495 @@ void main() {
     },
   );
 
+  test('network failures are told apart from song and source failures', () {
+    MusicSourceAttemptFailure attempt(Object error) =>
+        MusicSourceAttemptFailure(source: _record('first'), error: error);
+
+    for (final error in <Object>[
+      _hostLookupFailure,
+      "DioException [connection error]: Failed host lookup: 'c.y.qq.com'",
+      const bass.BassPlayerException(code: 32, message: 'no connection'),
+      const bass.BassPlayerException(code: 40, message: 'no response'),
+      const PlayerLoadTimeoutException(Duration(seconds: 30)),
+      const MusicSourceRuntimeException('音源解析超时'),
+      TimeoutException('slow'),
+      MusicSourceFallbackException([
+        attempt(_hostLookupFailure),
+        attempt(const bass.BassPlayerException(code: 32, message: 'x')),
+      ]),
+    ]) {
+      expect(isNetworkFailure(error), isTrue, reason: '$error');
+    }
+    for (final error in <Object>[
+      const bass.BassPlayerException(code: 41, message: 'unsupported file'),
+      const bass.BassPlayerException(code: 2, message: 'HTTP 403'),
+      const MusicSourceRuntimeException('音源没有返回播放地址'),
+      const MusicSourceFallbackException([]),
+      // Another source answering that it lacks the song proves the network.
+      MusicSourceFallbackException([
+        attempt(_hostLookupFailure),
+        attempt(const MusicSourceRuntimeException('暂无版权')),
+      ]),
+    ]) {
+      expect(isNetworkFailure(error), isFalse, reason: '$error');
+    }
+
+    for (final error in <Object>[
+      const bass.BassPlayerException(code: 9, message: 'audio output could not start'),
+      const bass.BassPlayerException(code: 23, message: 'illegal device'),
+      const bass.BassPlayerException(code: 3, message: 'driver error'),
+      const bass.BassPlayerException(code: 11, message: 'device reinit'),
+      'BASS play error 9: audio output could not start',
+      'output device failed',
+    ]) {
+      expect(isAudioOutputFailure(error), isTrue, reason: '$error');
+    }
+    for (final error in <Object>[
+      const bass.BassPlayerException(code: 32, message: 'no network'),
+      const bass.BassPlayerException(code: 2, message: 'HTTP 403'),
+      const MusicSourceRuntimeException('暂无版权'),
+    ]) {
+      expect(isAudioOutputFailure(error), isFalse, reason: '$error');
+    }
+  });
+
+  test(
+    'audio output failure stays on the song instead of skipping the queue',
+    () async {
+      final harness = await _Harness.create(loadFailures: 0);
+      addTearDown(harness.dispose);
+      harness.audio.playError = const bass.BassPlayerException(
+        code: 9,
+        operation: 'play',
+        message: 'audio output could not start',
+      );
+      final queue = _remoteQueue(30);
+
+      await harness.controller.playFromHistoryQueue(queue.first, queue);
+      final state = harness.container.read(playerControllerProvider);
+
+      expect(state.queueIndex, 0);
+      expect(state.track?.id, 'kw:song-0:remote');
+      expect(state.loading, isFalse);
+      expect(state.playing, isFalse);
+      expect(state.error, contains('音频输出设备不可用'));
+    },
+  );
+
+  test(
+    'losing the network stays on the song instead of skipping the queue',
+    () async {
+      final harness = await _Harness.create(loadFailures: 0);
+      addTearDown(harness.dispose);
+      harness.resolver.resolveError = _hostLookupFailure;
+      final queue = _remoteQueue(30);
+
+      await harness.controller.playFromHistoryQueue(queue.first, queue);
+      final state = harness.container.read(playerControllerProvider);
+
+      expect(state.queueIndex, 0);
+      expect(state.track?.id, 'kw:song-0:remote');
+      expect(state.loading, isFalse);
+      expect(state.playing, isFalse);
+      expect(state.error, contains('网络不可用'));
+      expect(harness.audio.hasPendingSourceRetry, isTrue);
+      expect(harness.resolver.requestedQualities, hasLength(1));
+    },
+  );
+
+  test('finishing a song without a network waits on the next one', () async {
+    final harness = await _Harness.create(loadFailures: 0);
+    addTearDown(harness.dispose);
+    final queue = _remoteQueue(30);
+    await harness.controller.playFromHistoryQueue(queue.first, queue);
+    harness.resolver.resolveError = _hostLookupFailure;
+
+    harness.audio.emitPlaybackState(bass.BassProcessingState.completed);
+    await _waitUntil(() => harness.audio.hasPendingSourceRetry);
+
+    final state = harness.container.read(playerControllerProvider);
+    expect(state.queueIndex, 1);
+    expect(state.loading, isFalse);
+    expect(harness.resolver.requestedQualities, hasLength(2));
+  });
+
+  test('the system reporting no network prevents skipping any error', () async {
+    final harness = await _Harness.create(loadFailures: 1000);
+    addTearDown(harness.dispose);
+    harness.audio.offline = true;
+    final queue = _remoteQueue(30);
+
+    await harness.controller.playFromHistoryQueue(queue.first, queue);
+
+    final state = harness.container.read(playerControllerProvider);
+    expect(state.queueIndex, 0);
+    expect(state.error, contains('网络不可用'));
+  });
+
+  test('a usable network resumes the song waiting for it', () async {
+    final harness = await _Harness.create(loadFailures: 0);
+    addTearDown(harness.dispose);
+    harness.resolver.resolveError = _hostLookupFailure;
+    final queue = _remoteQueue(30);
+    await harness.controller.playFromHistoryQueue(queue.first, queue);
+    expect(harness.audio.playCount, 0);
+
+    harness.resolver.resolveError = null;
+    harness.audio.emitNetworkUsable(false);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(harness.audio.playCount, 0);
+    harness.audio.emitNetworkUsable(true);
+
+    await _waitUntil(() => harness.audio.playCount == 1);
+    final state = harness.container.read(playerControllerProvider);
+    expect(state.queueIndex, 0);
+    expect(state.error, isNull);
+    expect(harness.audio.hasPendingSourceRetry, isFalse);
+  });
+
+  test(
+    'a network that never reports recovery is retried without new notices',
+    () async {
+      final harness = await _Harness.create(
+        loadFailures: 0,
+        networkRetryInterval: const Duration(milliseconds: 10),
+      );
+      addTearDown(harness.dispose);
+      final notices = <String>[];
+      // The player page shows a toast each time the error text changes.
+      final subscription = harness.container.listen<PlayerState>(
+        playerControllerProvider,
+        (previous, next) {
+          if (next.error != null && next.error != previous?.error) {
+            notices.add(next.error!);
+          }
+        },
+      );
+      addTearDown(subscription.close);
+      harness.resolver.resolveError = _hostLookupFailure;
+
+      await harness.controller.playFromMusic(_music());
+      await _waitUntil(() => harness.resolver.requestedQualities.length >= 4);
+
+      expect(notices, hasLength(1));
+      expect(harness.container.read(playerControllerProvider).error, isNull);
+      harness.resolver.resolveError = null;
+      await _waitUntil(() => harness.audio.playCount == 1);
+      expect(harness.audio.hasPendingSourceRetry, isFalse);
+    },
+  );
+
+  test('no retries run while the system has no network', () async {
+    final harness = await _Harness.create(
+      loadFailures: 0,
+      networkRetryInterval: const Duration(milliseconds: 5),
+    );
+    addTearDown(harness.dispose);
+    harness.audio.offline = true;
+    harness.resolver.resolveError = _hostLookupFailure;
+
+    await harness.controller.playFromMusic(_music());
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(harness.resolver.requestedQualities, hasLength(1));
+
+    harness.audio.offline = false;
+    harness.resolver.resolveError = null;
+    harness.audio.emitNetworkUsable(true);
+    await _waitUntil(() => harness.audio.playCount == 1);
+  });
+
+  test('losing the network mid-song retries from the same position', () async {
+    final harness = await _Harness.create(loadFailures: 0);
+    addTearDown(harness.dispose);
+    await harness.controller.playFromMusic(_music());
+    harness.audio.emitPosition(const Duration(seconds: 42));
+    harness.resolver.resolveError = _hostLookupFailure;
+
+    // A BASS HTTP stream that broke off reports an error rather than an end.
+    harness.audio.emitError(
+      const bass.BassPlayerException(
+        code: 45,
+        message: 'network stream ended before the track finished',
+        operation: 'stream-ended',
+      ),
+    );
+    await _waitUntil(() => harness.audio.hasPendingSourceRetry);
+
+    final waiting = harness.container.read(playerControllerProvider);
+    expect(waiting.position, const Duration(seconds: 42));
+    expect(waiting.duration, const Duration(minutes: 3));
+    expect(waiting.track?.id, 'kw:song-1:remote');
+
+    harness.resolver.resolveError = null;
+    harness.audio.emitNetworkUsable(true);
+    await _waitUntil(
+      () => harness.audio.seekPositions.contains(const Duration(seconds: 42)),
+    );
+    await _waitUntil(() => harness.audio.playing);
+    expect(harness.audio.hasPendingSourceRetry, isFalse);
+  });
+
+  test('tapping play on a waiting song retries it at once', () async {
+    final harness = await _Harness.create(
+      loadFailures: 0,
+      networkRetryInterval: const Duration(hours: 1),
+    );
+    addTearDown(harness.dispose);
+    harness.resolver.resolveError = _hostLookupFailure;
+    await harness.controller.playFromMusic(_music());
+    final notices = harness.container.read(playerControllerProvider).error;
+    expect(notices, contains('恢复后将自动继续播放'));
+
+    await harness.audio.play();
+
+    // A retry the user asked for reports its outcome again.
+    expect(
+      harness.container.read(playerControllerProvider).error,
+      contains('恢复后将自动继续播放'),
+    );
+    expect(harness.resolver.requestedQualities, hasLength(2));
+  });
+
+  test(
+    'stalling on network trouble neither restarts nor replaces the stream',
+    () async {
+      final harness = await _Harness.create(
+        loadFailures: 0,
+        stallRecoveryDelay: const Duration(milliseconds: 5),
+      );
+      addTearDown(harness.dispose);
+      await harness.controller.playFromMusic(_music());
+      harness.audio.networkTrouble = true;
+      final plays = harness.audio.playCount;
+
+      harness.audio.emitPlaybackState(bass.BassProcessingState.buffering);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+
+      expect(harness.audio.pauseCount, 0);
+      expect(harness.audio.playCount, plays);
+      expect(harness.audio.loadedUris, hasLength(1));
+      expect(harness.container.read(playerControllerProvider).error, isNull);
+
+      harness.audio.networkTrouble = false;
+      harness.audio.emitPlaybackState(bass.BassProcessingState.ready);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(harness.audio.pauseCount, 0);
+      expect(harness.audio.loadedUris, hasLength(1));
+    },
+  );
+
+  test(
+    'a very long network stall pauses and resumes once the network returns',
+    () async {
+      final harness = await _Harness.create(
+        loadFailures: 0,
+        stallRecoveryDelay: const Duration(milliseconds: 5),
+        networkStallPauseDelay: const Duration(milliseconds: 20),
+      );
+      addTearDown(harness.dispose);
+      await harness.controller.playFromMusic(_music());
+      harness.audio.networkTrouble = true;
+      final plays = harness.audio.playCount;
+
+      harness.audio.emitPlaybackState(bass.BassProcessingState.buffering);
+      await _waitUntil(() => harness.audio.pauseCount == 1);
+      await _waitUntil(
+        () =>
+            harness.container
+                .read(playerControllerProvider)
+                .error
+                ?.contains('已暂停') ??
+            false,
+      );
+      expect(harness.audio.loadedUris, hasLength(1));
+
+      harness.audio.networkTrouble = false;
+      harness.audio.emitNetworkUsable(true);
+      await _waitUntil(() => harness.audio.playCount == plays + 1);
+      expect(harness.audio.loadedUris, hasLength(1));
+    },
+  );
+
+  test('recovery while the stall limit pauses still resumes', () async {
+    final harness = await _Harness.create(
+      loadFailures: 0,
+      stallRecoveryDelay: const Duration(milliseconds: 5),
+      networkStallPauseDelay: const Duration(milliseconds: 5),
+    );
+    addTearDown(harness.dispose);
+    await harness.controller.playFromMusic(_music());
+    harness.audio.networkTrouble = true;
+    final gate = Completer<void>();
+    harness.audio.pauseGate = gate;
+    final plays = harness.audio.playCount;
+
+    harness.audio.emitPlaybackState(bass.BassProcessingState.buffering);
+    await _waitUntil(() => harness.audio.pauseCount == 1);
+    harness.audio.networkTrouble = false;
+    harness.audio.emitNetworkUsable(true);
+    gate.complete();
+
+    await _waitUntil(() => harness.audio.playCount == plays + 1);
+    expect(harness.container.read(playerControllerProvider).error, isNull);
+  });
+
+  test('pausing by hand cancels the automatic network resume', () async {
+    final harness = await _Harness.create(
+      loadFailures: 0,
+      stallRecoveryDelay: const Duration(milliseconds: 5),
+      networkStallPauseDelay: const Duration(milliseconds: 5),
+    );
+    addTearDown(harness.dispose);
+    await harness.controller.playFromMusic(_music());
+    harness.audio.networkTrouble = true;
+    harness.audio.emitPlaybackState(bass.BassProcessingState.buffering);
+    await _waitUntil(() => harness.audio.pauseCount == 1);
+    await _waitUntil(
+      () => harness.container.read(playerControllerProvider).error != null,
+    );
+
+    await harness.controller.toggle();
+    await harness.controller.toggle();
+    final plays = harness.audio.playCount;
+    harness.audio.networkTrouble = false;
+    harness.audio.emitNetworkUsable(true);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(harness.audio.playCount, plays);
+    expect(harness.audio.playing, isFalse);
+  });
+
+  test('the sleep timer cancels waiting for the network', () async {
+    final harness = await _Harness.create(
+      loadFailures: 0,
+      networkRetryInterval: const Duration(milliseconds: 5),
+    );
+    addTearDown(harness.dispose);
+    harness.resolver.resolveError = _hostLookupFailure;
+    await harness.controller.playFromMusic(_music());
+
+    await harness.controller.pauseForSleepTimer();
+    final attempts = harness.resolver.requestedQualities.length;
+    harness.resolver.resolveError = null;
+    harness.audio.emitNetworkUsable(true);
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+
+    expect(harness.resolver.requestedQualities, hasLength(attempts));
+    expect(harness.audio.playing, isFalse);
+  });
+
+  test('a stall fallback that finds nothing keeps the song', () async {
+    final harness = await _Harness.create(
+      loadFailures: 0,
+      stallRecoveryDelay: const Duration(milliseconds: 5),
+    );
+    addTearDown(harness.dispose);
+    final queue = _remoteQueue(5);
+    await harness.controller.playFromHistoryQueue(queue.first, queue);
+    harness.audio.emitPosition(const Duration(seconds: 42));
+    harness.audio.loadFailures = 1000;
+    final plays = harness.audio.playCount;
+
+    harness.audio.emitPlaybackState(bass.BassProcessingState.buffering);
+    await _waitUntil(() => harness.audio.playCount == plays + 1);
+    harness.audio.emitPlaybackState(bass.BassProcessingState.buffering);
+    await _waitUntil(() => harness.audio.hasPendingSourceRetry);
+
+    final state = harness.container.read(playerControllerProvider);
+    expect(state.queueIndex, 0);
+    expect(state.position, const Duration(seconds: 42));
+    expect(state.loading, isFalse);
+  });
+
+  test('a download failing during a pause does not start playback', () async {
+    final harness = await _Harness.create(loadFailures: 0);
+    addTearDown(harness.dispose);
+    await harness.controller.playFromMusic(_music());
+    harness.audio.emitPosition(const Duration(seconds: 42));
+    await harness.audio.pause();
+    final plays = harness.audio.playCount;
+
+    harness.audio.emitError(
+      const bass.BassPlayerException(
+        code: 2,
+        message: 'HTTP 403',
+        operation: 'source-expired',
+      ),
+    );
+    await _waitUntil(
+      () =>
+          harness.audio.loadedUris.length == 2 &&
+          !harness.container.read(playerControllerProvider).loading,
+    );
+
+    expect(harness.audio.playCount, plays);
+    expect(harness.audio.playing, isFalse);
+    expect(harness.audio.seekPositions.last, const Duration(seconds: 42));
+  });
+
+  test(
+    'a stream ending early resumes even though it stopped playing',
+    () async {
+      final harness = await _Harness.create(loadFailures: 0);
+      addTearDown(harness.dispose);
+      await harness.controller.playFromMusic(_music());
+      harness.audio.emitPosition(const Duration(seconds: 42));
+      await harness.audio.pause();
+      final plays = harness.audio.playCount;
+
+      harness.audio.emitError(
+        const bass.BassPlayerException(
+          code: 45,
+          message: 'network stream ended before the track finished',
+          operation: 'stream-ended',
+        ),
+      );
+      await _waitUntil(() => harness.audio.playCount == plays + 1);
+
+      expect(harness.audio.loadedUris, hasLength(2));
+      expect(harness.audio.seekPositions.last, const Duration(seconds: 42));
+    },
+  );
+
+  test(
+    'an expired link asks the same source again before failing over',
+    () async {
+      final harness = await _Harness.create(loadFailures: 0);
+      addTearDown(harness.dispose);
+      await harness.controller.playFromMusic(_music());
+      harness.audio.emitPosition(const Duration(seconds: 42));
+      const expired = bass.BassPlayerException(
+        code: 2,
+        message: 'HTTP 403',
+        operation: 'source-expired',
+      );
+
+      harness.audio.emitError(expired);
+      await _waitUntil(
+        () =>
+            harness.audio.loadedUris.length == 2 &&
+            !harness.container.read(playerControllerProvider).loading,
+      );
+      expect(
+        harness.audio.loadedUris.last,
+        Uri.parse('https://audio.test/first.mp3'),
+      );
+      expect(harness.audio.seekPositions.last, const Duration(seconds: 42));
+
+      // A fresh link that is refused at once means the source itself is failing.
+      harness.audio.emitError(expired);
+      await _waitUntil(
+        () =>
+            harness.audio.loadedUris.length == 3 &&
+            !harness.container.read(playerControllerProvider).loading,
+      );
+      expect(
+        harness.audio.loadedUris.last,
+        Uri.parse('https://audio.test/second.mp3'),
+      );
+    },
+  );
+
   test('brief buffering resumes without watchdog interference', () async {
     AppLogger.configureRecording(await SharedPreferences.getInstance());
     await AppLogger.setRecordingCategories({AppLogCategory.playback});
@@ -907,6 +1396,8 @@ class _Harness {
   static Future<_Harness> create({
     required int loadFailures,
     Duration stallRecoveryDelay = const Duration(seconds: 12),
+    Duration networkRetryInterval = const Duration(hours: 1),
+    Duration networkStallPauseDelay = const Duration(hours: 1),
   }) async {
     final preferences = await SharedPreferences.getInstance();
     final audio = _FakeAudioHandler(loadFailures: loadFailures);
@@ -920,6 +1411,12 @@ class _Harness {
         musicApiProvider.overrideWithValue(api),
         playbackStallRecoveryDelayProvider.overrideWithValue(
           stallRecoveryDelay,
+        ),
+        playbackNetworkRetryIntervalProvider.overrideWithValue(
+          networkRetryInterval,
+        ),
+        playbackNetworkStallPauseDelayProvider.overrideWithValue(
+          networkStallPauseDelay,
         ),
       ],
     );
@@ -945,6 +1442,7 @@ class _ScriptedResolver implements MusicUrlResolver {
   final List<String> attemptedIds = [];
   final List<Quality> requestedQualities = [];
   final Set<Quality> failingQualities = {};
+  Object? resolveError;
 
   @override
   Future<Quality> highestQualityFor(MusicInfo music) async => Quality.k128;
@@ -982,6 +1480,7 @@ class _ScriptedResolver implements MusicUrlResolver {
       attempted.add(source.id);
       attemptedIds.add(source.id);
       try {
+        if (resolveError != null) throw resolveError!;
         if (failingQualities.contains(quality)) {
           throw const MusicSourceRuntimeException('quality unavailable');
         }
@@ -1019,10 +1518,16 @@ class _FakeAudioHandler extends PlayerAudioHandler {
       StreamController<bass.BassPlaybackSnapshot>.broadcast(sync: true);
   final StreamController<Duration> _positions =
       StreamController<Duration>.broadcast(sync: true);
+  final StreamController<bool> _network = StreamController<bool>.broadcast(
+    sync: true,
+  );
+  bool offline = false;
+  bool networkTrouble = false;
   PlayerTransportCallback? _sourceRetry;
   int failTransitionCount = 0;
   int playCount = 0;
   int pauseCount = 0;
+  Object? playError;
   Completer<void>? loadGate;
   Completer<void>? pauseGate;
   bool failNextSeek = false;
@@ -1034,6 +1539,15 @@ class _FakeAudioHandler extends PlayerAudioHandler {
 
   @override
   Stream<Duration> get positionStream => _positions.stream;
+
+  @override
+  Stream<bool> get networkUsableStream => _network.stream;
+
+  @override
+  bool get isOffline => offline;
+
+  @override
+  bool get hasNetworkTrouble => offline || networkTrouble;
 
   @override
   bool get hasPendingSourceRetry => _sourceRetry != null;
@@ -1092,6 +1606,11 @@ class _FakeAudioHandler extends PlayerAudioHandler {
       await retry();
       return;
     }
+    if (playError != null) {
+      final error = playError!;
+      playError = null;
+      throw error;
+    }
     playCount++;
     _playing = true;
     _processingState = bass.BassProcessingState.ready;
@@ -1144,6 +1663,8 @@ class _FakeAudioHandler extends PlayerAudioHandler {
 
   void emitError(bass.BassPlayerException error) => _errors.add(error);
 
+  void emitNetworkUsable(bool usable) => _network.add(usable);
+
   void emitPlaybackState(bass.BassProcessingState processingState) {
     _processingState = processingState;
     _states.add(
@@ -1162,6 +1683,7 @@ class _FakeAudioHandler extends PlayerAudioHandler {
     await _positions.close();
     await _errors.close();
     await _states.close();
+    await _network.close();
     await super.disposeHandler();
   }
 }
@@ -1182,6 +1704,11 @@ class _FakeMusicApi extends MusicApi {
     bool preferCached = true,
   }) async => await coverResponses[musicInfo.id]?.future;
 }
+
+const _hostLookupFailure = MusicSourceRuntimeException(
+  "The connection errored: Failed host lookup: 'source.test' This indicates "
+  'an error which most likely cannot be solved by the library.',
+);
 
 Future<void> _waitUntil(bool Function() predicate) async {
   for (var attempt = 0; attempt < 50; attempt++) {

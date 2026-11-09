@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/enums.dart';
 import '../../../theme/app_motion.dart';
 import '../discovery_controller.dart';
+import 'discovery_prism_surface.dart';
 
 class DiscoverySourceSelector extends ConsumerWidget {
   const DiscoverySourceSelector({
@@ -27,107 +28,111 @@ class DiscoverySourceSelector extends ConsumerWidget {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Container(
-        key: const ValueKey('discovery-source-filter'),
-        height: 38,
-        padding: const EdgeInsets.all(2),
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainer,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: scheme.outlineVariant.withValues(alpha: 0.22),
-          ),
-        ),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final width = constraints.maxWidth / sources.length;
-            final indicator = DecoratedBox(
-              decoration: BoxDecoration(
-                color: scheme.secondaryContainer,
-                borderRadius: BorderRadius.circular(9),
-              ),
-            );
-            final controller = pageController;
-            return Stack(
-              children: [
-                if (controller != null)
-                  AnimatedBuilder(
-                    animation: controller,
-                    builder: (context, child) {
-                      final page = controller.hasClients
-                          ? (controller.page ??
-                                controller.initialPage.toDouble())
-                          : selectedIndex.toDouble();
-                      return Positioned(
-                        left:
-                            page.clamp(
-                              0.0,
-                              (sources.length - 1).toDouble(),
-                            ) *
-                            width,
-                        top: 0,
-                        bottom: 0,
-                        width: width,
-                        child: child!,
-                      );
-                    },
-                    child: indicator,
-                  )
-                else
-                  AnimatedPositioned(
-                    left: selectedIndex * width,
-                    top: 0,
-                    bottom: 0,
-                    width: width,
-                    duration: reduceMotion ? Duration.zero : AppMotion.medium,
-                    curve: AppMotion.emphasized,
-                    child: indicator,
+      child: SizedBox(
+        height: 36,
+        child: DiscoveryPrismSurface(
+          key: const ValueKey('discovery-source-filter'),
+          borderRadius: BorderRadius.circular(999),
+          padding: const EdgeInsets.all(2),
+          tint: scheme.surfaceContainerHigh,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth / sources.length;
+              final indicator = DecoratedBox(
+                decoration: BoxDecoration(
+                  color: scheme.secondaryContainer.withValues(alpha: 0.92),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: scheme.primary.withValues(alpha: 0.11),
                   ),
-                Row(
-                  children: [
-                    for (final source in sources)
-                      Expanded(
-                        child: Semantics(
-                          button: true,
-                          selected: selected == source,
-                          child: InkWell(
-                            key: ValueKey('discovery-source-${source.code}'),
-                            borderRadius: BorderRadius.circular(9),
-                            onTap: () =>
-                                ref
-                                        .read(
-                                          selectedDiscoverySourceProvider
-                                              .notifier,
-                                        )
-                                        .state =
-                                    source,
-                            child: Center(
-                              child: Text(
-                                source.label,
-                                maxLines: 1,
-                                overflow: TextOverflow.fade,
-                                softWrap: false,
-                                style: TextStyle(
-                                  color: selected == source
-                                      ? scheme.onSecondaryContainer
-                                      : scheme.onSurfaceVariant,
-                                  fontSize: 11.5,
-                                  fontWeight: selected == source
-                                      ? FontWeight.w600
-                                      : FontWeight.w500,
-                                  height: 1,
-                                  letterSpacing: 0,
+                  boxShadow: [
+                    BoxShadow(
+                      color: scheme.primary.withValues(alpha: 0.11),
+                      blurRadius: 7,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+              );
+              final controller = pageController;
+              return Stack(
+                children: [
+                  if (controller != null)
+                    AnimatedBuilder(
+                      animation: controller,
+                      builder: (context, child) {
+                        final page = controller.hasClients
+                            ? (controller.page ??
+                                  controller.initialPage.toDouble())
+                            : selectedIndex.toDouble();
+                        return Positioned(
+                          left:
+                              page.clamp(0.0, (sources.length - 1).toDouble()) *
+                              width,
+                          top: 0,
+                          bottom: 0,
+                          width: width,
+                          child: child!,
+                        );
+                      },
+                      child: indicator,
+                    )
+                  else
+                    AnimatedPositioned(
+                      left: selectedIndex * width,
+                      top: 0,
+                      bottom: 0,
+                      width: width,
+                      duration: reduceMotion ? Duration.zero : AppMotion.medium,
+                      curve: AppMotion.emphasized,
+                      child: indicator,
+                    ),
+                  Row(
+                    children: [
+                      for (final source in sources)
+                        Expanded(
+                          child: Semantics(
+                            button: true,
+                            selected: selected == source,
+                            child: InkWell(
+                              key: ValueKey('discovery-source-${source.code}'),
+                              borderRadius: BorderRadius.circular(999),
+                              onTap: () =>
+                                  ref
+                                          .read(
+                                            selectedDiscoverySourceProvider
+                                                .notifier,
+                                          )
+                                          .state =
+                                      source,
+                              child: Center(
+                                child: Text(
+                                  source.label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.fade,
+                                  softWrap: false,
+                                  style: TextStyle(
+                                    color: selected == source
+                                        ? scheme.onSecondaryContainer
+                                        : scheme.onSurfaceVariant,
+                                    fontSize: 11.5,
+                                    fontWeight: selected == source
+                                        ? FontWeight.w600
+                                        : FontWeight.w500,
+                                    height: 1,
+                                    letterSpacing: 0,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                  ],
-                ),
-              ],
-            );
-          },
+                    ],
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );

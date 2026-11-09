@@ -16,6 +16,7 @@ import '../shell/shell_bottom_area.dart';
 import 'discovery_controller.dart';
 import 'widgets/discovery_placeholders.dart';
 import 'widgets/leaderboard_artwork.dart';
+import 'widgets/discovery_prism_surface.dart';
 
 class LeaderboardsPage extends ConsumerStatefulWidget {
   const LeaderboardsPage({super.key, required this.source});
@@ -259,94 +260,103 @@ class _LeaderboardGridCard extends ConsumerWidget {
     final coverUrl =
         ref.watch(leaderboardArtworkProvider(identity)) ?? board.coverUrl;
     final resolved = (preview ?? board).copyWith(coverUrl: coverUrl);
-    const radius = BorderRadius.all(Radius.circular(14));
-    return Card(
-      key: ValueKey('leaderboard-card-${board.key}'),
-      margin: EdgeInsets.zero,
-      elevation: 0,
-      color: scheme.surfaceContainer,
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
+    const radius = BorderRadius.all(Radius.circular(20));
+    return DiscoveryReveal(
+      delay: Duration(milliseconds: (index % 6) * 30),
+      child: DiscoveryPrismSurface(
+        key: ValueKey('leaderboard-card-${board.key}'),
         borderRadius: radius,
-        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.22)),
-      ),
-      child: InkWell(
-        onTap: () => context.push(
-          '/discover/leaderboards/${board.source.code}/${board.boardId}',
-          extra: ContainerTransformExtra(
-            resolved,
-            // 详情页从这张卡片展开，封面 Hero 沿同一条曲线飞到头图。
-            origin: ContainerTransformOrigin.capture(
-              context,
-              borderRadius: radius,
-              color: scheme.surfaceContainer,
-            ),
+        shadows: [
+          BoxShadow(
+            color: scheme.shadow.withValues(alpha: 0.10),
+            blurRadius: 22,
+            offset: const Offset(0, 8),
           ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: Hero(
-                tag: onlinePlaylistArtworkHeroTag(
-                  board.source,
-                  board.boardId,
-                  kind: OnlineCollectionKind.leaderboard,
-                ),
-                transitionOnUserGestures: true,
-                createRectTween: containerTransformHeroRectTween,
-                child: HeroArtworkShape(
-                  // 封面贴着卡片顶部，只有上方两角跟随卡片圆角。
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(14),
-                  ),
-                  child: LeaderboardArtwork(
-                    name: board.name,
-                    index: index,
-                    coverUrl: coverUrl,
-                  ),
+        ],
+        child: Material(
+          color: Colors.transparent,
+          clipBehavior: Clip.antiAlias,
+          borderRadius: radius,
+          child: InkWell(
+            onTap: () => context.push(
+              '/discover/leaderboards/${board.source.code}/${board.boardId}',
+              extra: ContainerTransformExtra(
+                resolved,
+                // 详情页从这张卡片展开，封面 Hero 沿同一条曲线飞到头图。
+                origin: ContainerTransformOrigin.capture(
+                  context,
+                  borderRadius: radius,
+                  color: scheme.surfaceContainer,
+                  revealPadding: ShellBottomArea.revealPaddingOf(context),
                 ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(11, 9, 9, 10),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          board.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: scheme.onSurface,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          board.updateFrequency ?? '实时更新',
-                          style: TextStyle(
-                            color: scheme.onSurfaceVariant,
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: Hero(
+                    tag: onlinePlaylistArtworkHeroTag(
+                      board.source,
+                      board.boardId,
+                      kind: OnlineCollectionKind.leaderboard,
+                    ),
+                    transitionOnUserGestures: true,
+                    createRectTween: containerTransformHeroRectTween,
+                    child: HeroArtworkShape(
+                      // 封面贴着卡片顶部，只有上方两角跟随卡片圆角。
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(20),
+                      ),
+                      child: LeaderboardArtwork(
+                        name: board.name,
+                        index: index,
+                        coverUrl: coverUrl,
+                      ),
                     ),
                   ),
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    size: 19,
-                    color: scheme.onSurfaceVariant,
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(11, 9, 9, 10),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              board.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: scheme.onSurface,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              board.updateFrequency ?? '实时更新',
+                              style: TextStyle(
+                                color: scheme.onSurfaceVariant,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        size: 19,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

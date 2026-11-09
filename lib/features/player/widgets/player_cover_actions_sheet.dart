@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:prism_ui/icons/icons.dart' as prism_glyph;
 
 import '../../../core/models/music_info.dart';
 import '../../../core/storage/settings_store.dart';
 import '../../../core/ui/app_toast.dart';
+import '../../../core/ui/music_action_glyphs.dart';
 import '../../playlists/playlist_browser_sheet.dart';
 import '../../playlists/playlist_store.dart';
 import '../../search/widgets/quality_picker_sheet.dart';
@@ -111,7 +113,7 @@ class _PlayerCoverActionsSheet extends ConsumerWidget {
     final actions = <_PlayerCoverAction>[
       _PlayerCoverAction(
         id: 'playlist',
-        icon: Icons.playlist_add_rounded,
+        glyph: MusicActionGlyphs.playlistAdd,
         title: '添加到歌单',
         subtitle: music == null ? '当前歌曲缺少可保存的歌曲信息' : '选择歌单并立即添加当前歌曲',
         enabled: music != null,
@@ -120,7 +122,7 @@ class _PlayerCoverActionsSheet extends ConsumerWidget {
       ),
       _PlayerCoverAction(
         id: 'download',
-        icon: Icons.download_rounded,
+        glyph: MusicActionGlyphs.download,
         title: '下载当前歌曲',
         subtitle: canDownload ? '选择音质并下载当前在线歌曲' : '仅在线歌曲支持下载',
         enabled: canDownload,
@@ -128,7 +130,7 @@ class _PlayerCoverActionsSheet extends ConsumerWidget {
       ),
       _PlayerCoverAction(
         id: 'quality',
-        icon: Icons.high_quality_rounded,
+        glyph: MusicActionGlyphs.quality,
         title: '切换播放音质',
         subtitle: canSwitchQuality ? '选择当前歌曲的其他可用音质' : '当前没有其他可切换音质',
         enabled: canSwitchQuality,
@@ -136,7 +138,7 @@ class _PlayerCoverActionsSheet extends ConsumerWidget {
       ),
       _PlayerCoverAction(
         id: 'mini-lyrics',
-        icon: Icons.subtitles_rounded,
+        glyph: MusicActionGlyphs.lyrics,
         title: '显示迷你歌词',
         subtitle: wide ? '仅在手机播放封面页显示' : '在封面页左下角显示三行歌词',
         enabled: true,
@@ -215,7 +217,7 @@ class _PlayerCoverActionsSheet extends ConsumerWidget {
 class _PlayerCoverAction {
   const _PlayerCoverAction({
     required this.id,
-    required this.icon,
+    required this.glyph,
     required this.title,
     required this.subtitle,
     required this.enabled,
@@ -224,7 +226,7 @@ class _PlayerCoverAction {
   });
 
   final String id;
-  final IconData icon;
+  final prism_glyph.Glyph glyph;
   final String title;
   final String subtitle;
   final bool enabled;
@@ -244,12 +246,12 @@ class _PlayerCoverActionTile extends StatelessWidget {
       key: ValueKey('player-cover-action-${action.id}'),
       minTileHeight: 64,
       enabled: action.enabled,
-      leading: Icon(action.icon),
+      leading: prism_glyph.GlyphIcon(action.glyph, fill: 0),
       title: Text(
         action.title,
-        style: const TextStyle(fontWeight: FontWeight.w600),
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
       ),
-      subtitle: Text(action.subtitle),
+      subtitle: Text(action.subtitle, style: const TextStyle(fontSize: 12)),
       trailing: action.trailing,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       tileColor: scheme.surfaceContainer,

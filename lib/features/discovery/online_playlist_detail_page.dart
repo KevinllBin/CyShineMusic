@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:prism_ui/prism_ui.dart' as prism;
 
 import '../../core/api/music_api.dart';
 import '../shell/shell_bottom_area.dart';
@@ -21,6 +22,8 @@ import '../../core/ui/app_refresh_indicator.dart';
 import '../../core/ui/app_scrollbar.dart';
 import '../../core/ui/cover_placeholder.dart';
 import '../../core/ui/car_display_layout.dart';
+import '../../core/ui/container_transform.dart';
+import '../../core/ui/route_settle.dart';
 import '../downloads/download_history_store.dart';
 import '../downloads/download_progress.dart';
 import '../music_sources/music_source_action_guard.dart';
@@ -63,13 +66,20 @@ class _OnlinePlaylistDetailPageState
   PlaylistSummary? _summary;
   bool _saving = false;
   bool _removingFavorite = false;
-  final ScrollController _scrollController = ScrollController();
+  // 从卡片打开时总是从顶部开始，不恢复上次离开时的位置。
+  final ScrollController _scrollController =
+      ContainerTransformScrollController();
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode(
     debugLabel: 'online-collection-search',
   );
   bool _searchMode = false;
   LocalHistoryEntry? _searchHistory;
+
+  /// 进入动画途中拿到数据时先保持骨架，过渡结束再整页换成歌单：整页重建会
+  /// 和容器变换抢帧，还会卸载正在飞行的封面 Hero。
+  bool _holdSkeleton = false;
+  bool _routeChecked = false;
 
   OnlinePlaylistIdentity get _identity =>
       (source: widget.source, id: widget.playlistId, kind: widget.kind);
@@ -93,6 +103,18 @@ class _OnlinePlaylistDetailPageState
         widget.summary ??
         ref.read(onlinePlaylistSummaryCacheProvider)[_identity];
     _cacheSummary(_summary);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_routeChecked) return;
+    _routeChecked = true;
+    // 数据已在缓存里时首帧就是完整页面，不需要等。
+    if (ref.read(onlinePlaylistDetailProvider(_key)).hasValue) return;
+    _holdSkeleton = deferUntilRouteSettled(context, () {
+      if (mounted) setState(() => _holdSkeleton = false);
+    });
   }
 
   @override
@@ -214,6 +236,15 @@ class _OnlinePlaylistDetailPageState
         ) ||
         CarDisplayLayout.wideOf(context);
     final detail = ref.watch(onlinePlaylistDetailProvider(_key));
+    // 加载态与歌单共用同一棵树：数据到达时只换掉歌曲列表，头图 Hero、
+    // 滚动视图和主题都原地保留，不整页重建。
+    Widget loading() => _buildPlaylist(
+      context,
+      _placeholderPlaylist(),
+      carPadModeEnabled: carPadModeEnabled,
+      placeholder: true,
+    );
+    if (_holdSkeleton) return loading();
     final loaded = detail.asData?.value;
     if (loaded != null) {
       _lastPlaylist = _withDiscoveryArtwork(loaded);
@@ -234,13 +265,7 @@ class _OnlinePlaylistDetailPageState
       );
     }
     return detail.when(
-      loading: () => _DetailLoading(
-        summary: _summary,
-        source: widget.source,
-        playlistId: widget.playlistId,
-        kind: widget.kind,
-        carPadModeEnabled: carPadModeEnabled,
-      ),
+      loading: loading,
       error: (error, _) => _DetailError(
         summary: _summary,
         source: widget.source,
@@ -255,6 +280,22 @@ class _OnlinePlaylistDetailPageState
         _withDiscoveryArtwork(playlist),
         carPadModeEnabled: carPadModeEnabled,
       ),
+    );
+  }
+
+  /// 数据到达前由发现页摘要拼出的占位歌单，没有歌曲。
+  PlaylistInfo _placeholderPlaylist() {
+    final summary = _summary;
+    return PlaylistInfo(
+      id: widget.playlistId,
+      name: summary?.name ?? '',
+      source: widget.source,
+      tracks: const [],
+      coverUrl: summary?.coverUrl,
+      creator: summary?.creator,
+      description: summary?.description,
+      playCount: summary?.playCount,
+      trackCount: summary?.trackCount,
     );
   }
 
@@ -284,7 +325,9 @@ class _OnlinePlaylistDetailPageState
     required bool carPadModeEnabled,
     bool loadingMore = false,
     String? loadMoreError,
+    bool placeholder = false,
   }) {
+    final summary = _summary;
     final local = _findSavedPlaylist(
       ref.watch(localPlaylistsProvider),
       playlist,
@@ -315,14 +358,30 @@ class _OnlinePlaylistDetailPageState
       context,
       carPadModeEnabled: carPadModeEnabled,
     );
-    final metadata = [
-      playlist.source.label,
-      if (widget.kind.isCatalog) widget.kind.label,
-      if (playlist.creator?.trim().isNotEmpty == true) playlist.creator!.trim(),
-      '${playlist.totalTracks} 首',
-      if (playlist.playCount != null)
-        '${_compactCount(playlist.playCount!)} 次播放',
-    ].join(' · ');
+    final title = placeholder && playlist.name.isEmpty
+        ? '${widget.kind.label}详情'
+        : playlist.name;
+    final metadata = placeholder
+        ? summary == null
+              ? '正在读取${widget.kind.label}信息'
+              : _summaryMetadata(summary)
+        : [
+            playlist.source.label,
+            if (widget.kind.isCatalog) widget.kind.label,
+            if (playlist.creator?.trim().isNotEmpty == true)
+              playlist.creator!.trim(),
+            '${playlist.totalTracks} 首',
+            if (playlist.playCount != null)
+              '${_compactCount(playlist.playCount!)} 次播放',
+          ].join(' · ');
+    final artworkLoading = placeholder && artworkProvider == null;
+    final descriptionLoading =
+        placeholder && (playlist.description?.trim().isEmpty ?? true);
+    final heroTag = onlinePlaylistArtworkHeroTag(
+      widget.source,
+      widget.playlistId,
+      kind: widget.kind,
+    );
     return PlaylistArtworkTheme(
       artworkProvider: artworkProvider,
       cacheKey: _onlineArtworkCacheKey(
@@ -341,6 +400,9 @@ class _OnlinePlaylistDetailPageState
           }
 
           PlaylistDetailActions actionsWith(EdgeInsetsGeometry padding) {
+            if (placeholder) {
+              return PlaylistDetailActions(loading: true, padding: padding);
+            }
             return PlaylistDetailActions(
               playLabel: searching ? '播放结果' : '播放全部',
               onPlay: queue.isEmpty
@@ -365,115 +427,155 @@ class _OnlinePlaylistDetailPageState
               loadingMore ||
               (loadMoreError != null &&
                   playlist.tracks.length < playlist.totalTracks);
-          final trackSlivers = <Widget>[
-            if (searching)
-              SliverToBoxAdapter(
-                child: CollectionSearchStatus(
-                  caption:
-                      '找到 ${visibleTracks.length} 首${playlist.tracks.length < playlist.totalTracks ? ' · 已搜索 ${playlist.tracks.length} / ${playlist.totalTracks} 首' : ''}',
-                  loading: loadingMore,
-                  onSearchAll: playlist.tracks.length < playlist.totalTracks
-                      ? () {
-                          if (_trackLimit == playlist.totalTracks) {
-                            ref.invalidate(onlinePlaylistDetailProvider(_key));
-                          } else {
-                            setState(() => _trackLimit = playlist.totalTracks);
-                          }
-                        }
-                      : null,
-                ),
-              ),
-            SliverToBoxAdapter(
-              child: _PlaylistTracksHeading(
-                count: visibleTracks.length,
-                total: searching ? visibleTracks.length : playlist.totalTracks,
-                title: widget.kind == OnlineCollectionKind.artist
-                    ? '热门歌曲'
-                    : '歌曲',
-              ),
-            ),
-            if (visibleTracks.isEmpty)
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(
-                  child: Text(
-                    searching ? '没有匹配的歌曲' : '这个${widget.kind.label}暂时没有可用歌曲',
+          final trackSlivers = placeholder
+              ? <Widget>[
+                  SliverToBoxAdapter(
+                    child: _PlaylistTracksHeading(count: playlist.trackCount),
                   ),
-                ),
-              )
-            else
-              SliverPadding(
-                padding: EdgeInsets.fromLTRB(
-                  12,
-                  0,
-                  12,
-                  hasTrackFooter ? 0 : 156,
-                ),
-                sliver: SliverList.separated(
-                  itemCount: visibleTracks.length,
-                  separatorBuilder: (_, _) =>
-                      _trackListDivider(context, scheme),
-                  itemBuilder: (context, index) {
-                    if (!searching) _requestMoreTracksIfNeeded(playlist, index);
-                    final music = visibleTracks[index];
-                    final entry = queue.where((item) {
-                      final json = item.musicJson;
-                      return json != null && json['id'] == music.id;
-                    }).firstOrNull;
-                    return Center(
-                      child: ConstrainedBox(
-                        constraints: CarDisplayLayout.contentConstraints(
-                          context,
-                          maxWidth: 900,
-                        ),
-                        child: _OnlinePlaylistTrackTile(
-                          music: music,
-                          onPlay: entry == null
-                              ? null
-                              : () => _playQueue(
-                                  playbackPlaylist,
-                                  entry,
-                                  replaceQueue: searching
-                                      ? ref
-                                            .read(settingsProvider)
-                                            .replaceQueueOnSearchPlay
-                                      : true,
-                                ),
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(
+                      12,
+                      0,
+                      12,
+                      ShellBottomArea.contentPadding(context, 150),
+                    ),
+                    sliver: prism.SliverPrismList(
+                      itemCount: wide ? 8 : 5,
+                      estimatedItemExtent: 76,
+                      gap: 1,
+                      itemBuilder: (_, _) => const _DetailTrackSkeleton(),
+                    ),
+                  ),
+                ]
+              : <Widget>[
+                  if (searching)
+                    SliverToBoxAdapter(
+                      child: CollectionSearchStatus(
+                        caption:
+                            '找到 ${visibleTracks.length} 首${playlist.tracks.length < playlist.totalTracks ? ' · 已搜索 ${playlist.tracks.length} / ${playlist.totalTracks} 首' : ''}',
+                        loading: loadingMore,
+                        onSearchAll:
+                            playlist.tracks.length < playlist.totalTracks
+                            ? () {
+                                if (_trackLimit == playlist.totalTracks) {
+                                  ref.invalidate(
+                                    onlinePlaylistDetailProvider(_key),
+                                  );
+                                } else {
+                                  setState(
+                                    () => _trackLimit = playlist.totalTracks,
+                                  );
+                                }
+                              }
+                            : null,
+                      ),
+                    ),
+                  SliverToBoxAdapter(
+                    child: _PlaylistTracksHeading(
+                      count: visibleTracks.length,
+                      total: searching
+                          ? visibleTracks.length
+                          : playlist.totalTracks,
+                      title: widget.kind == OnlineCollectionKind.artist
+                          ? '热门歌曲'
+                          : '歌曲',
+                    ),
+                  ),
+                  if (visibleTracks.isEmpty)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(
+                        child: Text(
+                          searching
+                              ? '没有匹配的歌曲'
+                              : '这个${widget.kind.label}暂时没有可用歌曲',
                         ),
                       ),
-                    );
-                  },
-                ),
-              ),
-            if (loadingMore)
-              const SliverToBoxAdapter(child: _LoadMoreTracksIndicator())
-            else if (loadMoreError != null &&
-                playlist.tracks.length < playlist.totalTracks)
-              SliverToBoxAdapter(
-                child: _LoadMoreTracksError(
-                  message: loadMoreError,
-                  onRetry: () =>
-                      ref.invalidate(onlinePlaylistDetailProvider(_key)),
-                ),
-              ),
-          ];
+                    )
+                  else
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(
+                        12,
+                        0,
+                        12,
+                        hasTrackFooter ? 0 : 156,
+                      ),
+                      sliver: prism.SliverPrismList(
+                        itemCount: visibleTracks.length,
+                        estimatedItemExtent: 76,
+                        gap: 1,
+                        itemBuilder: (context, index) {
+                          if (!searching) {
+                            _requestMoreTracksIfNeeded(playlist, index);
+                          }
+                          final music = visibleTracks[index];
+                          final entry = queue.where((item) {
+                            final json = item.musicJson;
+                            return json != null && json['id'] == music.id;
+                          }).firstOrNull;
+                          final tile = Center(
+                            child: ConstrainedBox(
+                              constraints: CarDisplayLayout.contentConstraints(
+                                context,
+                                maxWidth: 900,
+                              ),
+                              child: _OnlinePlaylistTrackTile(
+                                music: music,
+                                onPlay: entry == null
+                                    ? null
+                                    : () => _playQueue(
+                                        playbackPlaylist,
+                                        entry,
+                                        replaceQueue: searching
+                                            ? ref
+                                                  .read(settingsProvider)
+                                                  .replaceQueueOnSearchPlay
+                                            : true,
+                                      ),
+                              ),
+                            ),
+                          );
+                          return Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              tile,
+                              if (index + 1 < visibleTracks.length)
+                                _trackListDivider(context, scheme),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  if (loadingMore)
+                    const SliverToBoxAdapter(child: _LoadMoreTracksIndicator())
+                  else if (loadMoreError != null &&
+                      playlist.tracks.length < playlist.totalTracks)
+                    SliverToBoxAdapter(
+                      child: _LoadMoreTracksError(
+                        message: loadMoreError,
+                        onRetry: () =>
+                            ref.invalidate(onlinePlaylistDetailProvider(_key)),
+                      ),
+                    ),
+                ];
 
           return Scaffold(
             backgroundColor: scheme.surface,
             body: wide
                 ? PlaylistWideBody(
-                    topBar: _buildSearchTopBar(playbackPlaylist, local),
+                    topBar: placeholder
+                        ? ImmersivePlaylistTopBar(title: title, onImage: false)
+                        : _buildSearchTopBar(playbackPlaylist, local),
                     infoPane: PlaylistWideInfoPane(
                       artworkProvider: artworkProvider,
+                      artworkLoading: artworkLoading,
                       scrollStorageId: _identity,
-                      artworkHeroTag: onlinePlaylistArtworkHeroTag(
-                        playlist.source,
-                        playlist.id,
-                        kind: widget.kind,
-                      ),
-                      title: playlist.name,
+                      persistScrollOrigin: !placeholder,
+                      artworkHeroTag: heroTag,
+                      title: title,
                       metadata: metadata,
                       description: playlist.description,
+                      descriptionLoading: descriptionLoading,
                       actions: actionsWith(const EdgeInsets.only(top: 4)),
                     ),
                     right: AppScrollbar(
@@ -483,7 +585,7 @@ class _OnlinePlaylistDetailPageState
                         child: CustomScrollView(
                           controller: _scrollController,
                           key: PageStorageKey(
-                            'online-${widget.kind.name}-wide-${playlist.source.code}-${playlist.id}',
+                            'online-${widget.kind.name}-wide-${widget.source.code}-${widget.playlistId}',
                           ),
                           physics: const AlwaysScrollableScrollPhysics(
                             parent: BouncingScrollPhysics(),
@@ -494,17 +596,19 @@ class _OnlinePlaylistDetailPageState
                     ),
                   )
                 : ScrollingImmersivePlaylistBody(
-                    title: playlist.name,
+                    title: playlist.name.trim(),
                     scrollStorageId: _identity,
-                    topBarBuilder:
-                        (context, onImage, statusBarOnImage, progress) =>
-                            _buildSearchTopBar(
-                              playbackPlaylist,
-                              local,
-                              onImage: onImage,
-                              statusBarOnImage: statusBarOnImage,
-                              progress: progress,
-                            ),
+                    persistScrollOrigin: !placeholder,
+                    topBarBuilder: placeholder
+                        ? null
+                        : (context, onImage, statusBarOnImage, progress) =>
+                              _buildSearchTopBar(
+                                playbackPlaylist,
+                                local,
+                                onImage: onImage,
+                                statusBarOnImage: statusBarOnImage,
+                                progress: progress,
+                              ),
                     child: AppScrollbar(
                       controller: _scrollController,
                       child: AppRefreshIndicator(
@@ -512,7 +616,7 @@ class _OnlinePlaylistDetailPageState
                         child: CustomScrollView(
                           controller: _scrollController,
                           key: PageStorageKey(
-                            'online-${widget.kind.name}-${playlist.source.code}-${playlist.id}',
+                            'online-${widget.kind.name}-${widget.source.code}-${widget.playlistId}',
                           ),
                           physics: const AlwaysScrollableScrollPhysics(
                             parent: BouncingScrollPhysics(),
@@ -521,27 +625,27 @@ class _OnlinePlaylistDetailPageState
                             SliverToBoxAdapter(
                               child: ImmersivePlaylistHeader(
                                 artworkProvider: artworkProvider,
-                                artworkHeroTag: onlinePlaylistArtworkHeroTag(
-                                  playlist.source,
-                                  playlist.id,
-                                  kind: widget.kind,
-                                ),
-                                topBar: _buildSearchTopBar(
-                                  playbackPlaylist,
-                                  local,
-                                  onImage: true,
-                                  statusBarOnImage: true,
-                                  progress: 0,
-                                  forHero: true,
-                                ),
+                                artworkLoading: artworkLoading,
+                                artworkHeroTag: heroTag,
+                                topBar: placeholder
+                                    ? const ImmersivePlaylistTopBar(title: '')
+                                    : _buildSearchTopBar(
+                                        playbackPlaylist,
+                                        local,
+                                        onImage: true,
+                                        statusBarOnImage: true,
+                                        progress: 0,
+                                        forHero: true,
+                                      ),
                                 showTopBar: false,
                               ),
                             ),
                             SliverToBoxAdapter(
                               child: PlaylistDetailInfo(
-                                title: playlist.name,
+                                title: title,
                                 metadata: metadata,
                                 description: playlist.description,
+                                descriptionLoading: descriptionLoading,
                               ),
                             ),
                             SliverToBoxAdapter(
@@ -749,161 +853,6 @@ class _OnlinePlaylistTrackTileState
       onDownload: () => showQualityPickerSheet(context, widget.music),
       onAddToPlaylist: () => showAddMusicToPlaylist(context, ref, widget.music),
       onPlay: widget.onPlay ?? () {},
-    );
-  }
-}
-
-class _DetailLoading extends StatelessWidget {
-  const _DetailLoading({
-    required this.summary,
-    required this.source,
-    required this.playlistId,
-    required this.kind,
-    required this.carPadModeEnabled,
-  });
-
-  final PlaylistSummary? summary;
-  final MusicSource source;
-  final String playlistId;
-  final OnlineCollectionKind kind;
-  final bool carPadModeEnabled;
-
-  @override
-  Widget build(BuildContext context) {
-    final item = summary;
-    final artworkProvider = networkPlaylistArtworkProvider(
-      item?.coverUrl,
-      size: discoveryPlaylistArtworkSize,
-    );
-    final wide = playlistDetailUsesWideLayout(
-      context,
-      carPadModeEnabled: carPadModeEnabled,
-    );
-    final detailLabel = '${kind.label}详情';
-    final title = item?.name ?? detailLabel;
-    final metadata = item == null
-        ? '正在读取${kind.label}信息'
-        : _summaryMetadata(item);
-    final descriptionLoading = item?.description?.trim().isEmpty ?? true;
-    return PlaylistArtworkTheme(
-      artworkProvider: artworkProvider,
-      cacheKey: _onlineArtworkCacheKey(
-        source,
-        playlistId,
-        item?.coverUrl,
-        kind: kind,
-      ),
-      immersiveStatusBar: !wide,
-      child: Builder(
-        builder: (context) {
-          final scheme = Theme.of(context).colorScheme;
-          final skeletonSliver = SliverPadding(
-            padding: EdgeInsets.fromLTRB(
-              12,
-              0,
-              12,
-              ShellBottomArea.contentPadding(context, 150),
-            ),
-            sliver: SliverList.separated(
-              itemCount: wide ? 8 : 5,
-              separatorBuilder: (_, _) => _trackListDivider(context, scheme),
-              itemBuilder: (_, _) => const _DetailTrackSkeleton(),
-            ),
-          );
-          return Scaffold(
-            backgroundColor: scheme.surface,
-            body: wide
-                ? PlaylistWideBody(
-                    topBar: ImmersivePlaylistTopBar(
-                      title: title,
-                      onImage: false,
-                    ),
-                    infoPane: PlaylistWideInfoPane(
-                      artworkProvider: artworkProvider,
-                      artworkLoading: artworkProvider == null,
-                      scrollStorageId: (
-                        source: source,
-                        id: playlistId,
-                        kind: kind,
-                      ),
-                      persistScrollOrigin: false,
-                      artworkHeroTag: onlinePlaylistArtworkHeroTag(
-                        source,
-                        playlistId,
-                        kind: kind,
-                      ),
-                      title: title,
-                      metadata: metadata,
-                      description: item?.description,
-                      descriptionLoading: descriptionLoading,
-                      actions: const PlaylistDetailActions(
-                        loading: true,
-                        padding: EdgeInsets.only(top: 4),
-                      ),
-                    ),
-                    right: CustomScrollView(
-                      physics: const AlwaysScrollableScrollPhysics(
-                        parent: BouncingScrollPhysics(),
-                      ),
-                      slivers: [
-                        SliverToBoxAdapter(
-                          child: _PlaylistTracksHeading(
-                            count: item?.trackCount,
-                          ),
-                        ),
-                        skeletonSliver,
-                      ],
-                    ),
-                  )
-                : ScrollingImmersivePlaylistBody(
-                    title: item?.name.trim() ?? '',
-                    scrollStorageId: (
-                      source: source,
-                      id: playlistId,
-                      kind: kind,
-                    ),
-                    persistScrollOrigin: false,
-                    child: CustomScrollView(
-                      physics: const AlwaysScrollableScrollPhysics(
-                        parent: BouncingScrollPhysics(),
-                      ),
-                      slivers: [
-                        SliverToBoxAdapter(
-                          child: ImmersivePlaylistHeader(
-                            artworkProvider: artworkProvider,
-                            artworkLoading: artworkProvider == null,
-                            artworkHeroTag: onlinePlaylistArtworkHeroTag(
-                              source,
-                              playlistId,
-                              kind: kind,
-                            ),
-                            topBar: const ImmersivePlaylistTopBar(title: ''),
-                            showTopBar: false,
-                          ),
-                        ),
-                        SliverToBoxAdapter(
-                          child: PlaylistDetailInfo(
-                            title: title,
-                            metadata: metadata,
-                            description: item?.description,
-                            descriptionLoading: descriptionLoading,
-                          ),
-                        ),
-                        const SliverToBoxAdapter(
-                          child: PlaylistDetailActions(loading: true),
-                        ),
-                        SliverToBoxAdapter(
-                          child: _PlaylistTracksHeading(
-                            count: item?.trackCount,
-                          ),
-                        ),
-                        skeletonSliver,
-                      ],
-                    ),
-                  ),
-          );
-        },
-      ),
     );
   }
 }

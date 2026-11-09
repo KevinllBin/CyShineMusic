@@ -22,7 +22,7 @@
 
     <application
         android:label="${appLabel}"
-        android:name="${applicationName}"
+        android:name=".CyShineApplication"
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="true"
         android:usesCleartextTraffic="true">

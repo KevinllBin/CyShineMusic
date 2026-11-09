@@ -19,6 +19,7 @@ import 'core/services/storage_location.dart';
 import 'core/storage/settings_store.dart';
 import 'core/sync/webdav_sync_controller.dart';
 import 'core/ui/app_toast.dart';
+import 'core/ui/widgets/prism_environment.dart';
 import 'core/ui/car_display_layout.dart';
 import 'features/downloads/download_history_store.dart';
 import 'core/music_sources/music_source_controller.dart';
@@ -330,29 +331,19 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
                 lightScheme != null &&
                 darkScheme != null;
             final lightTheme = AppTheme.fromScheme(
-              useDynamicScheme
-                  ? lightScheme
-                  : AppTheme.schemeFor(
-                      settings.themeSeed,
-                      Brightness.light,
-                      settings.colorStyle,
-                    ),
-              colors: settings.customTheme.enabled
-                  ? settings.customTheme.light
-                  : null,
+              AppTheme.schemeFor(
+                useDynamicScheme ? lightScheme.primary : settings.themeSeed,
+                Brightness.light,
+                settings.colorStyle,
+              ),
               style: settings.colorStyle,
             );
             final darkTheme = AppTheme.fromScheme(
-              useDynamicScheme
-                  ? darkScheme
-                  : AppTheme.schemeFor(
-                      settings.themeSeed,
-                      Brightness.dark,
-                      settings.colorStyle,
-                    ),
-              colors: settings.customTheme.enabled
-                  ? settings.customTheme.dark
-                  : null,
+              AppTheme.schemeFor(
+                useDynamicScheme ? darkScheme.primary : settings.themeSeed,
+                Brightness.dark,
+                settings.colorStyle,
+              ),
               style: settings.colorStyle,
             );
             final isDark = switch (themeMode) {
@@ -365,13 +356,7 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
               useDynamicScheme ? (isDark ? darkScheme : lightScheme) : null,
               fromCorePalette: corePalette != null,
             );
-            final overlayIsDark = settings.customTheme.enabled
-                ? ThemeData.estimateBrightnessForColor(
-                        (isDark ? darkTheme : lightTheme)
-                            .scaffoldBackgroundColor,
-                      ) ==
-                      Brightness.dark
-                : isDark;
+            final overlayIsDark = isDark;
             final overlayStyle = SystemUiOverlayStyle(
               statusBarColor: Colors.transparent,
               systemNavigationBarColor: Colors.transparent,
@@ -391,8 +376,9 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
 
             return MaterialApp.router(
               title: '栖弦',
+              localizationsDelegates: const [PrismChineseStrings.delegate],
               debugShowCheckedModeBanner: false,
-              themeAnimationDuration: AppMotion.long,
+              themeAnimationDuration: Duration.zero,
               themeAnimationCurve: AppMotion.emphasized,
               themeMode: themeMode,
               theme: lightTheme,
@@ -406,14 +392,17 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
                   child: CarDisplayViewport(
                     enabled: settings.carDisplayEnabled,
                     sizeFactor: settings.carDisplaySize,
-                    child: AppToastOverlay(
-                      child: MusicSourceUpdatePrompt(
-                        navigatorKey: rootNavigatorKey,
-                        ready: _sourceUpdatePromptsReady,
-                        child: StartupGate(
-                          skipStartupScreen: settings.skipStartupScreen,
-                          onReady: _onStartupReady,
-                          child: child ?? const SizedBox.shrink(),
+                    child: PrismEnvironment(
+                      mode: settings.liquidGlassMode,
+                      child: AppToastOverlay(
+                        child: MusicSourceUpdatePrompt(
+                          navigatorKey: rootNavigatorKey,
+                          ready: _sourceUpdatePromptsReady,
+                          child: StartupGate(
+                            skipStartupScreen: settings.skipStartupScreen,
+                            onReady: _onStartupReady,
+                            child: child ?? const SizedBox.shrink(),
+                          ),
                         ),
                       ),
                     ),

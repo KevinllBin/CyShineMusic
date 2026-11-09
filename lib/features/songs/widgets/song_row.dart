@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:prism_ui/prism_ui.dart' as prism;
 
 import '../../../core/services/embedded_artwork_cache.dart';
 import '../../../core/ui/cover_image_source.dart';
@@ -177,13 +178,11 @@ class SongRow extends ConsumerWidget {
                       child: batchMode
                           ? SizedBox.square(
                               key: const ValueKey('song-select-action'),
-                              dimension: 44,
+                              dimension: 48,
                               child: Center(
-                                child: Checkbox(
+                                child: prism.Checkbox(
                                   value: selected,
-                                  visualDensity: VisualDensity.compact,
-                                  materialTapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
+                                  isCircle: true,
                                   onChanged: (_) => onToggleSelected(),
                                 ),
                               ),

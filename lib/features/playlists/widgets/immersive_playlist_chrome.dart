@@ -12,6 +12,8 @@ import '../../../core/ui/artwork_colors.dart';
 import '../../../core/ui/container_transform.dart';
 import '../../../core/ui/cover_image_source.dart';
 import '../../../core/ui/cover_placeholder.dart';
+import '../../../core/ui/route_settle.dart';
+import '../../../core/ui/widgets/app_navigation_button.dart';
 import '../../../theme/app_motion.dart';
 import '../../../theme/app_theme.dart';
 import '../../shell/widgets/scrolling_page_header.dart';
@@ -64,6 +66,22 @@ class _PlaylistArtworkThemeState extends ConsumerState<PlaylistArtworkTheme> {
 
   ColorScheme? _scheme;
   _ArtworkSchemeCacheKey? _activeRequestKey;
+
+  /// 由 [_scheme] 生成的主题。构建完整 ThemeData 不便宜，页面每次重建
+  /// （搜索输入、收藏状态）都重新生成会白白多花一截构建时间。
+  ({ColorScheme scheme, TextTheme textTheme, ThemeData theme})? _artworkTheme;
+
+  ThemeData _themeFor(ColorScheme scheme, TextTheme textTheme) {
+    final cached = _artworkTheme;
+    if (cached != null &&
+        identical(cached.scheme, scheme) &&
+        identical(cached.textTheme, textTheme)) {
+      return cached.theme;
+    }
+    final theme = ThemeData.localize(AppTheme.fromScheme(scheme), textTheme);
+    _artworkTheme = (scheme: scheme, textTheme: textTheme, theme: theme);
+    return theme;
+  }
 
   @override
   void didChangeDependencies() {
@@ -122,8 +140,14 @@ class _PlaylistArtworkThemeState extends ConsumerState<PlaylistArtworkTheme> {
           _pendingSchemes.remove(requestKey);
           if (scheme != null) _resolvedSchemes[requestKey] = scheme;
         }
+        void apply() {
+          if (!mounted || _activeRequestKey != requestKey) return;
+          setState(() => _scheme = scheme);
+        }
+
         if (!mounted || _activeRequestKey != requestKey) return;
-        setState(() => _scheme = scheme);
+        // 主题插值会逐帧重建整页，不与进入动画叠在一起。
+        if (!deferUntilRouteSettled(context, apply)) apply();
       },
       onError: (_) {
         if (identical(_pendingSchemes[requestKey], future)) {
@@ -183,7 +207,7 @@ class _PlaylistArtworkThemeState extends ConsumerState<PlaylistArtworkTheme> {
     );
     final baseTheme = Theme.of(context);
     final theme = enabled && _scheme != null
-        ? ThemeData.localize(AppTheme.fromScheme(_scheme!), baseTheme.textTheme)
+        ? _themeFor(_scheme!, baseTheme.textTheme)
         : baseTheme;
     final scheme = theme.colorScheme;
     final onDarkSurface =
@@ -594,10 +618,9 @@ class ImmersivePlaylistTopBar extends StatelessWidget {
     final back =
         leading ??
         (showBack
-            ? ImmersiveTopIconButton(
-                tooltip: '返回上一页',
-                icon: Icons.arrow_back_ios_new_rounded,
-                onImage: onImage,
+            ? AppNavigationButton.back(
+                // The button owns a themed surface, even over artwork.
+                // Its arrow must follow that surface rather than the title.
                 onPressed:
                     onBack ??
                     () {
@@ -660,12 +683,7 @@ class ImmersivePlaylistTopBar extends StatelessWidget {
                         width: 44,
                         child: Align(
                           alignment: Alignment.centerLeft,
-                          child: back == null
-                              ? null
-                              : FloatingHeaderSurface(
-                                  onImage: onImage,
-                                  child: back,
-                                ),
+                          child: back,
                         ),
                       ),
                       const SizedBox(width: 12),

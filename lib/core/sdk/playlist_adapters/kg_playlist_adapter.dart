@@ -180,7 +180,7 @@ class KgPlaylistAdapter {
 
       final globalId = _text(info['global_collection_id']);
       if (globalId != null) {
-        return _parseGlobalCollection(
+        return await _parseGlobalCollection(
           globalId,
           load: load,
           post: post,
@@ -190,7 +190,7 @@ class KgPlaylistAdapter {
       }
       final specialId = _text(info['id']);
       if (_int(info['type']) == 2 && specialId != null) {
-        return _parseSpecial(
+        return await _parseSpecial(
           specialId,
           load: load,
           post: post,

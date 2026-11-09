@@ -1,10 +1,11 @@
+import '../settings/widgets/settings_sheet.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 
 Future<String?> showMusicSourceUrlDialog(BuildContext context) async {
   final disposed = Completer<void>();
-  final result = await showDialog<String>(
+  final result = await showSettingsDialog<String>(
     context: context,
     builder: (dialogContext) => _MusicSourceUrlDialog(
       onDisposed: () {
@@ -72,7 +73,7 @@ class _MusicSourceUrlDialogState extends State<_MusicSourceUrlDialog> {
 }
 
 Future<bool> confirmThirdPartySourceRisk(BuildContext context) async {
-  return await showDialog<bool>(
+  return await showSettingsDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
           icon: const Icon(Icons.security_rounded),

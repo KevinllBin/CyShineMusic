@@ -12,6 +12,7 @@ import 'core/models/online_collection_kind.dart';
 import 'core/models/playlist_summary.dart';
 import 'core/ui/container_transform.dart';
 import 'core/ui/skippable_exit_transition.dart';
+import 'core/ui/widgets/settings_route_page.dart';
 import 'features/playlists/online_playlist_import_page.dart';
 import 'features/playlists/playlist_detail_page.dart';
 import 'features/playlists/playlist_management_page.dart';
@@ -59,9 +60,14 @@ GoRouter createAppRouter({
           );
         },
         routes: [
-          StatefulShellRoute.indexedStack(
+          StatefulShellRoute(
             key: tabShellKey,
             builder: (context, state, navigationShell) => navigationShell,
+            navigatorContainerBuilder: (context, navigationShell, children) =>
+                _PrismBranchContainer(
+                  currentIndex: navigationShell.currentIndex,
+                  children: children,
+                ),
             branches: [
               StatefulShellBranch(
                 initialLocation: '/',
@@ -252,57 +258,84 @@ GoRouter createAppRouter({
                 routes: [
                   GoRoute(
                     path: '/settings',
-                    pageBuilder: (context, state) => NoTransitionPage(
+                    pageBuilder: (context, state) => SettingsRoutePage(
+                      key: state.pageKey,
+                      origin: state.extra is SettingsContainerOrigin
+                          ? state.extra as SettingsContainerOrigin
+                          : null,
+                      isRoot: true,
                       child: _shellPageContent(
                         state,
                         child: const SettingsPage(),
                       ),
                     ),
-                  ),
-                  for (final section in SettingsSection.values)
-                    GoRoute(
-                      path: section.location,
-                      pageBuilder: (context, state) => NoTransitionPage(
-                        child: _shellPageContent(
-                          state,
-                          child: SettingsPage(section: section),
+                    routes: [
+                      for (final section in SettingsSection.values)
+                        GoRoute(
+                          path: section.name,
+                          pageBuilder: (context, state) => SettingsRoutePage(
+                            key: state.pageKey,
+                            origin: state.extra is SettingsContainerOrigin
+                                ? state.extra as SettingsContainerOrigin
+                                : null,
+                            child: _shellPageContent(
+                              state,
+                              child: SettingsPage(section: section),
+                            ),
+                          ),
+                        ),
+                      GoRoute(
+                        path: 'localMusic',
+                        redirect: (_, _) => SettingsSection.downloads.location,
+                      ),
+                      GoRoute(
+                        path: 'sources',
+                        pageBuilder: (context, state) => SettingsRoutePage(
+                          key: state.pageKey,
+                          origin: state.extra is SettingsContainerOrigin
+                              ? state.extra as SettingsContainerOrigin
+                              : null,
+                          child: _shellPageContent(
+                            state,
+                            child: const MusicSourcePage(),
+                          ),
                         ),
                       ),
-                    ),
-                  GoRoute(
-                    path: '/settings/localMusic',
-                    redirect: (_, _) => SettingsSection.downloads.location,
-                  ),
-                  GoRoute(
-                    path: '/settings/sources',
-                    pageBuilder: (context, state) => NoTransitionPage(
-                      child: _shellPageContent(
-                        state,
-                        child: const MusicSourcePage(),
+                      GoRoute(
+                        path: 'webdav',
+                        pageBuilder: (context, state) => SettingsRoutePage(
+                          key: state.pageKey,
+                          origin: state.extra is SettingsContainerOrigin
+                              ? state.extra as SettingsContainerOrigin
+                              : null,
+                          child: _shellPageContent(
+                            state,
+                            child: const WebDavSyncPage(),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  GoRoute(
-                    path: '/settings/webdav',
-                    pageBuilder: (context, state) => NoTransitionPage(
-                      child: _shellPageContent(
-                        state,
-                        child: const WebDavSyncPage(),
+                      GoRoute(
+                        path: 'equalizer',
+                        pageBuilder: (context, state) => SettingsRoutePage(
+                          key: state.pageKey,
+                          origin: state.extra is SettingsContainerOrigin
+                              ? state.extra as SettingsContainerOrigin
+                              : null,
+                          child: _shellPageContent(
+                            state,
+                            child: const EqualizerPage(),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  GoRoute(
-                    path: '/settings/equalizer',
-                    pageBuilder: (context, state) => NoTransitionPage(
-                      child: _shellPageContent(
-                        state,
-                        child: const EqualizerPage(),
-                      ),
-                    ),
+                    ],
                   ),
                   GoRoute(
                     path: '/debug',
-                    pageBuilder: (context, state) => NoTransitionPage(
+                    pageBuilder: (context, state) => SettingsRoutePage(
+                      key: state.pageKey,
+                      origin: state.extra is SettingsContainerOrigin
+                          ? state.extra as SettingsContainerOrigin
+                          : null,
                       child: _shellPageContent(
                         state,
                         child: const DebugLogPage(),
@@ -337,6 +370,48 @@ Widget _shellPageContent(GoRouterState state, {required Widget child}) {
     playlistBackLocation: _playlistBackLocationFromUri(state.uri),
     child: ShellPageStorage(child: child),
   );
+}
+
+/// Keeps branch navigators alive while giving bottom-tab changes Prism UI's
+/// restrained fade and scale handoff. Scroll positions, nested routes and
+/// editor state therefore survive a tab switch.
+class _PrismBranchContainer extends StatelessWidget {
+  const _PrismBranchContainer({
+    required this.currentIndex,
+    required this.children,
+  });
+
+  final int currentIndex;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final duration = reduceMotion ? Duration.zero : AppMotion.medium;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        for (var index = 0; index < children.length; index++)
+          AnimatedOpacity(
+            opacity: index == currentIndex ? 1 : 0,
+            duration: duration,
+            curve: AppMotion.emphasized,
+            child: AnimatedScale(
+              scale: index == currentIndex ? 1 : 0.985,
+              duration: duration,
+              curve: AppMotion.emphasized,
+              child: IgnorePointer(
+                ignoring: index != currentIndex,
+                child: TickerMode(
+                  enabled: index == currentIndex,
+                  child: children[index],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 }
 
 class _PlayerRouteBackdrop extends StatelessWidget {

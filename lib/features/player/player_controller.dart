@@ -5,8 +5,8 @@ import 'dart:math' as math;
 import 'package:audio_service/audio_service.dart'
     show AudioServiceRepeatMode, AudioServiceShuffleMode, MediaItem;
 import 'package:bass_player/bass_player.dart'
-    show BassPlaybackSnapshot, BassProcessingState;
-import 'package:flutter/foundation.dart' show compute;
+    show BassPlaybackSnapshot, BassPlayerException, BassProcessingState;
+import 'package:flutter/foundation.dart' show compute, visibleForTesting;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -49,10 +49,72 @@ const _positionCheckpointInterval = Duration(seconds: 2);
 const _stalledPlaybackRecoveryDelay = Duration(seconds: 12);
 const _stallProgressResetThreshold = Duration(seconds: 1);
 const _maxConsecutiveSourceFailureSkips = 10;
+const _networkStallPauseDelay = Duration(minutes: 5);
+const _networkRetryInterval = Duration(seconds: 15);
+const _networkRetryLimit = Duration(minutes: 10);
+const _bassErrorDriver = 3;
+const _bassErrorStart = 9;
+const _bassErrorReinit = 11;
+const _bassErrorDevice = 23;
+const _bassErrorNoNetwork = 32;
+const _bassErrorTimeout = 40;
 
 final playbackStallRecoveryDelayProvider = Provider<Duration>(
   (_) => _stalledPlaybackRecoveryDelay,
 );
+
+/// How long a stream may stay stalled by network trouble before pausing, which
+/// stops it holding a wake lock for a network that may not return for hours.
+final playbackNetworkStallPauseDelayProvider = Provider<Duration>(
+  (_) => _networkStallPauseDelay,
+);
+
+final playbackNetworkRetryIntervalProvider = Provider<Duration>(
+  (_) => _networkRetryInterval,
+);
+
+final _networkFailurePattern = RegExp(
+  r'failed host lookup|socketexception|connection (errored|error|refused|reset|'
+  r'closed|abort|timed out|timeout)|network is unreachable|no route to host|'
+  r'no address associated|software caused connection abort|timed out|timeout|'
+  r'超时|网络|无法连接',
+  caseSensitive: false,
+);
+
+final _audioOutputFailurePattern = RegExp(
+  r'audio output could not start|output device failed|bass play error 9|'
+  r'bass play error 23|bass play error 3',
+  caseSensitive: false,
+);
+
+/// Whether [error] means the network failed rather than this song or source.
+/// Skipping cannot help then: the next song needs the same network.
+@visibleForTesting
+bool isNetworkFailure(Object error) {
+  if (error is MusicSourceFallbackException) {
+    return error.failures.isNotEmpty &&
+        error.failures.every((failure) => isNetworkFailure(failure.error));
+  }
+  if (error is BassPlayerException &&
+      (error.code == _bassErrorNoNetwork || error.code == _bassErrorTimeout)) {
+    return true;
+  }
+  return _networkFailurePattern.hasMatch(error.toString());
+}
+
+/// Whether [error] means the audio hardware / output device failed rather
+/// than this song or source. Skipping songs cannot fix an output device.
+@visibleForTesting
+bool isAudioOutputFailure(Object error) {
+  if (error is BassPlayerException &&
+      (error.code == _bassErrorStart ||
+          error.code == _bassErrorDevice ||
+          error.code == _bassErrorDriver ||
+          error.code == _bassErrorReinit)) {
+    return true;
+  }
+  return _audioOutputFailurePattern.hasMatch(error.toString());
+}
 
 class PlayerController extends StateNotifier<PlayerState>
     with WidgetsBindingObserver {
@@ -60,6 +122,10 @@ class PlayerController extends StateNotifier<PlayerState>
     : _audioHandler = _ref.read(playerAudioHandlerProvider),
       _sessionStore = PlayerSessionStore(_ref.read(sharedPreferencesProvider)),
       _stallRecoveryDelay = _ref.read(playbackStallRecoveryDelayProvider),
+      _networkStallPauseAfter = _ref.read(
+        playbackNetworkStallPauseDelayProvider,
+      ),
+      _networkRetryDelay = _ref.read(playbackNetworkRetryIntervalProvider),
       super(const PlayerState()) {
     _audioHandler.bindTransportCallbacks(
       owner: this,
@@ -88,6 +154,7 @@ class PlayerController extends StateNotifier<PlayerState>
         if (!mounted || _transportSuppressionToken != null) return;
         if (_audioHandler.hasPendingSourceRetry) return;
         final wasPlaying = state.playing;
+        if (playerState.playing) _resumeWhenNetworkUsable = false;
         if (!wasPlaying &&
             playerState.playing &&
             playerState.processingState != BassProcessingState.completed) {
@@ -110,6 +177,7 @@ class PlayerController extends StateNotifier<PlayerState>
         _updateStallRecovery(playerState);
       }),
       _audioHandler.errorStream.listen(_handlePlaybackError),
+      _audioHandler.networkUsableStream.listen(_handleNetworkUsable),
       _audioHandler.grooveShiftStream.listen(_handleGrooveShift),
     ];
     _ref.listen<AppSettings>(settingsProvider, (previous, next) {
@@ -359,9 +427,12 @@ class PlayerController extends StateNotifier<PlayerState>
   final PlayerAudioHandler _audioHandler;
   final PlayerSessionStore _sessionStore;
   final Duration _stallRecoveryDelay;
+  final Duration _networkStallPauseAfter;
+  final Duration _networkRetryDelay;
   late final List<StreamSubscription<Object?>> _subscriptions;
   Timer? _positionCheckpointTimer;
   Timer? _stallRecoveryTimer;
+  Timer? _networkRetryTimer;
   Future<void> _persistChain = Future<void>.value();
   Object? _requestToken;
   Object? _transportSuppressionToken;
@@ -382,6 +453,11 @@ class PlayerController extends StateNotifier<PlayerState>
   int _sleepTimerPauseGeneration = 0;
   bool _pausedBySleepTimer = false;
   int _softStallRecoveryAttempts = 0;
+  Duration _networkStallElapsed = Duration.zero;
+  bool _resumeWhenNetworkUsable = false;
+  Stopwatch? _networkRetryElapsed;
+  bool _networkAutoRetry = false;
+  int _expiredUrlRefreshes = 0;
   Duration _stallProgressAnchor = Duration.zero;
   BassProcessingState? _lastLoggedProcessingState;
   bool? _lastLoggedPlaying;
@@ -402,7 +478,7 @@ class PlayerController extends StateNotifier<PlayerState>
   }
 
   Future<void> playFromMusic(MusicInfo music, {Quality? quality}) async {
-    _consecutiveSourceFailureSkips = 0;
+    _resetFailureBudget();
     _pendingRestoredSession = null;
     _clearQueue(syncState: false);
     await _playRemoteMusic(music, quality: quality);
@@ -417,10 +493,14 @@ class PlayerController extends StateNotifier<PlayerState>
     bool showErrors = true,
     bool preservePresentation = false,
     Set<String> excludedSourceIds = const <String>{},
+    bool keepTrackOnFailure = false,
+    bool announceNetworkWait = true,
   }) async {
     _completionHandledForTrackId = null;
     _pausedBySleepTimer = false;
+    _cancelNetworkResume();
     final pauseGeneration = _sleepTimerPauseGeneration;
+    final previousDuration = state.duration;
     final token = Object();
     _invalidateGrooveShift();
     _requestToken = token;
@@ -482,7 +562,7 @@ class PlayerController extends StateNotifier<PlayerState>
     // can leak back into the new track's loading screen.
     // A quality switch invalidates the previous request token. If lyrics were
     // still loading, restart that request so the preserved spinner can finish.
-    if (!preservePresentation || state.lyricLoading) {
+    if (!preservePresentation || state.lyricLoading || state.lyrics.isEmpty) {
       unawaited(_loadLyricsForMusic(music, token, logPrefix: 'lyric load'));
     }
 
@@ -615,9 +695,16 @@ class PlayerController extends StateNotifier<PlayerState>
       if (!mounted || !identical(_requestToken, token)) return false;
       final skipLimitReached =
           _consecutiveSourceFailureSkips >= _maxConsecutiveSourceFailureSkips;
-      if (autoPlay &&
+      final networkFailure = _audioHandler.isOffline || isNetworkFailure(e);
+      final outputFailure = isAudioOutputFailure(e);
+      if (networkFailure) {
+        _logPlayback('network failure, staying on this track');
+      } else if (outputFailure) {
+        _logPlayback('audio output failure, staying on this track');
+      } else if (autoPlay &&
           pauseGeneration == _sleepTimerPauseGeneration &&
-          !skipLimitReached) {
+          !skipLimitReached &&
+          !keepTrackOnFailure) {
         final nextIndex = _nextQueueIndexAfterFailure();
         if (nextIndex != null) {
           _consecutiveSourceFailureSkips++;
@@ -629,7 +716,7 @@ class PlayerController extends StateNotifier<PlayerState>
           return false;
         }
       }
-      if (skipLimitReached) {
+      if (skipLimitReached && !networkFailure && !outputFailure) {
         _logPlayback(
           'source failure skip limit reached '
           'count=$_consecutiveSourceFailureSkips; pausing',
@@ -658,7 +745,11 @@ class PlayerController extends StateNotifier<PlayerState>
           await _playRemoteMusic(
             music,
             quality: selectedQuality,
+            initialPosition: initialPosition,
             restoredTrack: failedTrack,
+            preservePresentation: true,
+            keepTrackOnFailure: keepTrackOnFailure,
+            announceNetworkWait: !_networkAutoRetry,
           );
         },
       );
@@ -668,17 +759,31 @@ class PlayerController extends StateNotifier<PlayerState>
         loading: false,
         lyricLoading: preservePresentation ? state.lyricLoading : false,
         playing: false,
+        position: initialPosition,
+        duration: initialPosition > Duration.zero ? previousDuration : null,
         processingState: PlayerProcessingState.ready,
         error: null,
       );
       _syncQueueAvailability();
-      if (showErrors) {
+      final waitForNetwork =
+          networkFailure &&
+          autoPlay &&
+          pauseGeneration == _sleepTimerPauseGeneration;
+      // The notice stays up across automatic retries instead of repeating.
+      if (showErrors && (announceNetworkWait || !waitForNetwork)) {
         state = state.copyWith(
-          error: skipLimitReached
+          error: waitForNetwork
+              ? '网络不可用，恢复后将自动继续播放'
+              : networkFailure
+              ? '网络不可用，请检查网络后重试'
+              : outputFailure
+              ? '音频输出设备不可用，已暂停播放'
+              : skipLimitReached
               ? '连续切换 $_maxConsecutiveSourceFailureSkips 首歌曲仍无法播放，已暂停'
               : describeDioError(e),
         );
       }
+      if (waitForNetwork) _scheduleNetworkResume();
       _persistFullSession();
       return false;
     }
@@ -695,7 +800,7 @@ class PlayerController extends StateNotifier<PlayerState>
     final available = track.availableQualities;
     if (available.isNotEmpty && !available.contains(quality)) return false;
 
-    _consecutiveSourceFailureSkips = 0;
+    _resetFailureBudget();
     return _playRemoteMusic(
       music,
       quality: quality,
@@ -706,7 +811,7 @@ class PlayerController extends StateNotifier<PlayerState>
     );
   }
 
-  void _handlePlaybackError(Object error) {
+  void _handlePlaybackError(Object error, {bool keepTrack = false}) {
     if (!mounted ||
         _pausedBySleepTimer ||
         _audioHandler.hasPendingSourceRetry) {
@@ -732,7 +837,22 @@ class PlayerController extends StateNotifier<PlayerState>
 
     final quality = _currentQuality;
     final position = state.position;
-    final excluded = Set<String>.of(_attemptedRemoteSourceIds);
+    // Links expire, for example during a long pause. Ask the same source for a
+    // fresh one before treating it as failed and downgrading the quality.
+    final refreshUrl =
+        error is BassPlayerException &&
+        error.operation == 'source-expired' &&
+        _expiredUrlRefreshes == 0;
+    if (refreshUrl) _expiredUrlRefreshes++;
+    final excluded = refreshUrl
+        ? const <String>{}
+        : Set<String>.of(_attemptedRemoteSourceIds);
+    // A download keeps running during a pause, and its failure must not start
+    // playback. Every other error ended a stream that was actually playing.
+    final downloadFailed =
+        error is BassPlayerException &&
+        (error.operation == 'source-expired' || error.operation == 'network');
+    final autoPlay = !downloadFailed || _audioHandler.playing;
     final pauseGeneration = _sleepTimerPauseGeneration;
     _lateSourceFallbackActive = true;
     unawaited(() async {
@@ -745,14 +865,68 @@ class PlayerController extends StateNotifier<PlayerState>
         await _playRemoteMusic(
           music,
           quality: quality,
+          autoPlay: autoPlay,
           initialPosition: position,
           restoredTrack: track,
           excludedSourceIds: excluded,
+          keepTrackOnFailure: keepTrack || isAudioOutputFailure(error),
         );
       } finally {
         _lateSourceFallbackActive = false;
       }
     }());
+  }
+
+  void _handleNetworkUsable(bool usable) {
+    if (!mounted || !usable || !_resumeWhenNetworkUsable) return;
+    _logPlayback('network usable again, resuming');
+    _resumeAfterNetworkWait();
+  }
+
+  /// Keeps trying a track that failed for lack of network. A usable network is
+  /// the prompt signal, but a DNS or portal failure never reports a change, so
+  /// also retry periodically while the system considers itself online.
+  void _scheduleNetworkResume() {
+    _resumeWhenNetworkUsable = true;
+    _networkRetryElapsed ??= Stopwatch()..start();
+    _networkRetryTimer?.cancel();
+    if (_networkRetryElapsed!.elapsed >= _networkRetryLimit) return;
+    _networkRetryTimer = Timer(_networkRetryDelay, () {
+      _networkRetryTimer = null;
+      if (!mounted || !_resumeWhenNetworkUsable) return;
+      if (_audioHandler.isOffline) {
+        _scheduleNetworkResume();
+      } else {
+        _resumeAfterNetworkWait();
+      }
+    });
+  }
+
+  void _resumeAfterNetworkWait() {
+    _cancelNetworkResume();
+    if (_pausedBySleepTimer) return;
+    // The waiting notice is shown once; a failed retry sets it again if needed.
+    if (state.error != null) state = state.copyWith(error: null);
+    _networkAutoRetry = true;
+    final resuming = _audioHandler.play();
+    _networkAutoRetry = false;
+    unawaited(
+      resuming.catchError((Object error) {
+        return AppLogger.write('player', 'resume after network failed: $error');
+      }),
+    );
+  }
+
+  void _cancelNetworkResume() {
+    _resumeWhenNetworkUsable = false;
+    _networkRetryTimer?.cancel();
+    _networkRetryTimer = null;
+  }
+
+  /// A choice by the user, or audio actually playing, starts these limits over.
+  void _resetFailureBudget() {
+    _consecutiveSourceFailureSkips = 0;
+    _networkRetryElapsed = null;
   }
 
   void _updateStallRecovery(BassPlaybackSnapshot playerState) {
@@ -767,9 +941,12 @@ class PlayerController extends StateNotifier<PlayerState>
       _cancelStallRecoveryTimer();
       return;
     }
+    _armStallRecovery(track.id);
+  }
+
+  void _armStallRecovery(String trackId) {
     if (_stallRecoveryTimer?.isActive ?? false) return;
 
-    final trackId = track.id;
     final requestToken = _requestToken;
     _stallRecoveryTimer = Timer(_stallRecoveryDelay, () {
       _stallRecoveryTimer = null;
@@ -846,6 +1023,10 @@ class PlayerController extends StateNotifier<PlayerState>
     Object? requestToken,
   ) async {
     final pauseGeneration = _sleepTimerPauseGeneration;
+    if (_audioHandler.hasNetworkTrouble) {
+      await _waitOutNetworkStall(trackId);
+      return;
+    }
     if (_softStallRecoveryAttempts == 0) {
       _softStallRecoveryAttempts++;
       await AppLogger.write(
@@ -878,7 +1059,36 @@ class PlayerController extends StateNotifier<PlayerState>
 
     _handlePlaybackError(
       TimeoutException('网络音频持续缓冲，自动切换备用音源', _stallRecoveryDelay),
+      keepTrack: true,
     );
+  }
+
+  /// Network trouble is no reason to replace this source: the stream reconnects
+  /// by itself and keeps what it has downloaded, so wait for it to recover.
+  Future<void> _waitOutNetworkStall(String trackId) async {
+    _networkStallElapsed += _stallRecoveryDelay;
+    if (_networkStallElapsed < _networkStallPauseAfter) {
+      _armStallRecovery(trackId);
+      return;
+    }
+    _networkStallElapsed = Duration.zero;
+    unawaited(
+      AppLogger.write(
+        'player-control',
+        'pause_request source=network_stall_limit',
+      ),
+    );
+    await _audioHandler.pause();
+    if (!mounted) return;
+    _persistPositionCheckpoint();
+    // The network can return while pausing, and that event has already passed.
+    if (!_audioHandler.hasNetworkTrouble) {
+      await _audioHandler.play();
+      return;
+    }
+    // Playback resumed by the user clears this through the state stream.
+    _resumeWhenNetworkUsable = true;
+    state = state.copyWith(playing: false, error: '网络长时间不可用，已暂停，恢复后将自动继续播放');
   }
 
   void _recordPlaybackProgress(Duration position) {
@@ -892,7 +1102,9 @@ class PlayerController extends StateNotifier<PlayerState>
     // A resolved URL or a ready state alone does not prove that audio played.
     // Reset only after playback actually advances, including local songs.
     if (progress >= _stallProgressResetThreshold) {
-      _consecutiveSourceFailureSkips = 0;
+      _resetFailureBudget();
+      _expiredUrlRefreshes = 0;
+      _networkStallElapsed = Duration.zero;
     }
     if (track.isLocal) return;
     if (progress >= _stallProgressResetThreshold || progress.isNegative) {
@@ -909,6 +1121,7 @@ class PlayerController extends StateNotifier<PlayerState>
   void _resetStallRecovery({Duration position = Duration.zero}) {
     _cancelStallRecoveryTimer();
     _softStallRecoveryAttempts = 0;
+    _networkStallElapsed = Duration.zero;
     _stallProgressAnchor = position;
   }
 
@@ -924,7 +1137,7 @@ class PlayerController extends StateNotifier<PlayerState>
   }
 
   Future<void> playFromHistory(DownloadHistoryEntry entry) async {
-    _consecutiveSourceFailureSkips = 0;
+    _resetFailureBudget();
     _pendingRestoredSession = null;
     _setQueueForEntry(entry);
     await _playLocal(
@@ -955,7 +1168,7 @@ class PlayerController extends StateNotifier<PlayerState>
       state = state.copyWith(error: '歌曲不可播放');
       return Future<void>.value();
     }
-    _consecutiveSourceFailureSkips = 0;
+    _resetFailureBudget();
     _pendingRestoredSession = null;
     var index = _queue.indexWhere((item) => _sameEntry(item, entry));
     if (index < 0) {
@@ -1003,7 +1216,7 @@ class PlayerController extends StateNotifier<PlayerState>
     List<DownloadHistoryEntry> queue, {
     String? playlistId,
   }) async {
-    _consecutiveSourceFailureSkips = 0;
+    _resetFailureBudget();
     _pendingRestoredSession = null;
     _queuePlaylistId = playlistId;
     _queue = _playableQueue(queue);
@@ -1021,7 +1234,7 @@ class PlayerController extends StateNotifier<PlayerState>
   }
 
   Future<void> playFromFile(String path) async {
-    _consecutiveSourceFailureSkips = 0;
+    _resetFailureBudget();
     _pendingRestoredSession = null;
     _clearQueue();
     await _playLocal(PlayerTrack.fromFile(path));
@@ -1060,7 +1273,7 @@ class PlayerController extends StateNotifier<PlayerState>
     if (state.loading || _transportSuppressionToken != null) {
       return Future<void>.value();
     }
-    _consecutiveSourceFailureSkips = 0;
+    _resetFailureBudget();
     final previousIndex = _previousQueueIndex;
     if (previousIndex == null) {
       return state.track == null
@@ -1074,7 +1287,7 @@ class PlayerController extends StateNotifier<PlayerState>
     if (state.loading || _transportSuppressionToken != null) {
       return Future<void>.value();
     }
-    _consecutiveSourceFailureSkips = 0;
+    _resetFailureBudget();
     final nextIndex = _nextQueueIndex();
     if (nextIndex == null) {
       return state.track == null
@@ -1088,7 +1301,7 @@ class PlayerController extends StateNotifier<PlayerState>
     if (state.loading || _transportSuppressionToken != null) {
       return Future<void>.value();
     }
-    _consecutiveSourceFailureSkips = 0;
+    _resetFailureBudget();
     return _playQueueIndex(index, resetPlayOrder: true);
   }
 
@@ -1107,6 +1320,7 @@ class PlayerController extends StateNotifier<PlayerState>
 
     final token = Object();
     _invalidateGrooveShift();
+    _cancelNetworkResume();
     _requestToken = token;
     _transportSuppressionToken = token;
     _pausedBySleepTimer = false;
@@ -1253,6 +1467,7 @@ class PlayerController extends StateNotifier<PlayerState>
     // Leave an in-flight load intact, but revoke its permission to autoplay.
     _sleepTimerPauseGeneration++;
     _pausedBySleepTimer = true;
+    _cancelNetworkResume();
     _completionHandledForTrackId = state.track?.id;
     _resetStallRecovery(position: state.position);
     await _audioHandler.pause();
@@ -1268,6 +1483,8 @@ class PlayerController extends StateNotifier<PlayerState>
       return;
     }
     _resetStallRecovery(position: state.position);
+    _networkRetryElapsed = null;
+    _cancelNetworkResume();
     final pendingRestore = _pendingRestoredSession;
     if (pendingRestore != null &&
         _audioHandler.processingState == BassProcessingState.idle) {
@@ -1397,7 +1614,7 @@ class PlayerController extends StateNotifier<PlayerState>
     if (_pausedBySleepTimer) return;
     final trackId = state.track?.id;
     if (trackId == null || _completionHandledForTrackId == trackId) return;
-    _consecutiveSourceFailureSkips = 0;
+    _resetFailureBudget();
     _completionHandledForTrackId = trackId;
     if (state.playbackMode == PlayerPlaybackMode.repeatOne) {
       unawaited(_restartCurrentTrack());
@@ -2124,7 +2341,7 @@ class PlayerController extends StateNotifier<PlayerState>
         _transportSuppressionToken != null) {
       return;
     }
-    _consecutiveSourceFailureSkips = 0;
+    _resetFailureBudget();
     await _restartCurrentTrack();
   }
 
@@ -2154,6 +2371,7 @@ class PlayerController extends StateNotifier<PlayerState>
     _persistPositionCheckpoint();
     _positionCheckpointTimer?.cancel();
     _stallRecoveryTimer?.cancel();
+    _networkRetryTimer?.cancel();
     _audioHandler.unbindTransportCallbacks(this);
     unawaited(_audioHandler.cancelGrooveShift());
     for (final subscription in _subscriptions) {

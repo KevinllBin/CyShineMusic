@@ -1,6 +1,8 @@
+import 'settings_sheet.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/services/storage_browser_service.dart';
+import '../../../core/ui/widgets/app_navigation_button.dart';
 import '../../../theme/app_motion.dart';
 
 Future<String?> showStorageFolderPickerSheet(
@@ -10,14 +12,13 @@ Future<String?> showStorageFolderPickerSheet(
   Set<String>? fileExtensions,
   StorageBrowserService service = const StorageBrowserService(),
 }) {
-  return showModalBottomSheet<String>(
+  return showSettingsSheet<String>(
     context: context,
     useRootNavigator: true,
-    isScrollControlled: true,
-    useSafeArea: true,
+
     showDragHandle: false,
     backgroundColor: Colors.transparent,
-    barrierColor: Theme.of(context).colorScheme.scrim.withValues(alpha: 0.42),
+
     builder: (context) => StorageFolderPickerSheet(
       title: title,
       initialPath: initialPath,
@@ -132,7 +133,7 @@ class _StorageFolderPickerSheetState extends State<StorageFolderPickerSheet> {
       child: Align(
         alignment: Alignment.bottomCenter,
         child: FractionallySizedBox(
-          heightFactor: 0.88,
+          heightFactor: 1,
           child: Material(
             color: scheme.surface,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
@@ -152,17 +153,15 @@ class _StorageFolderPickerSheetState extends State<StorageFolderPickerSheet> {
                   padding: const EdgeInsets.fromLTRB(18, 14, 12, 8),
                   child: Row(
                     children: [
-                      IconButton(
-                        tooltip: currentPath == null ? '关闭' : '返回上一级',
-                        onPressed: currentPath == null && _history.isEmpty
-                            ? () => Navigator.of(context).pop()
-                            : _back,
-                        icon: Icon(
-                          currentPath == null && _history.isEmpty
-                              ? Icons.close_rounded
-                              : Icons.arrow_back_rounded,
+                      if (currentPath == null && _history.isEmpty)
+                        AppNavigationButton.close(
+                          onPressed: () => Navigator.of(context).pop(),
+                        )
+                      else
+                        AppNavigationButton.back(
+                          tooltip: '返回上一级',
+                          onPressed: _back,
                         ),
-                      ),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Column(

@@ -82,6 +82,7 @@ class _DiscoveryContentState extends ConsumerState<DiscoveryContent> {
         // 上方的官方排行榜不随之卸载重建。
         return _DiscoveryList(
           source: source,
+          categoryId: categoryId,
           featured: ref.watch(featuredPlaylistsProvider(source)),
           onRefresh: () async {
             ref.invalidate(featuredPlaylistsProvider(source));
@@ -139,6 +140,7 @@ class _DiscoveryContentState extends ConsumerState<DiscoveryContent> {
 class _DiscoveryList extends StatefulWidget {
   const _DiscoveryList({
     required this.source,
+    required this.categoryId,
     required this.featured,
     required this.onRefresh,
     required this.onRetry,
@@ -146,6 +148,7 @@ class _DiscoveryList extends StatefulWidget {
   });
 
   final MusicSource source;
+  final String categoryId;
 
   /// 当前分类的首页数据；loading / error 只影响歌单区块。
   final AsyncValue<List<PlaylistSummary>> featured;
@@ -190,6 +193,7 @@ class _DiscoveryListState extends State<_DiscoveryList> {
         ? null
         : oldWidget.featured.asData?.value;
     if (oldWidget.source != widget.source ||
+        oldWidget.categoryId != widget.categoryId ||
         !identical(oldItems, _loadedItems)) {
       _reset(_loadedItems);
       _scheduleFillViewport();
@@ -255,96 +259,141 @@ class _DiscoveryListState extends State<_DiscoveryList> {
   }
 
   /// 「精选歌单」区块：加载 / 错误 / 空 / 网格。只有这一块随分类切换变化。
-  List<Widget> _buildFeaturedSection() {
+  /// 网格是懒加载的 sliver；加载、错误、空态放在常驻的切换器里淡入淡出。
+  List<Widget> _buildFeaturedSlivers(double maxWidth) {
     final loaded = _loadedItems;
+    Widget status;
+    Key key;
     if (loaded == null) {
-      return [
-        widget.featured.hasError && !widget.featured.isLoading
-            ? DiscoverySectionError(
-                message: discoveryFriendlyError(widget.featured.error!),
-                onRetry: widget.onRetry,
-              )
-            : const DiscoverySectionLoading(),
-      ];
+      key = ValueKey(
+        widget.featured.hasError ? 'featured-error' : 'featured-loading',
+      );
+      status = widget.featured.hasError && !widget.featured.isLoading
+          ? DiscoverySectionError(
+              message: discoveryFriendlyError(widget.featured.error!),
+              onRetry: widget.onRetry,
+            )
+          : const DiscoverySectionLoading();
+    } else if (_items.isEmpty) {
+      key = const ValueKey('featured-empty');
+      status = const DiscoverySectionEmpty();
+    } else {
+      key = ValueKey('featured-grid-${widget.categoryId}');
+      status = const SizedBox.shrink();
     }
-    if (_items.isEmpty) return const [DiscoverySectionEmpty()];
     return [
-      Center(
-        child: ConstrainedBox(
-          constraints: CarDisplayLayout.contentConstraints(
-            context,
-            maxWidth: 960,
+      SliverToBoxAdapter(
+        key: const ValueKey('featured-status'),
+        child: AnimatedSwitcher(
+          duration: AppMotion.medium,
+          switchInCurve: AppMotion.emphasizedDecelerate,
+          switchOutCurve: AppMotion.emphasizedAccelerate,
+          // 只按当前内容占位：淡出的旧状态叠在网格上，不把卡片往下推。
+          layoutBuilder: (current, previous) => Stack(
+            clipBehavior: Clip.none,
+            children: [
+              for (final child in previous)
+                Positioned(top: 0, left: 0, right: 0, child: child),
+              ?current,
+            ],
           ),
-          child: MasonryPlaylistGrid(items: _items),
-        ),
-      ),
-      if (_loadingMore)
-        const Padding(
-          padding: EdgeInsets.only(top: 18),
-          child: Center(child: CircularProgressIndicator()),
-        )
-      else if (_loadMoreError != null)
-        Padding(
-          padding: const EdgeInsets.only(top: 14),
-          child: Center(
-            child: IconButton.filledTonal(
-              tooltip: '重新加载',
-              onPressed: _loadMore,
-              icon: const Icon(Icons.refresh_rounded),
+          transitionBuilder: (child, animation) => FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: animation.drive(
+                Tween<Offset>(begin: const Offset(0, 0.025), end: Offset.zero),
+              ),
+              child: child,
             ),
           ),
+          child: KeyedSubtree(key: key, child: status),
         ),
+      ),
+      if (loaded != null && _items.isNotEmpty) ...[
+        SliverMasonryPlaylistGrid(
+          key: ValueKey('featured-grid-${widget.categoryId}'),
+          items: _items,
+          maxWidth: maxWidth,
+        ),
+        if (_loadingMore)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.only(top: 18),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          )
+        else if (_loadMoreError != null)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: Center(
+                child: IconButton.filledTonal(
+                  tooltip: '重新加载',
+                  onPressed: _loadMore,
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+              ),
+            ),
+          ),
+      ],
     ];
   }
 
   @override
   Widget build(BuildContext context) {
+    final constraints = CarDisplayLayout.contentConstraints(
+      context,
+      maxWidth: 960,
+    );
     return AppRefreshIndicator(
       onRefresh: widget.onRefresh,
-      child: ListView(
+      child: CustomScrollView(
         key: PageStorageKey('discovery-${widget.source.code}-scroll'),
         controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(
           parent: BouncingScrollPhysics(),
         ),
-        padding: EdgeInsets.fromLTRB(
-          12,
-          2,
-          12,
-          ShellBottomArea.contentPadding(context, 156),
-        ),
-        children: [
-          Center(
-            child: ConstrainedBox(
-              constraints: CarDisplayLayout.contentConstraints(
-                context,
-                maxWidth: 960,
-              ),
-              child: LeaderboardSpotlight(source: widget.source),
+        slivers: [
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(
+              12,
+              2,
+              12,
+              ShellBottomArea.contentPadding(context, 156),
             ),
-          ),
-          const SizedBox(height: 20),
-          Center(
-            child: ConstrainedBox(
-              constraints: CarDisplayLayout.contentConstraints(
-                context,
-                maxWidth: 960,
-              ),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(2, 0, 2, 10),
-                  child: Text(
-                    '精选歌单',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
+            sliver: SliverMainAxisGroup(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: constraints,
+                      child: LeaderboardSpotlight(source: widget.source),
                     ),
                   ),
                 ),
-              ),
+                const SliverToBoxAdapter(child: SizedBox(height: 20)),
+                SliverToBoxAdapter(
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: constraints,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(2, 0, 2, 10),
+                          child: Text(
+                            '精选歌单',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                ..._buildFeaturedSlivers(constraints.maxWidth),
+              ],
             ),
           ),
-          ..._buildFeaturedSection(),
         ],
       ),
     );

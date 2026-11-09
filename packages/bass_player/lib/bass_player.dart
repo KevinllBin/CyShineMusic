@@ -186,8 +186,12 @@ class BassPlayer {
       StreamController<Duration?>.broadcast(sync: true);
   final StreamController<BassPlayerException> _errorController =
       StreamController<BassPlayerException>.broadcast(sync: true);
+  final StreamController<bool> _networkController =
+      StreamController<bool>.broadcast(sync: true);
 
   BassPlaybackSnapshot _snapshot = const BassPlaybackSnapshot.idle();
+  bool? _networkAvailable;
+  String? _networkError;
   Duration _anchorPosition = Duration.zero;
   Duration _anchorElapsed = Duration.zero;
   StreamSubscription<Object?>? _eventSubscription;
@@ -242,7 +246,19 @@ class BassPlayer {
   Stream<Duration> get positionStream => _positionController.stream;
   Stream<Duration?> get durationStream => _durationController.stream;
   Stream<BassPlayerException> get errorStream => _errorController.stream;
+
+  /// Emits whenever [networkUsable] flips.
+  Stream<bool> get networkUsableStream => _networkController.stream;
   BassPlaybackSnapshot get snapshot => _snapshot;
+
+  /// False when Android reports no default network; null until it is known.
+  bool? get networkAvailable => _networkAvailable;
+
+  /// Why the active remote stream is reconnecting; null while its data flows.
+  String? get networkError => _networkError;
+
+  /// Whether nothing currently indicates a network problem.
+  bool get networkUsable => _networkAvailable != false && _networkError == null;
   Duration get position => _interpolatedPosition();
   Duration? get duration => _snapshot.duration;
   Duration get bufferedPosition => _snapshot.bufferedPosition;
@@ -402,6 +418,7 @@ class BassPlayer {
     await _positionController.close();
     await _durationController.close();
     await _errorController.close();
+    await _networkController.close();
     await _grooveShiftController.close();
     await _diagnosticController.close();
   }
@@ -458,6 +475,13 @@ class BassPlayer {
       }
       return;
     }
+    if (map['event'] == 'network') {
+      _updateNetwork(
+        available: map['available'] as bool?,
+        error: _networkError,
+      );
+      return;
+    }
     _updateFromMap(map);
     if (map['event'] == 'groove-shift') _grooveShiftController.add(map);
     if (map['event'] == 'error') {
@@ -479,11 +503,22 @@ class BassPlayer {
     _errorController.add(exception);
   }
 
+  void _updateNetwork({required bool? available, required String? error}) {
+    final wasUsable = networkUsable;
+    _networkAvailable = available ?? _networkAvailable;
+    _networkError = error;
+    if (wasUsable != networkUsable) _networkController.add(networkUsable);
+  }
+
   void _updateFromMap(
     Map<Object?, Object?> map, {
     bool notifyPlayback = false,
   }) {
     if (_disposed || !map.containsKey('processingState')) return;
+    _updateNetwork(
+      available: map['networkAvailable'] as bool?,
+      error: map['networkError']?.toString(),
+    );
     final processingState = _processingState(
       map['processingState']?.toString(),
     );

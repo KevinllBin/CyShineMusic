@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:prism_ui/prism_ui.dart' as prism;
+import 'package:prism_ui/icons/prism_glyphs.dart';
+import 'package:prism_ui/icons/icons.dart' as prism_glyph;
 
-import '../../../core/ui/widgets/morphing_menu_button.dart';
 import '../../downloads/download_progress.dart';
+import '../../../core/ui/music_action_glyphs.dart';
 
 /// The action sets used by local songs, saved playlists and online results.
 class SongActionsMenu extends StatelessWidget {
-  const SongActionsMenu._({super.key, required this.actions});
+  const SongActionsMenu._({super.key, required this.items});
 
   factory SongActionsMenu.local({
     Key? key,
@@ -14,11 +17,12 @@ class SongActionsMenu extends StatelessWidget {
     required VoidCallback onAddNext,
   }) => SongActionsMenu._(
     key: key,
-    actions: [
-      MorphingMenuAction(
+    items: [
+      prism.PopupMenuItem(
         label: '删除',
-        leading: const Icon(Icons.delete_outline_rounded),
-        onSelected: onDelete,
+        glyph: MusicActionGlyphs.trash,
+        executeImmediately: true,
+        onPressed: onDelete,
         danger: true,
       ),
       _addToPlaylist(onAddToPlaylist),
@@ -35,11 +39,12 @@ class SongActionsMenu extends StatelessWidget {
     bool downloaded = false,
   }) => SongActionsMenu._(
     key: key,
-    actions: [
-      MorphingMenuAction(
+    items: [
+      prism.PopupMenuItem(
         label: '移出歌单',
-        leading: const Icon(Icons.playlist_remove_rounded),
-        onSelected: onRemove,
+        glyph: MusicActionGlyphs.playlistRemove,
+        executeImmediately: true,
+        onPressed: onRemove,
         danger: true,
       ),
       _addNext(onAddNext),
@@ -54,39 +59,41 @@ class SongActionsMenu extends StatelessWidget {
     DownloadTask? downloadTask,
   }) => SongActionsMenu._(
     key: key,
-    actions: [
+    items: [
       _download(onDownload, downloadTask),
       _addToPlaylist(onAddToPlaylist),
     ],
   );
 
-  final List<MorphingMenuAction> actions;
+  final List<prism.PopupMenuItem> items;
 
-  static MorphingMenuAction _addToPlaylist(VoidCallback? onSelected) =>
-      MorphingMenuAction(
+  static prism.PopupMenuItem _addToPlaylist(VoidCallback? onPressed) =>
+      prism.PopupMenuItem(
         label: '添加到歌单',
-        leading: const Icon(Icons.playlist_add_rounded),
-        onSelected: onSelected,
+        glyph: MusicActionGlyphs.playlistAdd,
+        executeImmediately: true,
+        onPressed: onPressed,
       );
 
-  static MorphingMenuAction _addNext(
-    VoidCallback? onSelected, {
+  static prism.PopupMenuItem _addNext(
+    VoidCallback? onPressed, {
     String label = '添加到下一首播放',
-  }) => MorphingMenuAction(
+  }) => prism.PopupMenuItem(
     label: label,
-    leading: const Icon(Icons.playlist_play_rounded),
-    onSelected: onSelected,
+    glyph: MusicActionGlyphs.playNext,
+    executeImmediately: true,
+    onPressed: onPressed,
   );
 
-  static MorphingMenuAction _download(
-    VoidCallback? onSelected,
+  static prism.PopupMenuItem _download(
+    VoidCallback? onPressed,
     DownloadTask? task, {
     bool downloaded = false,
   }) {
     final busy = task?.isBusy ?? false;
     final done = downloaded || task?.stage == DownloadStage.done;
     final fraction = task?.fraction;
-    return MorphingMenuAction(
+    return prism.PopupMenuItem(
       label: done
           ? '已下载'
           : busy
@@ -94,21 +101,20 @@ class SongActionsMenu extends StatelessWidget {
                 ? '正在下载'
                 : '正在下载 ${(fraction * 100).round()}%'
           : '下载',
-      leading: busy
-          ? SizedBox.square(
-              dimension: 20,
-              child: CircularProgressIndicator(value: fraction, strokeWidth: 2),
-            )
-          : Icon(done ? Icons.download_done_rounded : Icons.download_rounded),
-      onSelected: busy || done ? null : onSelected,
+      glyph: done ? MusicActionGlyphs.downloaded : MusicActionGlyphs.download,
+      executeImmediately: true,
+      onPressed: busy || done ? null : onPressed,
     );
   }
 
   @override
-  Widget build(BuildContext context) => MorphingMenuButton(
-    tooltip: '歌曲操作',
-    icon: Icons.more_horiz_rounded,
-    motionStyle: MorphingMenuMotionStyle.list,
-    actions: actions,
+  Widget build(BuildContext context) => prism.PopupAnchor(
+    key: key,
+    targetBuilder: (open) => prism.IconButton(
+      tooltip: '歌曲操作',
+      onPressed: open,
+      icon: const prism_glyph.GlyphIcon(AppGlyphs.more),
+    ),
+    popupBuilder: (_) => prism.PopupMenu(items: items),
   );
 }

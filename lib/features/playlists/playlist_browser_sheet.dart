@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:prism_ui/prism_ui.dart' as prism;
 
 import '../../core/ui/app_scrollbar.dart';
-import '../../theme/app_motion.dart';
+import '../../core/ui/widgets/app_navigation_button.dart';
 import 'playlist_models.dart';
 import 'playlist_store.dart';
 import 'widgets/playlist_artwork.dart';
@@ -13,55 +14,48 @@ Future<String?> showPlaylistBrowserSheet(
   BuildContext context, {
   PlaylistBrowserMode mode = PlaylistBrowserMode.browse,
 }) {
-  return showModalBottomSheet<String>(
-    context: context,
-    useRootNavigator: true,
-    useSafeArea: true,
-    isScrollControlled: true,
-    showDragHandle: false,
-    backgroundColor: Colors.transparent,
-    barrierColor: Theme.of(context).colorScheme.scrim.withValues(alpha: 0.42),
-    builder: (_) => _PlaylistBrowserSheet(mode: mode),
+  return prism.showSnapSheet<String>(
+    Navigator.of(context, rootNavigator: true).context,
+    builder: (_, controller) =>
+        _PlaylistBrowserSheet(mode: mode, controller: controller),
   );
 }
 
-class _PlaylistBrowserSheet extends ConsumerWidget {
-  const _PlaylistBrowserSheet({required this.mode});
+class _PlaylistBrowserSheet extends ConsumerStatefulWidget {
+  const _PlaylistBrowserSheet({required this.mode, required this.controller});
 
   final PlaylistBrowserMode mode;
+  final ScrollController? controller;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
+  ConsumerState<_PlaylistBrowserSheet> createState() =>
+      _PlaylistBrowserSheetState();
+}
+
+class _PlaylistBrowserSheetState extends ConsumerState<_PlaylistBrowserSheet> {
+  final _desktopController = ScrollController();
+
+  @override
+  void dispose() {
+    _desktopController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = prism.Theme.of(context).colorScheme;
     final playlists = ref.watch(localPlaylistsProvider);
-    final selecting = mode == PlaylistBrowserMode.addSongs;
-    final viewportHeight = MediaQuery.sizeOf(context).height;
-    final minChildSize = (176 / viewportHeight).clamp(0.44, 0.68);
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.72,
-      minChildSize: minChildSize,
-      maxChildSize: 0.92,
-      snap: true,
-      snapSizes: [minChildSize, 0.72, 0.92],
-      builder: (context, scrollController) {
-        return Material(
-          color: scheme.surfaceContainerHigh,
-          clipBehavior: Clip.antiAlias,
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
-          ),
+    final selecting = widget.mode == PlaylistBrowserMode.addSongs;
+    final scrollController = widget.controller ?? _desktopController;
+    return prism.SurfaceScope(
+      level: prism.SurfaceLevel.page,
+      child: prism.Surface(
+        color: prism.SurfaceLevel.page.colorOf(scheme),
+        child: SafeArea(
+          top: false,
           child: Column(
             children: [
-              const SizedBox(height: 10),
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: scheme.onSurfaceVariant.withValues(alpha: 0.34),
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
+              if (widget.controller != null) const prism.SheetDragHandle(),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
                 child: Row(
@@ -72,11 +66,9 @@ class _PlaylistBrowserSheet extends ConsumerWidget {
                         children: [
                           Text(
                             selecting ? '添加歌曲到' : '我的歌单',
-                            style: TextStyle(
-                              color: scheme.onSurface,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w600,
-                              height: 1.1,
+                            style: prism.AppTextStyle.title3.of(
+                              context,
+                              emphasized: true,
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -91,10 +83,8 @@ class _PlaylistBrowserSheet extends ConsumerWidget {
                         ],
                       ),
                     ),
-                    IconButton(
-                      tooltip: '关闭',
+                    AppNavigationButton.close(
                       onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close_rounded),
                     ),
                   ],
                 ),
@@ -106,10 +96,7 @@ class _PlaylistBrowserSheet extends ConsumerWidget {
                     onTap: () => Navigator.of(context).pop('/playlists'),
                   ),
                 ),
-              Divider(
-                height: 1,
-                color: scheme.outlineVariant.withValues(alpha: 0.56),
-              ),
+              const prism.Divider(height: 1),
               Expanded(
                 child: AppScrollbar(
                   controller: scrollController,
@@ -118,14 +105,11 @@ class _PlaylistBrowserSheet extends ConsumerWidget {
                           controller: scrollController,
                           selecting: selecting,
                         )
-                      : ListView.separated(
+                      : prism.PrismListView(
                           controller: scrollController,
-                          physics: const BouncingScrollPhysics(
-                            parent: AlwaysScrollableScrollPhysics(),
-                          ),
                           padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
                           itemCount: playlists.length,
-                          separatorBuilder: (_, _) => const SizedBox(height: 6),
+                          gap: 6,
                           itemBuilder: (context, index) {
                             final playlist = playlists[index];
                             return _PlaylistSheetTile(
@@ -141,8 +125,8 @@ class _PlaylistBrowserSheet extends ConsumerWidget {
               ),
             ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
@@ -154,71 +138,37 @@ class _FixedManagementTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.primaryContainer,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 68),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            child: Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: scheme.primary,
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(
-                    Icons.library_music_rounded,
-                    color: scheme.onPrimary,
-                    size: 23,
-                  ),
-                ),
-                const SizedBox(width: 13),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '歌单管理',
-                        style: TextStyle(
-                          color: scheme.onPrimaryContainer,
-                          fontSize: 15.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        '新建、导入、重命名与整理歌单',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: scheme.onPrimaryContainer.withValues(
-                            alpha: 0.72,
-                          ),
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: scheme.onPrimaryContainer,
-                ),
-              ],
-            ),
+    final scheme = prism.Theme.of(context).colorScheme;
+    return prism.Card(
+      onPressed: onTap,
+      radius: 20,
+      child: prism.ListRow(
+        minHeight: 72,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        leading: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: scheme.primary,
+            borderRadius: BorderRadius.circular(15),
+          ),
+          alignment: Alignment.center,
+          child: Icon(
+            Icons.library_music_rounded,
+            color: scheme.onPrimary,
+            size: 23,
           ),
         ),
+        title: const Text(
+          '歌单管理',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: const Text(
+          '新建、导入、重命名与整理歌单',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: const Icon(Icons.chevron_right_rounded),
       ),
     );
   }
@@ -237,50 +187,38 @@ class _PlaylistSheetTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return AnimatedContainer(
-      duration: AppMotion.short,
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.22),
-        ),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        clipBehavior: Clip.antiAlias,
-        borderRadius: BorderRadius.circular(18),
-        child: ListTile(
-          onTap: onTap,
-          minTileHeight: 64,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-          leading: PlaylistCover(
-            playlist: playlist,
-            size: 44,
-            radius: 14,
-            placeholder: Container(
-              width: 44,
-              height: 44,
-              color: scheme.secondaryContainer,
-              alignment: Alignment.center,
-              child: Icon(
-                Icons.queue_music_rounded,
-                color: scheme.onSecondaryContainer,
-                size: 23,
-              ),
+    final scheme = prism.Theme.of(context).colorScheme;
+    return prism.Card(
+      onPressed: onTap,
+      radius: 18,
+      child: prism.ListRow(
+        minHeight: 68,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        leading: PlaylistCover(
+          playlist: playlist,
+          size: 44,
+          radius: 14,
+          placeholder: Container(
+            width: 44,
+            height: 44,
+            color: scheme.secondaryContainer,
+            alignment: Alignment.center,
+            child: Icon(
+              Icons.queue_music_rounded,
+              color: scheme.onSecondaryContainer,
+              size: 23,
             ),
           ),
-          title: Text(
-            playlist.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-          subtitle: Text('${playlist.tracks.length} 首歌曲'),
-          trailing: Icon(
-            selecting ? Icons.add_rounded : Icons.chevron_right_rounded,
-          ),
+        ),
+        title: Text(
+          playlist.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text('${playlist.tracks.length} 首歌曲'),
+        trailing: Icon(
+          selecting ? Icons.add_rounded : Icons.chevron_right_rounded,
         ),
       ),
     );
@@ -295,7 +233,7 @@ class _EmptyPlaylists extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final scheme = prism.Theme.of(context).colorScheme;
     return ListView(
       controller: controller,
       physics: const AlwaysScrollableScrollPhysics(),

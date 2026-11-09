@@ -46,17 +46,10 @@ const playerAudioServiceConfig = AudioServiceConfig(
 /// Upper bound for a single [PlayerAudioHandler.load] attempt.
 const playerLoadTimeout = Duration(seconds: 40);
 
-/// Remote streams should fail over promptly when the URL never connects.
-/// Local lossless files keep [playerLoadTimeout] because opening and reading
-/// their headers can legitimately take longer on slower storage.
-const playerRemoteLoadTimeout = Duration(seconds: 2);
-
-Duration _loadTimeoutFor(Uri sourceUri) {
-  return switch (sourceUri.scheme.toLowerCase()) {
-    'http' || 'https' || 'ftp' => playerRemoteLoadTimeout,
-    _ => playerLoadTimeout,
-  };
-}
+/// Guards a hung native remote load. The native stream already fails over a
+/// URL that gets no response within 8 seconds, then allows 10 more for reading
+/// the file headers, which a weak network legitimately needs.
+const playerRemoteLoadTimeout = Duration(seconds: 30);
 
 class PlayerLoadTimeoutException implements Exception {
   const PlayerLoadTimeoutException(this.timeout);
@@ -103,9 +96,13 @@ Future<PlayerAudioHandler> initializePlayerAudioHandler({
 }
 
 class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
-  PlayerAudioHandler({bool allowMixWithOthers = false, BassPlayer? player})
-    : _player = player ?? BassPlayer(),
-      _allowMixWithOthers = allowMixWithOthers {
+  PlayerAudioHandler({
+    bool allowMixWithOthers = false,
+    BassPlayer? player,
+    Duration remoteLoadTimeout = playerRemoteLoadTimeout,
+  }) : _player = player ?? BassPlayer(),
+       _allowMixWithOthers = allowMixWithOthers,
+       _remoteLoadTimeout = remoteLoadTimeout {
     _playbackSubscription = _player.playbackEventStream.listen(_broadcastState);
     _durationSubscription = _player.durationStream.listen(_updateDuration);
     _errorSubscription = _player.errorStream.listen((error) {
@@ -125,6 +122,7 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   final BassPlayer _player;
+  final Duration _remoteLoadTimeout;
   // Notification and home-widget updates often request the same byte buffer.
   // Weak keys share that work without retaining artwork from old tracks.
   final _artworkFiles = Expando<Future<Uri>>('player-artwork-files');
@@ -141,6 +139,13 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   bool _resumeAfterInterruption = false;
   bool _ducked = false;
   int _pauseGeneration = 0;
+
+  Duration _loadTimeoutFor(Uri sourceUri) {
+    return switch (sourceUri.scheme.toLowerCase()) {
+      'http' || 'https' || 'ftp' => _remoteLoadTimeout,
+      _ => playerLoadTimeout,
+    };
+  }
 
   void _syncDiagnosticRecording() {
     unawaited(
@@ -201,7 +206,17 @@ class PlayerAudioHandler extends BaseAudioHandler with SeekHandler {
   Stream<BassPlaybackSnapshot> get playerStateStream =>
       _player.playbackEventStream;
   Stream<BassPlayerException> get errorStream => _player.errorStream;
+
+  /// Emits whenever [hasNetworkTrouble] flips.
+  Stream<bool> get networkUsableStream => _player.networkUsableStream;
   MediaItem? get currentMediaItem => _currentMediaItem;
+
+  /// The system has no network, so any remote request would fail.
+  bool get isOffline => _player.networkAvailable == false;
+
+  /// Offline, or the active stream cannot reach its server. Buffering is then
+  /// no fault of the source, and the stream resumes once the network returns.
+  bool get hasNetworkTrouble => !_player.networkUsable;
 
   Duration get position => _player.position;
   Duration? get duration => _player.duration;

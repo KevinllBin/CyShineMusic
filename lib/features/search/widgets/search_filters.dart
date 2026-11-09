@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:prism_ui/prism_ui.dart' as prism;
+import 'package:prism_ui/icons/icons.dart' as glyph;
 
 import '../../../core/models/enums.dart';
 import '../../../core/models/search_category.dart';
 import '../../../core/storage/settings_store.dart';
-import '../../../core/ui/radio_menu.dart';
 import '../../../theme/app_motion.dart';
 import '../search_controller.dart';
 
@@ -26,39 +27,45 @@ class SearchPlatformMenu extends ConsumerWidget {
       MusicSource.all,
       ...{...order, ...enabled}.where(enabled.contains),
     ];
-    return RadioMenuAnchor(
-      menuId: 'search-platform',
-      optionsBuilder: () => [
-        for (final source in sources)
-          RadioMenuOption(
-            id: source.code,
-            label: source == MusicSource.all ? '全平台' : source.label,
-            selected: source == selected,
-            onSelected: () =>
-                ref.read(searchControllerProvider.notifier).setSource(source),
-          ),
-      ],
-      anchorBuilder: (context, expanded, onTapDown, onTap) => GestureDetector(
-        onTapDown: onTapDown,
-        child: TextButton(
-          onPressed: onTap,
-          style: TextButton.styleFrom(
-            padding: const EdgeInsets.only(left: 12, right: 6),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(selected == MusicSource.all ? '全平台' : selected.label),
-              AnimatedRotation(
-                turns: expanded ? 0.5 : 0,
-                duration: MediaQuery.disableAnimationsOf(context)
-                    ? Duration.zero
-                    : AppMotion.short,
-                child: const Icon(Icons.expand_more_rounded, size: 20),
+    final liquidGlass = prism.LiquidGlassScope.of(context);
+    return prism.PopupAnchor(
+      key: const ValueKey('search-platform-menu-anchor'),
+      targetBuilder: (open) {
+        final selectedLabel = selected == MusicSource.all
+            ? '全平台'
+            : selected.label;
+        return Semantics(
+          button: true,
+          label: '搜索平台：$selectedLabel',
+          child: prism.TonalButtonTheme(
+            size: prism.TonalButtonSize.bar,
+            glass: liquidGlass,
+            child: prism.ElasticPress(
+              child: prism.IconButton(
+                tooltip: '平台：$selectedLabel',
+                onPressed: open,
+                style: prism.ButtonStyle.from(
+                  padding: EdgeInsets.zero,
+                  tapTargetSize: prism.TapTargetSize.shrinkWrap,
+                  pressLook: prism.PressLook.none,
+                ),
+                icon: const glyph.GlyphIcon(glyph.Glyphs.more),
               ),
-            ],
+            ),
           ),
-        ),
+        );
+      },
+      popupBuilder: (_) => prism.PopupMenu(
+        items: [
+          for (final source in sources)
+            prism.PopupMenuItem(
+              label: source == MusicSource.all ? '全平台' : source.label,
+              checked: source == selected,
+              executeImmediately: true,
+              onPressed: () =>
+                  ref.read(searchControllerProvider.notifier).setSource(source),
+            ),
+        ],
       ),
     );
   }

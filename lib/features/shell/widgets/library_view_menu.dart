@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:prism_ui/prism_ui.dart' as prism;
+import 'package:prism_ui/icons/prism_glyphs.dart' as prism_glyphs;
+import 'package:prism_ui/icons/icons.dart' as glyph;
 
-import '../../../core/ui/radio_menu.dart';
-import '../../../theme/app_motion.dart';
 import '../../playlists/playlist_store.dart';
 
 /// Header title that doubles as a library view switcher: tapping it opens a
@@ -42,62 +43,45 @@ class LibraryViewMenu extends ConsumerWidget {
         height: 1.05,
       ),
     );
-    return RadioMenuAnchor(
+    return prism.PopupAnchor(
       key: const ValueKey('library-view-menu-anchor'),
-      menuId: 'library-view-menu',
-      minimumWidth: 156,
-      maximumWidth: 240,
-      maximumHeight: 300,
-      optionsBuilder: () {
+      targetBuilder: (open) => Semantics(
+        button: true,
+        hint: '切换歌单视图',
+        child: prism.TextButton(
+          onPressed: open,
+          style: prism.ButtonStyle.from(
+            foregroundColor: scheme.onSurface,
+            padding: const EdgeInsets.fromLTRB(2, 4, 0, 4),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(child: titleText),
+              const glyph.GlyphIcon(prism_glyphs.AppGlyphs.chevronDown, size: 20),
+            ],
+          ),
+        ),
+      ),
+      popupBuilder: (_) {
         final playlists = ref.read(localPlaylistsProvider);
-        return [
-          RadioMenuOption(
-            id: 'local',
-            label: '本地歌曲',
-            selected: activePlaylistId == null,
-            onSelected: () => onSelected(null),
-          ),
-          for (final playlist in playlists)
-            RadioMenuOption(
-              id: 'playlist-${playlist.id}',
-              label: playlist.name,
-              selected: playlist.id == activePlaylistId,
-              onSelected: () => onSelected(playlist.id),
+        return prism.PopupMenu(
+          maxVisibleItems: 7,
+          items: [
+            prism.PopupMenuItem(
+              label: '本地歌曲',
+              checked: activePlaylistId == null,
+              executeImmediately: true,
+              onPressed: () => onSelected(null),
             ),
-        ];
-      },
-      anchorBuilder: (context, expanded, onTapDown, onTap) {
-        return Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(10),
-            onTapDown: onTapDown,
-            onTap: onTap,
-            child: Semantics(
-              button: true,
-              expanded: expanded,
-              hint: '切换歌单视图',
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(2, 4, 0, 4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Flexible(child: titleText),
-                    AnimatedRotation(
-                      turns: expanded ? 0.5 : 0,
-                      duration: AppMotion.short,
-                      curve: AppMotion.emphasized,
-                      child: Icon(
-                        Icons.arrow_drop_down_rounded,
-                        color: scheme.onSurfaceVariant,
-                        size: 26,
-                      ),
-                    ),
-                  ],
-                ),
+            for (final playlist in playlists)
+              prism.PopupMenuItem(
+                label: playlist.name,
+                checked: playlist.id == activePlaylistId,
+                executeImmediately: true,
+                onPressed: () => onSelected(playlist.id),
               ),
-            ),
-          ),
+          ],
         );
       },
     );

@@ -1,3 +1,4 @@
+import '../../settings/widgets/settings_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,14 +24,10 @@ Future<void> showPlayerSleepTimerSheet(
   final wasToolbarVisible = ref.read(shellToolbarVisibleProvider);
   toolbar.state = false;
   try {
-    await showModalBottomSheet<void>(
+    await showSettingsSheet<void>(
       context: context,
       useRootNavigator: true,
-      useSafeArea: true,
       showDragHandle: true,
-      isScrollControlled: true,
-      constraints: const BoxConstraints(maxWidth: 560),
-      barrierColor: Theme.of(context).colorScheme.scrim.withValues(alpha: 0.36),
       builder: (_) => const _PlayerSleepTimerSheet(),
     );
   } finally {
@@ -68,23 +65,15 @@ class _PlayerSleepTimerSheetState
 
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: SafeArea(
+      child: SettingsSheetLayout(
         key: const ValueKey('player-sleep-timer-sheet'),
-        top: false,
-        child: SingleChildScrollView(
+        title: '定时关闭音乐',
+        body: SingleChildScrollView(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                '定时关闭音乐',
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
               Text(
                 '到时暂停播放，手动暂停不会停止计时。',
                 style: theme.textTheme.bodyMedium?.copyWith(
@@ -161,7 +150,6 @@ class _PlayerSleepTimerSheetState
                   decoration: InputDecoration(
                     labelText: '时长',
                     suffixText: '分钟',
-                    helperText: '可设置 1–180 分钟',
                     errorText: _customMinutes.text.isNotEmpty && !valid
                         ? '请输入 1–180 之间的分钟数'
                         : null,
@@ -173,27 +161,27 @@ class _PlayerSleepTimerSheetState
                   },
                 ),
               ],
-              const SizedBox(height: 24),
-              FilledButton.icon(
-                key: const ValueKey('sleep-timer-start'),
-                onPressed: valid ? () => _start(minutes) : null,
-                icon: const Icon(Icons.timer_outlined),
-                label: Text(remaining == null ? '开启定时' : '重新计时'),
-              ),
-              if (remaining != null) ...[
-                const SizedBox(height: 8),
-                TextButton(
-                  key: const ValueKey('sleep-timer-cancel'),
-                  onPressed: () {
-                    ref.read(sleepTimerProvider.notifier).cancel();
-                    Navigator.of(context).pop();
-                  },
-                  child: const Text('取消定时'),
-                ),
-              ],
             ],
           ),
         ),
+        actions: [
+          FilledButton.icon(
+            key: const ValueKey('sleep-timer-start'),
+            onPressed: valid ? () => _start(minutes) : null,
+            icon: const Icon(Icons.timer_outlined),
+            label: Text(remaining == null ? '开启定时' : '重新计时'),
+          ),
+          if (remaining != null) ...[
+            TextButton(
+              key: const ValueKey('sleep-timer-cancel'),
+              onPressed: () {
+                ref.read(sleepTimerProvider.notifier).cancel();
+                Navigator.of(context).pop();
+              },
+              child: const Text('取消定时'),
+            ),
+          ],
+        ],
       ),
     );
   }

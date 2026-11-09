@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/ui/app_toast.dart';
 import '../../core/ui/car_display_layout.dart';
 import '../settings/widgets/settings_action.dart';
+import '../settings/widgets/settings_sheet.dart';
 import '../shell/shell_toolbar_visibility.dart';
 import '../shell/shell_bottom_area.dart';
 import '../shell/widgets/scrolling_page_header.dart';
@@ -50,9 +51,9 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
         const SliverToBoxAdapter(child: ScrollHeaderSpacer()),
         SliverPadding(
           padding: EdgeInsets.fromLTRB(
-            28,
-            2,
-            28,
+            16,
+            0,
+            16,
             ShellBottomArea.contentPadding(context, 126),
           ),
           sliver: SliverToBoxAdapter(
@@ -66,6 +67,7 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     SettingsCard(
+                      insetContent: true,
                       title: 'BASS 参数均衡器',
                       children: [
                         Row(
@@ -98,14 +100,6 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
                                         .textTheme
                                         .titleMedium
                                         ?.copyWith(fontWeight: FontWeight.w600),
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    '当前为测试阶段，仅作参考使用',
-                                    style: TextStyle(
-                                      color: scheme.onSurfaceVariant,
-                                      fontSize: 12,
-                                    ),
                                   ),
                                 ],
                               ),
@@ -152,6 +146,7 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
                     ),
                     const SizedBox(height: 20),
                     SettingsCard(
+                      insetContent: true,
                       title: '增益调节',
                       children: [
                         _GainSlider(
@@ -169,20 +164,12 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
                     ),
                     const SizedBox(height: 20),
                     SettingsCard(
+                      insetContent: true,
                       title: '滤波频段',
                       children: [
                         Row(
                           children: [
-                            Expanded(
-                              child: Text(
-                                '上下拖动调节增益，点击调节按钮设置频率、Q 值及开关',
-                                style: TextStyle(
-                                  color: scheme.onSurfaceVariant,
-                                  fontSize: 12,
-                                  height: 1.35,
-                                ),
-                              ),
-                            ),
+                            const Spacer(),
                             const SizedBox(width: 12),
                             FilledButton.tonalIcon(
                               onPressed:
@@ -274,6 +261,7 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
                     ),
                     const SizedBox(height: 20),
                     SettingsCard(
+                      insetContent: true,
                       title: '预设配置',
                       children: [
                         Wrap(
@@ -369,228 +357,163 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
         .toDouble();
     var q = initial.q.clamp(equalizerMinQ, equalizerMaxQ).toDouble();
 
-    return showModalBottomSheet<_BandEditorResult>(
+    return showSettingsSheet<_BandEditorResult>(
       context: context,
       useRootNavigator: true,
-      isScrollControlled: true,
-      useSafeArea: true,
+
       showDragHandle: true,
-      barrierColor: Theme.of(context).colorScheme.scrim.withValues(alpha: 0.36),
+
       builder: (sheetContext) => StatefulBuilder(
         builder: (context, setSheetState) {
           final scheme = Theme.of(context).colorScheme;
-          return SafeArea(
-            top: false,
-            child: Center(
-              heightFactor: 1,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 560),
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    24,
-                    8,
-                    24,
-                    24 + MediaQuery.viewInsetsOf(context).bottom,
+          return SettingsSheetLayout(
+            title: adding ? '新增频段' : '编辑频段',
+            body: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest.withValues(
+                        alpha: 0.45,
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: SwitchListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 2,
+                      ),
+                      title: const Text(
+                        '启用此频段',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+
+                      value: enabled,
+                      onChanged: (value) =>
+                          setSheetState(() => enabled = value),
+                    ),
                   ),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    adding ? '新增频段' : '编辑频段',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleLarge
-                                        ?.copyWith(fontWeight: FontWeight.w700),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '设置频段滤波器、参数与开关状态',
-                                    style: TextStyle(
-                                      color: scheme.onSurfaceVariant,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            IconButton(
-                              onPressed: () => Navigator.of(sheetContext).pop(),
-                              icon: const Icon(Icons.close_rounded),
-                              tooltip: '关闭',
-                            ),
-                          ],
+                  const SizedBox(height: 14),
+                  DropdownButtonFormField<EqualizerFilterType>(
+                    initialValue: filter,
+                    decoration: InputDecoration(
+                      labelText: '滤波器类型',
+                      filled: true,
+                      fillColor: scheme.surfaceContainerHighest.withValues(
+                        alpha: 0.35,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(color: scheme.outlineVariant),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(
+                          color: scheme.outlineVariant.withValues(alpha: 0.6),
                         ),
-                        const SizedBox(height: 16),
-                        Container(
-                          decoration: BoxDecoration(
-                            color: scheme.surfaceContainerHighest.withValues(
-                              alpha: 0.45,
-                            ),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: SwitchListTile(
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 2,
-                            ),
-                            title: const Text(
-                              '启用此频段',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 15,
-                              ),
-                            ),
-                            subtitle: Text(
-                              enabled ? '该频段正在参与音频滤波处理' : '该频段已停用旁通（不影响声音）',
-                              style: TextStyle(
-                                color: enabled
-                                    ? scheme.primary
-                                    : scheme.onSurfaceVariant,
-                                fontSize: 12,
-                              ),
-                            ),
-                            value: enabled,
-                            onChanged: (value) =>
-                                setSheetState(() => enabled = value),
-                          ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(
+                          color: scheme.primary,
+                          width: 1.5,
                         ),
-                        const SizedBox(height: 14),
-                        DropdownButtonFormField<EqualizerFilterType>(
-                          initialValue: filter,
-                          decoration: InputDecoration(
-                            labelText: '滤波器类型',
-                            filled: true,
-                            fillColor: scheme.surfaceContainerHighest
-                                .withValues(alpha: 0.35),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide(
-                                color: scheme.outlineVariant,
-                              ),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide(
-                                color: scheme.outlineVariant.withValues(
-                                  alpha: 0.6,
-                                ),
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide(
-                                color: scheme.primary,
-                                width: 1.5,
-                              ),
-                            ),
-                          ),
-                          items: [
-                            for (final type in EqualizerFilterType.values)
-                              DropdownMenuItem(
-                                value: type,
-                                child: Text(type.label),
-                              ),
-                          ],
-                          onChanged: (value) {
-                            if (value != null) {
-                              setSheetState(() => filter = value);
-                            }
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                        _EditorSlider(
-                          label: '中心频率',
-                          valueLabel: _frequencyLabel(frequency),
-                          value: math.log(frequency) / math.ln10,
-                          min: math.log(equalizerMinFrequencyHz) / math.ln10,
-                          max: math.log(equalizerMaxFrequencyHz) / math.ln10,
-                          onChanged: (value) => setSheetState(
-                            () => frequency = math.pow(10, value).toDouble(),
-                          ),
-                          onReset: () => setSheetState(() => frequency = 1000),
-                        ),
-                        if (filter.usesGain)
-                          _EditorSlider(
-                            label: '增益',
-                            valueLabel: _dbLabel(gain),
-                            value: gain,
-                            min: equalizerMinGainDb,
-                            max: equalizerMaxGainDb,
-                            onChanged: (value) =>
-                                setSheetState(() => gain = value),
-                            onReset: () => setSheetState(() => gain = 0),
-                          ),
-                        _EditorSlider(
-                          label: '品质因数 (Q)',
-                          valueLabel: q.toStringAsFixed(2),
-                          value:
-                              math.log(q / equalizerMinQ) /
-                              math.log(equalizerMaxQ / equalizerMinQ),
-                          min: 0,
-                          max: 1,
-                          onChanged: (value) => setSheetState(
-                            () => q =
-                                equalizerMinQ *
-                                math.pow(equalizerMaxQ / equalizerMinQ, value),
-                          ),
-                          onReset: () => setSheetState(() => q = 0.707),
-                        ),
-                        const SizedBox(height: 14),
-                        FilledButton(
-                          style: FilledButton.styleFrom(
-                            minimumSize: const Size.fromHeight(48),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          onPressed: () => Navigator.of(sheetContext).pop(
-                            _BandEditorSaveResult(
-                              initial.copyWith(
-                                enabled: enabled,
-                                filter: filter,
-                                frequencyHz: frequency,
-                                gainDb: gain,
-                                q: q,
-                              ),
-                            ),
-                          ),
-                          child: Text(adding ? '添加频段' : '保存设置'),
-                        ),
-                        if (!adding) ...[
-                          const SizedBox(height: 8),
-                          TextButton.icon(
-                            style: TextButton.styleFrom(
-                              foregroundColor: scheme.error,
-                              minimumSize: const Size.fromHeight(42),
-                            ),
-                            onPressed: () => Navigator.of(
-                              sheetContext,
-                            ).pop(const _BandEditorDeleteResult()),
-                            icon: const Icon(
-                              Icons.delete_outline_rounded,
-                              size: 19,
-                            ),
-                            label: const Text('删除此频段'),
-                          ),
-                        ],
-                      ],
+                      ),
+                    ),
+                    items: [
+                      for (final type in EqualizerFilterType.values)
+                        DropdownMenuItem(value: type, child: Text(type.label)),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setSheetState(() => filter = value);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  _EditorSlider(
+                    label: '中心频率',
+                    valueLabel: _frequencyLabel(frequency),
+                    value: math.log(frequency) / math.ln10,
+                    min: math.log(equalizerMinFrequencyHz) / math.ln10,
+                    max: math.log(equalizerMaxFrequencyHz) / math.ln10,
+                    onChanged: (value) => setSheetState(
+                      () => frequency = math.pow(10, value).toDouble(),
+                    ),
+                    onReset: () => setSheetState(() => frequency = 1000),
+                  ),
+                  if (filter.usesGain)
+                    _EditorSlider(
+                      label: '增益',
+                      valueLabel: _dbLabel(gain),
+                      value: gain,
+                      min: equalizerMinGainDb,
+                      max: equalizerMaxGainDb,
+                      onChanged: (value) => setSheetState(() => gain = value),
+                      onReset: () => setSheetState(() => gain = 0),
+                    ),
+                  _EditorSlider(
+                    label: '品质因数 (Q)',
+                    valueLabel: q.toStringAsFixed(2),
+                    value:
+                        math.log(q / equalizerMinQ) /
+                        math.log(equalizerMaxQ / equalizerMinQ),
+                    min: 0,
+                    max: 1,
+                    onChanged: (value) => setSheetState(
+                      () => q =
+                          equalizerMinQ *
+                          math.pow(equalizerMaxQ / equalizerMinQ, value),
+                    ),
+                    onReset: () => setSheetState(() => q = 0.707),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                onPressed: () => Navigator.of(sheetContext).pop(
+                  _BandEditorSaveResult(
+                    initial.copyWith(
+                      enabled: enabled,
+                      filter: filter,
+                      frequencyHz: frequency,
+                      gainDb: gain,
+                      q: q,
                     ),
                   ),
                 ),
+                child: Text(adding ? '添加频段' : '保存设置'),
               ),
-            ),
+              if (!adding) ...[
+                TextButton.icon(
+                  style: TextButton.styleFrom(
+                    foregroundColor: scheme.error,
+                    minimumSize: const Size.fromHeight(42),
+                  ),
+                  onPressed: () => Navigator.of(
+                    sheetContext,
+                  ).pop(const _BandEditorDeleteResult()),
+                  icon: const Icon(Icons.delete_outline_rounded, size: 19),
+                  label: const Text('删除此频段'),
+                ),
+              ],
+            ],
           );
         },
       ),
@@ -640,7 +563,7 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
 
   Future<void> _reset() async {
     final confirmed = await _withHiddenToolbar(
-      () => showDialog<bool>(
+      () => showSettingsDialog<bool>(
         context: context,
         useRootNavigator: true,
         builder: (dialogContext) => AlertDialog(

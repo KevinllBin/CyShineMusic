@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:toastification/toastification.dart';
 
 enum AppToastType { info, success, warning, error }
@@ -96,7 +97,12 @@ void _dismissToast(
   ToastificationItem item, {
   required bool showRemoveAnimation,
 }) {
-  toastification.dismiss(item, showRemoveAnimation: showRemoveAnimation);
+  // Route updates can dismiss a toast from didUpdateWidget/dispose. Its
+  // AnimatedList lives in another overlay, so it must not rebuild mid-frame.
+  if (SchedulerBinding.instance.schedulerPhase !=
+      SchedulerPhase.persistentCallbacks) {
+    toastification.dismiss(item, showRemoveAnimation: showRemoveAnimation);
+  }
   // Toastification inserts items after a frame. While the app is backgrounded,
   // a toast can expire before insertion, so also remove it after that frame.
   WidgetsBinding.instance.addPostFrameCallback((_) {

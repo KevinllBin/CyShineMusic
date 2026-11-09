@@ -75,6 +75,7 @@ class BottomToolbar extends ConsumerWidget {
               child: ToolbarCapsule(
                 scheme: scheme,
                 height: toolbarHeight,
+                padding: EdgeInsets.zero,
                 child: _ToolbarPager(
                   location: location,
                   routeLocation: routeLocation,
@@ -227,16 +228,20 @@ class _ToolbarPagerState extends State<_ToolbarPager>
 
   @override
   Widget build(BuildContext context) {
+    final totalWidth = widget.actionWidth * toolbarActionCount + 10;
     final pageSize = Size(
-      widget.actionWidth * toolbarActionCount,
+      totalWidth,
       widget.toolbarHeight,
     );
-    final navPage = _MainToolbar(
-      location: widget.location,
-      routeLocation: widget.routeLocation,
-      actionWidth: widget.actionWidth,
-      actionHeight: widget.actionHeight,
-      toolbarHeight: widget.toolbarHeight,
+    final navPage = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 5),
+      child: _MainToolbar(
+        location: widget.location,
+        routeLocation: widget.routeLocation,
+        actionWidth: widget.actionWidth,
+        actionHeight: widget.actionHeight,
+        toolbarHeight: widget.toolbarHeight,
+      ),
     );
     final miniPage = SizedBox.fromSize(
       size: pageSize,

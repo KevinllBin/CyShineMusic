@@ -1,5 +1,6 @@
 package com.cyshine.music
 
+import android.app.ActivityManager
 import android.content.Intent
 import android.graphics.Color
 import android.hardware.display.DisplayManager
@@ -7,6 +8,7 @@ import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Debug
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
@@ -285,11 +287,84 @@ class MainActivity : AudioServiceActivity() {
                                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && power.isDeviceIdleMode
                             ),
                             "notificationsEnabled" to NotificationManagerCompat.from(this).areNotificationsEnabled(),
+                            "recentProcessExits" to recentProcessExits(),
+                            "processExitHistorySupported" to (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R),
+                            "javaCrash" to AndroidCrashHandler.read(applicationContext),
+                            "memory" to memoryDiagnostics(),
                         ))
+                    }
+                    "clearCrashLog" -> {
+                        AndroidCrashHandler.clear(applicationContext)
+                        result.success(null)
                     }
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    /**
+     * Android keeps a short history of why an application's process exited.
+     * Reading it on the next launch lets the Dart logger distinguish a crash
+     * or ANR from a normal task stop, even when no Dart callback ran.
+     */
+    private fun recentProcessExits(): List<Map<String, Any?>> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return emptyList()
+        val manager = getSystemService(ACTIVITY_SERVICE) as? ActivityManager
+            ?: return emptyList()
+        return runCatching {
+            manager.getHistoricalProcessExitReasons(packageName, 0, 5).map { info ->
+                mapOf(
+                    "reason" to info.reason,
+                    "reasonName" to processExitReasonName(info.reason),
+                    "status" to info.status,
+                    "timestamp" to info.timestamp,
+                    "importance" to info.importance,
+                    "pid" to info.pid,
+                    "processName" to info.processName,
+                    "pssKb" to info.pss,
+                    "rssKb" to info.rss,
+                    "description" to info.description,
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun memoryDiagnostics(): Map<String, Any> {
+        val memory = ActivityManager.MemoryInfo()
+        val manager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+        manager.getMemoryInfo(memory)
+        val runtime = Runtime.getRuntime()
+        return mapOf(
+            "availableBytes" to memory.availMem,
+            "totalBytes" to memory.totalMem,
+            "lowMemory" to memory.lowMemory,
+            "javaHeapUsedBytes" to (runtime.totalMemory() - runtime.freeMemory()),
+            "javaHeapMaxBytes" to runtime.maxMemory(),
+            "nativeHeapAllocatedBytes" to Debug.getNativeHeapAllocatedSize(),
+        )
+    }
+
+    private fun processExitReasonName(reason: Int): String = when (reason) {
+        0 -> "UNKNOWN"
+        1 -> "EXIT_SELF"
+        2 -> "SIGNALED"
+        3 -> "LOW_MEMORY"
+        4 -> "CRASH"
+        5 -> "CRASH_NATIVE"
+        6 -> "ANR"
+        7 -> "INITIALIZATION_FAILURE"
+        8 -> "PERMISSION_CHANGE"
+        9 -> "EXCESSIVE_RESOURCE_USAGE"
+        10 -> "USER_REQUESTED"
+        11 -> "USER_STOPPED"
+        12 -> "DEPENDENCY_DIED"
+        13 -> "OTHER"
+        14 -> "FREEZER"
+        15 -> "PACKAGE_STATE_CHANGE"
+        16 -> "PACKAGE_UPDATED"
+        17 -> "MEMORY_LIMITER"
+        18 -> "ANOMALY"
+        else -> "UNKNOWN_$reason"
     }
 
     private fun handleIncomingAudioIntent(intent: Intent) {

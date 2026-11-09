@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:prism_ui/prism_ui.dart' show LiquidGlassHost;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:cy_shine_music/core/api/music_api.dart';
@@ -23,6 +24,7 @@ import 'package:cy_shine_music/core/storage/settings_store.dart';
 import 'package:cy_shine_music/core/ui/app_toast.dart';
 import 'package:cy_shine_music/core/ui/container_transform.dart';
 import 'package:cy_shine_music/core/ui/cover_placeholder.dart';
+import 'package:cy_shine_music/core/ui/widgets/prism_environment.dart';
 import 'package:cy_shine_music/features/discovery/discovery_content.dart';
 import 'package:cy_shine_music/features/discovery/discovery_controller.dart';
 import 'package:cy_shine_music/features/discovery/leaderboards_page.dart';
@@ -88,7 +90,8 @@ void main() {
   testWidgets('discovery masonry uses two stable columns on phones', (
     tester,
   ) async {
-    await _useViewport(tester, const Size(390, 844));
+    // 网格懒加载：视口要高到放下全部 9 张卡片。
+    await _useViewport(tester, const Size(390, 2400));
     final prefs = await _freshPreferences();
     final fake = _FakeDiscoveryApi();
     final container = ProviderContainer(
@@ -268,6 +271,198 @@ void main() {
       expect(find.byType(OnlinePlaylistDetailPage), findsNothing);
       expect(find.byKey(ContainerTransformTransition.surfaceKey), findsNothing);
       expect(tester.getRect(find.byKey(cardKey)), cardRect);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'a partially hidden card opens from its visible part and closes fully shown',
+    (tester) async {
+      await _useViewport(tester, const Size(390, 844));
+      final prefs = await _freshPreferences();
+      final fake = _FakeDiscoveryApi();
+      final audioHandler = PlayerAudioHandler();
+      final router = createAppRouter();
+      final container = ProviderContainer(
+        overrides: [
+          discoverySourcesProvider.overrideWithValue(_testDiscoverySources),
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          musicApiProvider.overrideWithValue(fake),
+          playerAudioHandlerProvider.overrideWithValue(audioHandler),
+        ],
+      );
+      addTearDown(() {
+        container.dispose();
+        router.dispose();
+        unawaited(audioHandler.disposeHandler());
+      });
+
+      await tester.pumpWidget(_routerApp(container, router));
+      for (var frame = 0; frame < 12; frame++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      const cardKey = ValueKey('discovery-card-kw:1');
+      final scrollable = find
+          .descendant(
+            of: find.byKey(const PageStorageKey('discovery-kw-scroll')),
+            matching: find.byType(Scrollable),
+          )
+          .first;
+      final viewport = tester.getRect(scrollable);
+      final position = tester.state<ScrollableState>(scrollable).position;
+      // 卡片顶部 40dp 滚到视口外。
+      position.jumpTo(
+        position.pixels +
+            tester.getRect(find.byKey(cardKey)).top -
+            viewport.top +
+            40,
+      );
+      await tester.pump();
+      final hiddenRect = tester.getRect(find.byKey(cardKey));
+      expect(hiddenRect.top, closeTo(viewport.top - 40, 0.5));
+      final hiddenPixels = position.pixels;
+
+      await tester.tapAt(hiddenRect.center);
+      for (var frame = 0; frame < 6; frame++) {
+        await tester.pump(const Duration(milliseconds: 1));
+        if (find.byType(OnlinePlaylistDetailPage).evaluate().isNotEmpty) break;
+      }
+      await tester.pump();
+
+      // 从卡片可见部分展开，被视口裁掉的顶边没有圆角。
+      final origin = tester
+          .widget<ContainerTransformTransition>(
+            find.byType(ContainerTransformTransition),
+          )
+          .origin!;
+      _expectRectCloseTo(origin.rect, hiddenRect);
+      _expectRectCloseTo(
+        origin.startRect,
+        Rect.fromLTRB(
+          hiddenRect.left,
+          viewport.top,
+          hiddenRect.right,
+          hiddenRect.bottom,
+        ),
+      );
+      expect(origin.startBorderRadius.topLeft, Radius.zero);
+      expect(origin.startBorderRadius.bottomLeft, isNot(Radius.zero));
+      _expectRectCloseTo(
+        tester.getRect(find.byKey(ContainerTransformTransition.surfaceKey)),
+        origin.startRect,
+        tolerance: 4,
+      );
+
+      // 详情盖住列表后，卡片被滚到完整可见（留出 8dp）。
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump();
+      expect(position.pixels, closeTo(hiddenPixels - 48, 0.5));
+
+      // 返回：收回到整张卡片上，封面不再被裁。
+      expect(await tester.binding.handlePopRoute(), isTrue);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 330));
+      final shownRect = tester.getRect(find.byKey(cardKey));
+      expect(shownRect.top, closeTo(viewport.top + 8, 0.5));
+      _expectRectCloseTo(
+        tester.getRect(find.byKey(ContainerTransformTransition.surfaceKey)),
+        shownRect,
+        tolerance: 12,
+      );
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.byType(OnlinePlaylistDetailPage), findsNothing);
+      expect(tester.getRect(find.byKey(cardKey)), shownRect);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'a scrolled detail collapses with the card cover and reopens at the top',
+    (tester) async {
+      await _useViewport(tester, const Size(390, 844));
+      final prefs = await _freshPreferences();
+      final fake = _FakeDiscoveryApi(detailTrackCount: 40);
+      final audioHandler = PlayerAudioHandler();
+      final router = createAppRouter();
+      final container = ProviderContainer(
+        overrides: [
+          discoverySourcesProvider.overrideWithValue(_testDiscoverySources),
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          musicApiProvider.overrideWithValue(fake),
+          playerAudioHandlerProvider.overrideWithValue(audioHandler),
+        ],
+      );
+      addTearDown(() {
+        container.dispose();
+        router.dispose();
+        unawaited(audioHandler.disposeHandler());
+      });
+
+      await tester.pumpWidget(_routerApp(container, router));
+      for (var frame = 0; frame < 12; frame++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      const cardKey = ValueKey('discovery-card-kw:1');
+      const shuttleKey = ValueKey('artwork-hero-shuttle');
+      final cardRect = tester.getRect(find.byKey(cardKey));
+      ScrollPosition detailPosition() => tester
+          .state<ScrollableState>(
+            find
+                .descendant(
+                  of: find.byType(OnlinePlaylistDetailPage),
+                  matching: find.byType(Scrollable),
+                )
+                .first,
+          )
+          .position;
+
+      Future<void> open() async {
+        await tester.tap(find.byKey(cardKey));
+        for (var frame = 0; frame < 6; frame++) {
+          await tester.pump(const Duration(milliseconds: 1));
+          if (find.byType(OnlinePlaylistDetailPage).evaluate().isNotEmpty) {
+            break;
+          }
+        }
+        await tester.pump();
+      }
+
+      await open();
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump();
+      detailPosition().jumpTo(600);
+      await tester.pump();
+      expect(detailPosition().pixels, 600);
+
+      // 头图已滚走：没有封面 Hero，改由卡片封面随容器收回。
+      expect(await tester.binding.handlePopRoute(), isTrue);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+      expect(find.byKey(shuttleKey), findsNothing);
+      expect(find.byKey(ContainerTransformTransition.coverKey), findsOneWidget);
+      final midRect = tester.getRect(
+        find.byKey(ContainerTransformTransition.surfaceKey),
+      );
+      expect(midRect.width, lessThan(390 - 8));
+      expect(midRect.width, greaterThan(cardRect.width + 8));
+      await tester.pump(const Duration(milliseconds: 200));
+      final coverRect = tester.getRect(
+        find.byKey(ContainerTransformTransition.coverKey),
+      );
+      expect(coverRect.width, closeTo(cardRect.width, 16));
+      expect(coverRect.top, closeTo(cardRect.top, 16));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.byType(OnlinePlaylistDetailPage), findsNothing);
+
+      // 再次从卡片打开：回到顶部，封面 Hero 照常飞到头图。
+      await open();
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(find.byKey(shuttleKey), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump();
+      expect(detailPosition().pixels, 0);
       expect(tester.takeException(), isNull);
     },
   );
@@ -504,10 +699,46 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('discovery cards wear static glass instead of live panes', (
+    tester,
+  ) async {
+    await _useViewport(tester, const Size(390, 844));
+    final prefs = await _freshPreferences();
+    final fake = _FakeDiscoveryApi();
+    final container = ProviderContainer(
+      overrides: [
+        discoverySourcesProvider.overrideWithValue(_testDiscoverySources),
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        musicApiProvider.overrideWithValue(fake),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      _appWithContainer(
+        container,
+        const PrismEnvironment(child: DiscoveryContent()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('discovery-card-kw:1')), findsOneWidget);
+
+    // 卡片铺在纯色背景上：滚动时不应有任何玻璃逐帧重拍背景。
+    final scrollable = tester.widget<CustomScrollView>(
+      find.byKey(const PageStorageKey('discovery-kw-scroll')),
+    );
+    final captures = LiquidGlassHost.debugCaptures;
+    scrollable.controller!.position.jumpTo(200);
+    await tester.pump();
+    expect(LiquidGlassHost.debugCaptures, greaterThan(captures));
+    expect(LiquidGlassHost.debugLastCapture!.panes, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('discovery masonry uses three columns on wide layouts', (
     tester,
   ) async {
-    await _useViewport(tester, const Size(900, 760));
+    await _useViewport(tester, const Size(900, 1800));
     final prefs = await _freshPreferences();
     final fake = _FakeDiscoveryApi();
     final container = ProviderContainer(
@@ -553,7 +784,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('discovery-card-kw:31')), findsNothing);
 
-    final scrollable = tester.widget<ListView>(
+    final scrollable = tester.widget<CustomScrollView>(
       find.byKey(const PageStorageKey('discovery-kw-scroll')),
     );
     final position = scrollable.controller!.position;
@@ -979,6 +1210,16 @@ void main() {
     final loadingSaveTop = tester.getTopLeft(saveButton).dy;
     final loadingHeadingTop = tester.getTopLeft(find.text('歌曲  10')).dy;
     final loadingDescriptionTop = tester.getTopLeft(descriptionSlot).dy;
+    // 数据到达时只换歌曲列表：头图与滚动视图原地保留，不整页重建。
+    final headerElement = tester.element(artworkHeader);
+    final scrollState = tester.state<ScrollableState>(
+      find
+          .descendant(
+            of: find.byType(OnlinePlaylistDetailPage),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
     expect(tester.getSize(artworkHeader).height, closeTo(844 * 0.4, 0.1));
     expect(
       tester.getBottomLeft(artworkHeader).dy,
@@ -997,6 +1238,18 @@ void main() {
     expect(tester.getTopLeft(find.text('歌曲  10')).dy, loadingHeadingTop);
     expect(tester.getTopLeft(descriptionSlot).dy, loadingDescriptionTop);
     expect(tester.getSize(descriptionSlot).height, 40);
+    expect(tester.element(artworkHeader), same(headerElement));
+    expect(
+      tester.state<ScrollableState>(
+        find
+            .descendant(
+              of: find.byType(OnlinePlaylistDetailPage),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      ),
+      same(scrollState),
+    );
     expect(
       tester.getBottomLeft(artworkHeader).dy,
       closeTo(tester.getTopLeft(detailInfo).dy, 0.1),

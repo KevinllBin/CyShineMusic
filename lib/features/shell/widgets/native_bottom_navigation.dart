@@ -2,7 +2,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:prism_ui/icons/glyph_icon.dart';
 
+import '../../../core/ui/music_action_glyphs.dart';
 import '../../../theme/app_motion.dart';
 import '../player_transition.dart';
 import '../shell_navigation.dart';
@@ -14,10 +16,7 @@ const double _playerVerticalPadding = 6;
 
 double miniPlayerHeight(BuildContext context) {
   final scaler = MediaQuery.textScalerOf(context);
-  return math.max(
-    toolbarHeightFor(context),
-    (scaler.scale(13) + scaler.scale(10.5)) * 1.2 + 9,
-  );
+  return math.max(46, (scaler.scale(13) + scaler.scale(10.5)) * 1.1 + 6);
 }
 
 /// Height of the floating player strip. Content scrolls underneath it, so
@@ -71,12 +70,7 @@ class NativeBottomNavigation extends ConsumerWidget {
               ),
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final width = math.min(
-                    constraints.maxWidth,
-                    toolbarMaxActionWidthFor(MediaQuery.sizeOf(context)) *
-                            toolbarActionCount +
-                        10,
-                  );
+                  final width = math.min(constraints.maxWidth, 300.0);
                   return Center(
                     child: FloatingPlayerBar(
                       routeLocation: routeLocation,
@@ -118,8 +112,8 @@ class NativeBottomNavigation extends ConsumerWidget {
                   label: '发现',
                 ),
                 NavigationDestination(
-                  icon: Icon(Icons.library_music_outlined),
-                  selectedIcon: Icon(Icons.library_music_rounded),
+                  icon: GlyphIcon(MusicActionGlyphs.musicLibrary),
+                  selectedIcon: GlyphIcon(MusicActionGlyphs.musicLibrary),
                   label: '歌曲',
                 ),
                 NavigationDestination(
@@ -168,4 +162,3 @@ class NativeBottomNavigation extends ConsumerWidget {
     );
   }
 }
-

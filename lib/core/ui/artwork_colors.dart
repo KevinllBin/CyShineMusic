@@ -106,7 +106,7 @@ Future<ArtworkColors?> _load(
         arguments = {'path': source.file.path};
         key = (source.file.path, stat.modified, stat.size);
       } else {
-        return _loadFlutter(provider, configuration);
+        return await _loadFlutter(provider, configuration);
       }
       // An older download can finish after a newer cover. Do not let it
       // replace the current cover's queued native job.

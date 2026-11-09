@@ -52,10 +52,16 @@ class MiniPlayerBar extends ConsumerWidget {
     final coverSlotSize = math.min(compact ? 36.0 : 44.0, height - 8);
     final coverSize = coverSlotSize * (square ? 0.82 : 1.0);
     final buttonSize = math.min(compact ? 36.0 : 40.0, height - 6);
+    // Keep the circular cover concentric with the capsule's rounded stadium end:
+    // with outer radius = height / 2, setting the leading margin to (height - coverSlotSize) / 2
+    // ensures the cover's center sits exactly at (height / 2, height / 2),
+    // resulting in a completely uniform margin along the entire semicircle.
+    final leadingMargin = (height - coverSlotSize) / 2;
+    final trailingMargin = (height - buttonSize) / 2;
 
     return Row(
       children: [
-        const SizedBox(width: 4),
+        SizedBox(width: leadingMargin),
         Expanded(
           child: Tooltip(
             message: '打开播放页',
@@ -126,7 +132,7 @@ class MiniPlayerBar extends ConsumerWidget {
           size: buttonSize,
           onPressed: canControl && vm.canNext ? controller.playNext : null,
         ),
-        const SizedBox(width: 4),
+        SizedBox(width: trailingMargin),
       ],
     );
   }

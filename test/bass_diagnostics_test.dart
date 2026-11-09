@@ -51,6 +51,37 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
+  test('network state follows native events and snapshots', () async {
+    await player.initialize();
+    final flips = <bool>[];
+    final subscription = player.networkUsableStream.listen(flips.add);
+    addTearDown(subscription.cancel);
+    expect(player.networkUsable, isTrue);
+    expect(player.networkAvailable, isNull);
+
+    await emit({...snapshot('load-1', 1, 0), 'networkAvailable': true});
+    expect(player.networkAvailable, isTrue);
+    expect(flips, isEmpty);
+
+    await emit({'event': 'network', 'available': false});
+    expect(player.networkAvailable, isFalse);
+    expect(player.networkUsable, isFalse);
+    expect(flips, [false]);
+
+    await emit({'event': 'network', 'available': true});
+    expect(flips, [false, true]);
+
+    await emit({...snapshot('load-1', 2, 0), 'networkError': 'timeout'});
+    expect(player.networkError, 'timeout');
+    expect(player.networkUsable, isFalse);
+    expect(flips, [false, true, false]);
+
+    await emit(snapshot('load-1', 3, 0));
+    expect(player.networkError, isNull);
+    expect(player.networkAvailable, isTrue);
+    expect(flips, [false, true, false, true]);
+  });
+
   test(
     'saved recording choices reach native code before initialization',
     () async {

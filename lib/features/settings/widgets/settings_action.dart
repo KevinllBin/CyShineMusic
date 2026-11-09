@@ -1,171 +1,161 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:go_router/go_router.dart';
+import 'package:prism_ui/prism_ui.dart' as prism;
+import 'package:prism_ui/icons/icons.dart' as glyph;
 
-import '../../../theme/app_motion.dart';
 import 'settings_style.dart';
+import '../../../core/ui/widgets/settings_route_page.dart';
 
 class SettingsCard extends StatelessWidget {
-  const SettingsCard({super.key, required this.title, required this.children});
+  const SettingsCard({
+    super.key,
+    this.title,
+    required this.children,
+    this.insetContent = false,
+  });
 
-  final String title;
+  final String? title;
+  final List<Widget> children;
+  final bool insetContent;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      if (title != null && title!.isNotEmpty) prism.ListHeader(title: title!),
+      SettingsGroup(
+        children: insetContent
+            ? [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: children,
+                  ),
+                ),
+              ]
+            : children.where((child) => child is! SizedBox).toList(),
+      ),
+    ],
+  );
+}
+
+/// The section owns its corners, including rows with separate action buttons
+/// and footers that do not paint a DecorationListItem background of their own.
+class SettingsGroup extends StatelessWidget {
+  const SettingsGroup({super.key, required this.children});
   final List<Widget> children;
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return AnimatedContainer(
-      duration: AppMotion.medium,
-      curve: AppMotion.emphasized,
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(32),
-        boxShadow: [
-          BoxShadow(
-            color: scheme.shadow.withValues(
-              alpha: scheme.brightness == Brightness.dark ? 0.32 : 0.14,
-            ),
-            blurRadius: 38,
-            offset: const Offset(0, 16),
-          ),
-          BoxShadow(
-            color: scheme.primary.withValues(
-              alpha: scheme.brightness == Brightness.dark ? 0.10 : 0.07,
-            ),
-            blurRadius: 22,
-            offset: const Offset(0, 6),
-          ),
-        ],
+  Widget build(BuildContext context) => ClipRSuperellipse(
+    borderRadius: prism.AppRadius.xl,
+    child: ColoredBox(
+      color: prism.SurfaceLevel.card.colorOf(
+        prism.Theme.of(context).colorScheme,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2),
-            child: Text(
-              title,
-              style: TextStyle(
-                color: scheme.outline,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 1.6,
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          ...children,
-        ],
-      ),
-    );
-  }
+      child: prism.generateGroup(children),
+    ),
+  );
 }
 
-class SettingsAction extends StatefulWidget {
+Widget _positionedRow(BuildContext context, Widget row) =>
+    prism.ItemPositionProvider.of(context) != null
+    ? row
+    : prism.ItemPositionProvider(
+        position: prism.ItemPosition.startAndEnd,
+        child: row,
+      );
+
+class SettingsAction extends StatelessWidget {
   const SettingsAction({
     super.key,
     required this.icon,
     required this.title,
-    required this.subtitle,
-    required this.onTap,
+    this.subtitle = '',
+    this.onTap,
+    this.destination,
+    this.value,
     this.trailing,
+    this.trailingWidget,
     this.interactionKey,
     this.onTapDown,
-  });
+    this.showIcon = true,
+  }) : assert(onTap != null || destination != null);
 
   final IconData icon;
   final String title;
   final String subtitle;
-  final VoidCallback onTap;
+  final String? value;
+  final VoidCallback? onTap;
+  final String? destination;
   final IconData? trailing;
+  final Widget? trailingWidget;
   final Key? interactionKey;
   final GestureTapDownCallback? onTapDown;
+  final bool showIcon;
 
-  @override
-  State<SettingsAction> createState() => _SettingsActionState();
-}
-
-class _SettingsActionState extends State<SettingsAction> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 1),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(20),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          key: widget.interactionKey,
-          onTap: widget.onTap,
-          onTapDown: widget.onTapDown,
-          borderRadius: BorderRadius.circular(20),
-          overlayColor: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.pressed)) {
-              return scheme.secondaryContainer.withValues(alpha: 0.30);
-            }
-            if (states.contains(WidgetState.hovered) ||
-                states.contains(WidgetState.focused)) {
-              return scheme.secondaryContainer.withValues(alpha: 0.22);
-            }
-            return null;
-          }),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 14),
-            child: Row(
-              children: [
-                SettingsSymbolBubble(icon: widget.icon),
-                const SizedBox(width: 18),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: scheme.onSurface,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w500,
-                          height: 1.16,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        widget.subtitle,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: scheme.outline,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          height: 1.2,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (widget.trailing != null) ...[
-                  const SizedBox(width: 8),
-                  if (widget.trailing!.fontFamily?.startsWith(
-                        'MaterialSymbols',
-                      ) ==
-                      true)
-                    VariedIcon.varied(
-                      widget.trailing!,
-                      size: 22,
-                      weight: 300,
-                      color: scheme.outline,
-                    )
-                  else
-                    Icon(widget.trailing!, size: 22, color: scheme.outline),
-                ],
-              ],
+    Widget? tail =
+        trailingWidget ??
+        (trailing == null
+            ? null
+            : trailing == Icons.chevron_right ||
+                  trailing == Icons.chevron_right_rounded ||
+                  trailing == Symbols.chevron_right
+            ? const glyph.GlyphIcon(glyph.Glyphs.chevronForward, size: 16)
+            : Icon(trailing, size: 18, color: scheme.onSurfaceVariant));
+    if (value case final value? when value.isNotEmpty) {
+      tail = Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 8,
+        children: [
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.sizeOf(context).width * 0.3,
+            ),
+            child: Tooltip(
+              message: value,
+              child: Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 14),
+              ),
             ),
           ),
-        ),
-      ),
+          ?tail,
+        ],
+      );
+    }
+    Widget row(VoidCallback? action) => prism.DecorationListItem(
+      key: interactionKey,
+      leading: showIcon ? SettingsSymbolBubble(icon: icon) : null,
+      title: Text(title, maxLines: 2),
+      horizontalTitleGap: 12,
+      trailing: tail,
+      onPressed: action,
     );
+    if (destination case final location?) {
+      final position =
+          prism.ItemPositionProvider.of(context)?.position ??
+          prism.ItemPosition.startAndEnd;
+      return prism.OpenContainer<void>(
+        transition: prism.OpenContainerTransition.zoom,
+        clipBehavior: Clip.none,
+        closedShape: prism.AppShape.of(prism.listItemRadiusOf(position)),
+        closedBuilder: (_, open) =>
+            prism.ItemPositionProvider(position: position, child: row(open)),
+        // The destination is supplied by router.dart, the owner of page imports.
+        onOpen: (createRoute) => context.push<void>(
+          location,
+          extra: SettingsContainerOrigin(createRoute),
+        ),
+      );
+    }
+    return _positionedRow(context, row(onTap));
   }
 }
 
@@ -174,7 +164,7 @@ class SettingsSwitchAction extends StatelessWidget {
     super.key,
     required this.icon,
     required this.title,
-    required this.subtitle,
+    this.subtitle = '',
     required this.value,
     required this.onChanged,
   });
@@ -186,69 +176,28 @@ class SettingsSwitchAction extends StatelessWidget {
   final ValueChanged<bool> onChanged;
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 1),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 14),
-        child: Row(
-          children: [
-            SettingsSymbolBubble(icon: icon),
-            const SizedBox(width: 18),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: scheme.onSurface,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                      height: 1.16,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    subtitle,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: scheme.outline,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      height: 1.2,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Switch(value: value, onChanged: onChanged),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => _positionedRow(
+    context,
+    prism.DecorationListItem(
+      leading: SettingsSymbolBubble(icon: icon),
+      title: Text(title, maxLines: 2),
+      horizontalTitleGap: 12,
+      onPressed: () => onChanged(!value),
+      trailing: prism.Switch(value: value, onChanged: onChanged),
+    ),
+  );
 }
 
 class DebugModeRow extends StatelessWidget {
   const DebugModeRow({super.key, required this.value, required this.onChanged});
-
   final bool value;
   final ValueChanged<bool> onChanged;
 
   @override
-  Widget build(BuildContext context) {
-    return SettingsSwitchAction(
-      icon: Icons.bug_report_outlined,
-      title: '调试模式',
-      subtitle: value ? '已开启，可进入日志控制台' : '开启后显示终端式实时日志',
-      value: value,
-      onChanged: onChanged,
-    );
-  }
+  Widget build(BuildContext context) => SettingsSwitchAction(
+    icon: Icons.bug_report_outlined,
+    title: '调试模式',
+    value: value,
+    onChanged: onChanged,
+  );
 }

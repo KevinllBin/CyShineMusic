@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:prism_ui/prism_ui.dart' as prism;
 import '../../../theme/app_motion.dart';
 import '../../downloads/download_progress.dart';
 import '../../songs/widgets/song_actions_menu.dart';
@@ -191,13 +192,11 @@ class PlaylistTrackTile extends ConsumerWidget {
                       child: batchMode
                           ? SizedBox.square(
                               key: const ValueKey('playlist-select-action'),
-                              dimension: 44,
+                              dimension: 48,
                               child: Center(
-                                child: Checkbox(
+                                child: prism.Checkbox(
                                   value: selected,
-                                  visualDensity: VisualDensity.compact,
-                                  materialTapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
+                                  isCircle: true,
                                   onChanged: selectionEnabled
                                       ? (_) => onToggleSelected()
                                       : null,

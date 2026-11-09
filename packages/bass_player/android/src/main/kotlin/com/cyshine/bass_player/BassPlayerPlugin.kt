@@ -1,6 +1,9 @@
 package com.cyshine.bass_player
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Handler
 import android.os.HandlerThread
@@ -18,6 +21,8 @@ import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
+import java.io.IOException
 import java.util.LinkedHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.ln
@@ -71,6 +76,18 @@ class BassPlayerPlugin :
     private var stream = 0
     private var sourceDescriptor: ParcelFileDescriptor? = null
     private var remoteSource = false
+    // Remote files stream through this cache unless the format needs BASS's
+    // own HTTP stream (remoteSource), eg. AAC decoded by Android codecs.
+    @Volatile private var httpSource: ProgressiveHttpSource? = null
+    @Volatile private var openingSource: ProgressiveHttpSource? = null
+    private var pendingSeekMs: Long? = null
+    private var pendingSeekPlay = false
+    private var pendingSeekOriginMs = 0L
+    private var startBufferBytes = ProgressiveHttpSource.DEFAULT_RESUME_BYTES
+    private var reportedNetworkError: String? = null
+    private var reportedSourceFailure = false
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    @Volatile private var networkAvailable: Boolean? = null
     private var playing = false
     private var completed = false
     private var processingState = STATE_IDLE
@@ -103,6 +120,7 @@ class BassPlayerPlugin :
                 tickerStarted = false
                 return
             }
+            completePendingSeekWhenBuffered()
             refreshPlaybackState()
             if (playing || processingState == STATE_BUFFERING || processingState == STATE_LOADING) {
                 emitSnapshot()
@@ -129,12 +147,15 @@ class BassPlayerPlugin :
         )
         methods.setMethodCallHandler(this)
         events.setStreamHandler(this)
+        engineHandler.post(::clearStreamCache)
+        registerNetworkCallback()
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         methods.setMethodCallHandler(null)
         events.setStreamHandler(null)
         eventSink = null
+        unregisterNetworkCallback()
         cancelPendingNetworkLoad()
         engineHandler.post {
             disposeEngine()
@@ -197,8 +218,14 @@ class BassPlayerPlugin :
                 grooveShift.invalidate()
                 postResult(result) { grooveShift.cancel(); snapshot() }
             }
-            "play" -> postResult(result) { play() }
-            "pause" -> postResult(result) { pause() }
+            "play" -> {
+                httpSource?.interruptBlocking()
+                postResult(result) { play() }
+            }
+            "pause" -> {
+                httpSource?.interruptBlocking()
+                postResult(result) { pause() }
+            }
             "stop" -> {
                 loadGeneration.incrementAndGet()
                 cancelPendingNetworkLoad()
@@ -206,6 +233,8 @@ class BassPlayerPlugin :
             }
             "seek" -> {
                 val positionMs = call.argument<Number>("positionMs")?.toLong() ?: 0L
+                // A newer target replaces a seek that is still waiting for data.
+                httpSource?.interruptBlocking()
                 postResult(result) { seek(positionMs) }
             }
             "setVolume" -> {
@@ -287,7 +316,7 @@ class BassPlayerPlugin :
 
         setConfig(BASS.BASS_CONFIG_BUFFER, 500, "output buffer")
         setConfig(BASS.BASS_CONFIG_UPDATEPERIOD, 50, "update period")
-        setConfig(BASS.BASS_CONFIG_NET_TIMEOUT, 15_000, "network connect timeout")
+        setConfig(BASS.BASS_CONFIG_NET_TIMEOUT, ProgressiveHttpSource.CONNECT_TIMEOUT_MS, "network connect timeout")
         setConfig(BASS.BASS_CONFIG_NET_READTIMEOUT, 20_000, "network read timeout")
         setConfig(BASS.BASS_CONFIG_NET_BUFFER, 60_000, "network buffer")
         setConfig(BASS.BASS_CONFIG_NET_PREBUF, 20, "network prebuffer")
@@ -296,6 +325,7 @@ class BassPlayerPlugin :
         if (!BASS.BASS_Init(-1, 44_100, OUTPUT_BACKEND.initFlags)) {
             fail("initialize output")
         }
+        BASS.BASS_Start()
         initialized = true
         try {
             loadFormatLibraries()
@@ -359,21 +389,35 @@ class BassPlayerPlugin :
         val parsed = Uri.parse(source)
         val flags = BASS.BASS_SAMPLE_FLOAT
         val format = normalizedFormat(formatHint, parsed)
-        val isRemote = parsed.scheme?.lowercase() in setOf("http", "https", "ftp")
+        val scheme = parsed.scheme?.lowercase()
+        val isRemote = scheme in setOf("http", "https", "ftp")
         var openedDescriptor: ParcelFileDescriptor? = null
+        var progressive: ProgressiveHttpSource? = null
         var requestToken: Any? = null
         val handle = try {
-            if (!isRemote) grooveShift.load(source) else when (parsed.scheme?.lowercase()) {
+            if (!isRemote) grooveShift.load(source) else when (scheme) {
                 "http", "https", "ftp" -> {
-                    requestToken = Any()
-                    pendingNetworkRequest = requestToken
-                    createNetworkStream(
-                        format,
-                        urlWithHeaders(source, headers),
-                        flags,
-                        requestToken,
-                        generation,
-                    )
+                    val opened = if (scheme != "ftp" && supportsProgressive(format, parsed)) {
+                        openProgressiveStream(source, headers, format, flags, generation)
+                    } else {
+                        null
+                    }
+                    progressive = opened?.source
+                    when {
+                        opened != null -> opened.handle
+                        generation != loadGeneration.get() -> 0
+                        else -> {
+                            requestToken = Any()
+                            pendingNetworkRequest = requestToken
+                            createNetworkStream(
+                                format,
+                                urlWithHeaders(source, headers),
+                                flags,
+                                requestToken,
+                                generation,
+                            )
+                        }
+                    }
                 }
                 "content" -> {
                     openedDescriptor = applicationContext.contentResolver
@@ -395,6 +439,7 @@ class BassPlayerPlugin :
             }
         } catch (error: Throwable) {
             openedDescriptor?.close()
+            progressive?.close()
             processingState = STATE_ERROR
             emitSnapshot()
             throw error
@@ -404,6 +449,7 @@ class BassPlayerPlugin :
 
         if (generation != loadGeneration.get()) {
             if (handle != 0) BASS.BASS_StreamFree(handle)
+            progressive?.close()
             openedDescriptor?.close()
             throw BassFailure(CANCELLED, "load", "load cancelled")
         }
@@ -417,7 +463,10 @@ class BassPlayerPlugin :
 
         stream = handle
         sourceDescriptor = openedDescriptor
-        remoteSource = isRemote
+        remoteSource = isRemote && progressive == null
+        httpSource = progressive
+        reportedNetworkError = null
+        reportedSourceFailure = false
         try {
             if (!BASS.BASS_ChannelSetAttribute(stream, BASS.BASS_ATTRIB_VOL, channelVolume)) {
                 fail("set volume")
@@ -426,6 +475,7 @@ class BassPlayerPlugin :
             applyEqualizerChain(equalizer, null)
             logOutputState("load")
             durationMs = readDurationMs()
+            progressive?.let(::configureProgressiveBuffering)
             processingState = STATE_READY
             refreshPlaybackState()
         } catch (error: Throwable) {
@@ -444,6 +494,16 @@ class BassPlayerPlugin :
         initializeEngine()
         if (stream == 0) failWith(BASS.BASS_ERROR_HANDLE, "play")
         grooveShift.resetPlaybackEnded()
+        if (pendingSeekMs != null) {
+            // The pending seek starts the channel once its target has downloaded.
+            pendingSeekPlay = true
+            refreshPlaybackState()
+            startTicker()
+            emitSnapshot()
+            return snapshot()
+        }
+        // A download waiting out a retry delay should try again right away.
+        httpSource?.retryNow(reconnect = false)
         if (completed) {
             val position = BASS.BASS_ChannelSeconds2Bytes(stream, 0.0)
             if (!(if (grooveShift.active) grooveShift.seek(0) else BASS.BASS_ChannelSetPosition(stream, position, BASS.BASS_POS_BYTE))) {
@@ -451,7 +511,7 @@ class BassPlayerPlugin :
             }
             completed = false
         }
-        if (!BASS.BASS_ChannelPlay(stream, false)) fail("play")
+        if (!startOutputDeviceAndPlay(stream)) fail("play")
         playing = true
         acquireWakeLock()
         refreshPlaybackState()
@@ -465,7 +525,18 @@ class BassPlayerPlugin :
             diagnostics.record("pause", grooveShift.clockDetails(), category = DiagnosticCategory.PLAYBACK)
         }
         if (stream == 0) return snapshot()
-        if (!BASS.BASS_ChannelPause(stream)) fail("pause")
+        if (pendingSeekMs != null) {
+            // The channel is already paused; the ticker still completes the seek.
+            pendingSeekPlay = false
+            refreshPlaybackState()
+            emitSnapshot()
+            return snapshot()
+        }
+        if (!BASS.BASS_ChannelPause(stream) &&
+            BASS.BASS_ErrorGetCode() !in setOf(BASS.BASS_ERROR_NOPLAY, BASS.BASS_ERROR_ALREADY)
+        ) {
+            fail("pause")
+        }
         playing = false
         releaseWakeLock()
         refreshPlaybackState()
@@ -490,6 +561,9 @@ class BassPlayerPlugin :
         val targetMs = if (end == null) requestedMs.coerceAtLeast(0) else {
             requestedMs.coerceIn(0, end)
         }
+        val source = httpSource
+        if (source != null && !grooveShift.active) return seekProgressive(source, targetMs)
+        val originMs = readPositionMs()
         val bytePosition = BASS.BASS_ChannelSeconds2Bytes(stream, targetMs / 1000.0)
         var success = if (grooveShift.active) grooveShift.seek(targetMs) else bytePosition >= 0 && BASS.BASS_ChannelSetPosition(stream, bytePosition, BASS.BASS_POS_BYTE)
         if (!success && remoteSource && BASS.BASS_ErrorGetCode() == BASS.BASS_ERROR_POSITION) {
@@ -509,11 +583,11 @@ class BassPlayerPlugin :
             if (remoteSource) {
                 Log.w(
                     TAG,
-                    "Remote stream seek to ${targetMs}ms failed (bassCode=${BASS.BASS_ErrorGetCode()}), falling back to 0ms",
+                    "Remote stream seek to ${targetMs}ms failed (bassCode=${BASS.BASS_ErrorGetCode()}), staying at ${originMs}ms",
                 )
-                val zeroPos = BASS.BASS_ChannelSeconds2Bytes(stream, 0.0)
-                if (zeroPos >= 0) {
-                    BASS.BASS_ChannelSetPosition(stream, zeroPos, BASS.BASS_POS_BYTE)
+                val origin = BASS.BASS_ChannelSeconds2Bytes(stream, originMs / 1000.0)
+                if (origin >= 0) {
+                    BASS.BASS_ChannelSetPosition(stream, origin, BASS.BASS_POS_BYTE)
                 }
             } else {
                 fail("seek")
@@ -524,6 +598,138 @@ class BassPlayerPlugin :
         refreshPlaybackState()
         emitSnapshot()
         return snapshot()
+    }
+
+    /**
+     * Seeks without failing on data that has not downloaded yet. The stream reports
+     * the target as buffering and the position ticker applies the seek once the
+     * decoder can read there.
+     */
+    private fun seekProgressive(source: ProgressiveHttpSource, targetMs: Long): Map<String, Any?> {
+        if (pendingSeekMs == null) {
+            pendingSeekPlay = playing
+            pendingSeekOriginMs = readPositionMs()
+        }
+        pendingSeekMs = targetMs
+        completed = false
+        // Silence the old position meanwhile; a failed FLAC attempt would also rewind to 0.
+        val active = BASS.BASS_ChannelIsActive(stream)
+        if (active == BASS.BASS_ACTIVE_PLAYING || active == BASS.BASS_ACTIVE_STALLED) {
+            BASS.BASS_ChannelPause(stream)
+        }
+        source.prioritize(estimateFileOffset(targetMs, source))
+        if (!attemptPendingSeek(source, 0)) {
+            tracePlayback(
+                "seek_waiting",
+                mapOf("targetMs" to targetMs, "fileOffset" to source.priorityPosition),
+            )
+        }
+        refreshPlaybackState()
+        startTicker()
+        emitSnapshot()
+        return snapshot()
+    }
+
+    /** Applies the pending seek; false while the decoder still lacks data at the target. */
+    private fun attemptPendingSeek(source: ProgressiveHttpSource, budgetMs: Long): Boolean {
+        val targetMs = pendingSeekMs ?: return true
+        val bytes = BASS.BASS_ChannelSeconds2Bytes(stream, targetMs / 1000.0)
+        source.beginBlocking(budgetMs)
+        val moved = bytes >= 0 && BASS.BASS_ChannelSetPosition(stream, bytes, BASS.BASS_POS_BYTE)
+        val code = BASS.BASS_ErrorGetCode()
+        val starved = source.endBlocking()
+        // Even a seek that "worked" without its data lands inexactly on some
+        // formats (MP3), so redo it once the decoder can read at the target.
+        if (starved) return false
+        pendingSeekMs = null
+        source.prioritize(null)
+        if (!moved) {
+            Log.w(TAG, "Progressive seek to ${targetMs}ms failed (bassCode=$code), staying at ${pendingSeekOriginMs}ms")
+            val origin = BASS.BASS_ChannelSeconds2Bytes(stream, pendingSeekOriginMs / 1000.0)
+            if (origin >= 0) BASS.BASS_ChannelSetPosition(stream, origin, BASS.BASS_POS_BYTE)
+        }
+        tracePlayback("seek_applied", mapOf("targetMs" to targetMs, "moved" to moved, "bassCode" to code))
+        // Resume from a few seconds of buffer instead of stuttering on the first bytes.
+        source.holdUntilBuffered(startBufferBytes)
+        if (pendingSeekPlay && !startOutputDeviceAndPlay(stream)) {
+            Log.w(TAG, "Unable to resume after seek (bassCode=${BASS.BASS_ErrorGetCode()})")
+        }
+        return true
+    }
+
+    private fun startOutputDeviceAndPlay(channel: Int): Boolean {
+        // Ensure the BASS global audio output system is running.
+        // BASS_IsStarted returns 0 (stopped), 1 (started), 2 (paused).
+        if (BASS.BASS_IsStarted() != 1) {
+            if (!BASS.BASS_Start()) {
+                val startErr = BASS.BASS_ErrorGetCode()
+                if (startErr != BASS.BASS_ERROR_ALREADY) {
+                    Log.w(TAG, "BASS_Start returned false (bassCode=$startErr)")
+                }
+            }
+        }
+        if (BASS.BASS_ChannelPlay(channel, false)) return true
+        val error = BASS.BASS_ErrorGetCode()
+        if (error == BASS.BASS_ERROR_START) {
+            Log.w(TAG, "BASS_ChannelPlay failed with BASS_ERROR_START, attempting recovery with BASS_Start")
+            if (BASS.BASS_Start() && BASS.BASS_ChannelPlay(channel, false)) {
+                return true
+            }
+            // Device routing changed (eg. screen mirroring / wireless display / bluetooth)
+            // Reinitialize the output device while preserving channels.
+            val currentDevice = BASS.BASS_GetDevice()
+            val reinitDevice = if (currentDevice >= 0) currentDevice else -1
+            Log.w(TAG, "Attempting BASS device reinit on device $reinitDevice")
+            if (BASS.BASS_Init(reinitDevice, 44_100, BASS.BASS_DEVICE_REINIT or OUTPUT_BACKEND.initFlags)) {
+                BASS.BASS_Start()
+                if (BASS.BASS_ChannelPlay(channel, false)) return true
+            }
+        }
+        return false
+    }
+
+    private fun completePendingSeekWhenBuffered() {
+        val targetMs = pendingSeekMs ?: return
+        val source = httpSource ?: return
+        val position = source.priorityPosition
+            ?: estimateFileOffset(targetMs, source).also(source::prioritize)
+        if (source.isBuffered(position, SEEK_PROBE_BYTES) && attemptPendingSeek(source, SEEK_ATTEMPT_BUDGET_MS)) {
+            // A seek finishing while paused gets no further ticker snapshots.
+            refreshPlaybackState()
+            emitSnapshot()
+        }
+    }
+
+    private fun estimateFileOffset(targetMs: Long, source: ProgressiveHttpSource): Long {
+        val duration = durationMs ?: return 0
+        if (duration <= 0) return 0
+        val fraction = (targetMs.toDouble() / duration).coerceIn(0.0, 1.0)
+        return audioDataStart() + (audioDataBytes(source) * fraction).toLong()
+    }
+
+    private fun audioDataStart(): Long =
+        BASS.BASS_StreamGetFilePosition(stream, BASS.BASS_FILEPOS_START).coerceAtLeast(0)
+
+    // FILEPOS_END excludes leading tags, so it is the audio length counted from FILEPOS_START.
+    private fun audioDataBytes(source: ProgressiveHttpSource): Long {
+        val end = BASS.BASS_StreamGetFilePosition(stream, BASS.BASS_FILEPOS_END)
+        return if (end > 0) end else source.totalBytes - audioDataStart()
+    }
+
+    private fun configureProgressiveBuffering(source: ProgressiveHttpSource) {
+        val duration = durationMs
+        val audioBytes = audioDataBytes(source)
+        val bytesPerSecond = if (duration != null && duration > 0 && audioBytes > 0) {
+            audioBytes * 1000.0 / duration
+        } else {
+            FALLBACK_BYTES_PER_SECOND
+        }
+        startBufferBytes = (bytesPerSecond * START_BUFFER_SECONDS).toLong()
+            .coerceIn(MIN_BUFFER_BYTES, MAX_BUFFER_BYTES)
+        source.setResumeBytes(
+            (bytesPerSecond * RESUME_BUFFER_SECONDS).toLong().coerceIn(MIN_BUFFER_BYTES, MAX_BUFFER_BYTES),
+        )
+        source.holdUntilBuffered(startBufferBytes)
     }
 
     private fun setVolume(requested: Float): Map<String, Any?> {
@@ -592,6 +798,20 @@ class BassPlayerPlugin :
         endSyncCallback = BASS.SYNCPROC { _, callbackChannel, _, _ ->
             engineHandler.post {
                 if (stream != channel || callbackChannel != channel) return@post
+                if (remoteSource && legacyStreamEndedEarly()) {
+                    // BASS ends an internet stream whose download broke off. Report a
+                    // failure so the player reloads here instead of skipping the track.
+                    playing = false
+                    processingState = STATE_READY
+                    releaseWakeLock()
+                    stopTicker()
+                    tracePlayback(
+                        "remote_truncated",
+                        mapOf("positionMs" to readPositionMs(), "durationMs" to durationMs),
+                    )
+                    emitError(BASS.BASS_ERROR_ENDED, "network stream ended before the track finished", "stream-ended")
+                    return@post
+                }
                 completed = true
                 grooveShift.markPlaybackEnded()
                 playing = false
@@ -663,6 +883,16 @@ class BassPlayerPlugin :
         if (remoteSource && downloadSync == 0) fail("install download synchronizer")
     }
 
+    private fun legacyStreamEndedEarly(): Boolean {
+        val duration = durationMs ?: return false
+        if (readPositionMs() >= duration - TRUNCATED_END_TOLERANCE_MS) return false
+        val size = BASS.BASS_StreamGetFilePosition(stream, BASS.BASS_FILEPOS_SIZE)
+        val downloaded = BASS.BASS_StreamGetFilePosition(stream, BASS.BASS_FILEPOS_DOWNLOAD)
+        // Android codec streams only expose the size, so the early position is the evidence.
+        if (downloaded < 0 || size <= 0) return true
+        return audioDataStart() + downloaded < size
+    }
+
     private fun refreshPlaybackState() {
         if (stream == 0 || completed || processingState == STATE_LOADING ||
             processingState == STATE_ERROR
@@ -670,6 +900,12 @@ class BassPlayerPlugin :
             return
         }
         durationMs = readDurationMs() ?: durationMs
+        if (pendingSeekMs != null) {
+            playing = pendingSeekPlay
+            processingState = STATE_BUFFERING
+            if (playing) acquireWakeLock() else releaseWakeLock()
+            return
+        }
         when (BASS.BASS_ChannelIsActive(stream)) {
             BASS.BASS_ACTIVE_PLAYING -> {
                 playing = true
@@ -697,7 +933,7 @@ class BassPlayerPlugin :
     }
 
     private fun snapshot(): Map<String, Any?> {
-        val position = readPositionMs()
+        val position = pendingSeekMs ?: readPositionMs()
         val sourceId = grooveShift.sourceId() ?: "load-${loadGeneration.get()}"
         val now = SystemClock.elapsedRealtime()
         if (diagnostics.smartTransitionEnabled && grooveShift.active && (previousClockSource != sourceId ||
@@ -725,6 +961,8 @@ class BassPlayerPlugin :
             "positionMs" to position,
             "bufferedPositionMs" to readBufferedPositionMs(position),
             "durationMs" to durationMs,
+            "networkError" to httpSource?.networkError,
+            "networkAvailable" to networkAvailable,
         )
     }
 
@@ -763,6 +1001,16 @@ class BassPlayerPlugin :
 
     private fun readBufferedPositionMs(positionMs: Long): Long {
         val end = durationMs ?: return positionMs
+        val source = httpSource
+        if (source != null) {
+            if (pendingSeekMs != null) return positionMs
+            val audioBytes = audioDataBytes(source)
+            val decoded = BASS.BASS_StreamGetFilePosition(stream, BASS.BASS_FILEPOS_CURRENT)
+            if (audioBytes <= 0 || decoded < 0) return positionMs
+            val start = audioDataStart()
+            val buffered = source.runEnd(start + decoded) - start
+            return (end.toDouble() * buffered / audioBytes).toLong().coerceIn(positionMs, end)
+        }
         if (!remoteSource) return end
 
         val fileEnd = BASS.BASS_StreamGetFilePosition(stream, BASS.BASS_FILEPOS_END)
@@ -949,11 +1197,15 @@ class BassPlayerPlugin :
         grooveShift.close()
         stopTicker()
         releaseWakeLock()
+        pendingSeekMs = null
         if (stream != 0) {
             detachEqualizer()
             BASS.BASS_StreamFree(stream)
         }
         stream = 0
+        // BASS no longer reads a freed stream, so its download and cache can go.
+        httpSource?.close()
+        httpSource = null
         sourceDescriptor?.close()
         sourceDescriptor = null
         remoteSource = false
@@ -1007,6 +1259,8 @@ class BassPlayerPlugin :
     }
 
     private fun cancelPendingNetworkLoad() {
+        openingSource?.cancel()
+        httpSource?.interruptBlocking()
         val request = pendingNetworkRequest ?: return
         // BASS_StreamCancel is specifically designed to be called from the
         // thread requesting cancellation while BASS_StreamCreateURL is pending.
@@ -1040,6 +1294,218 @@ class BassPlayerPlugin :
             "flac24bit", "hires", "master" -> "lossless"
             else -> "generic"
         }
+    }
+
+    // MP4 audio is mostly AAC, which BASS hands to Android codecs. Those end the
+    // stream when a read comes back empty, so it keeps BASS's own HTTP stream.
+    private fun supportsProgressive(format: String, source: Uri): Boolean {
+        if (format == "m4a") return false
+        val extension = source.path.orEmpty().substringAfterLast('.', "").lowercase()
+        return extension !in LEGACY_STREAM_EXTENSIONS
+    }
+
+    private class ProgressiveStream(val handle: Int, val source: ProgressiveHttpSource)
+
+    /** Opens [url] through a range-request cache; null when BASS's HTTP stream must play it. */
+    private fun openProgressiveStream(
+        url: String,
+        headers: Map<String, String>,
+        format: String,
+        flags: Int,
+        generation: Int,
+    ): ProgressiveStream? {
+        val directory = File(applicationContext.cacheDir, STREAM_CACHE_DIRECTORY).apply { mkdirs() }
+        val source = try {
+            ProgressiveHttpSource(
+                url,
+                headers,
+                File(directory, "stream-${SystemClock.elapsedRealtimeNanos()}.part"),
+                ::onSourceStateChanged,
+            )
+        } catch (error: IOException) {
+            Log.w(TAG, "Unable to create a stream cache, using a BASS stream", error)
+            return null
+        }
+        openingSource = source
+        val started = SystemClock.elapsedRealtime()
+        try {
+            if (generation != loadGeneration.get()) {
+                source.close()
+                return null
+            }
+            try {
+                source.open(SOURCE_OPEN_TIMEOUT_MS)
+            } catch (failure: SourceException) {
+                source.close()
+                tracePlayback("progressive_open_failed", mapOf("kind" to failure.kind.name, "error" to failure.message))
+                if (failure.kind == SourceException.Kind.UNSUPPORTED ||
+                    failure.kind == SourceException.Kind.CANCELLED
+                ) {
+                    return null
+                }
+                throw BassFailure(failure.bassCode(), "load network", failure.message ?: "network error")
+            }
+            source.beginBlocking(STREAM_CREATE_BUDGET_MS)
+            val handle = createUserStream(format, source, flags)
+            val starved = source.endBlocking()
+            tracePlayback(
+                "progressive_open",
+                mapOf(
+                    "handle" to handle,
+                    "elapsedMs" to SystemClock.elapsedRealtime() - started,
+                    "totalBytes" to source.totalBytes,
+                    "starved" to starved,
+                    "bassCode" to if (handle == 0) BASS.BASS_ErrorGetCode() else 0,
+                ),
+            )
+            if (handle != 0) return ProgressiveStream(handle, source)
+            source.close()
+            if (starved && generation == loadGeneration.get()) {
+                throw BassFailure(BASS.BASS_ERROR_TIMEOUT, "load network", "timed out reading the stream header")
+            }
+            return null
+        } catch (error: Throwable) {
+            source.close()
+            throw error
+        } finally {
+            if (openingSource === source) openingSource = null
+        }
+    }
+
+    private fun createUserStream(format: String, source: ProgressiveHttpSource, flags: Int): Int {
+        // Keep progressive streams on BASS decoders; see supportsProgressive.
+        val androidCodecs = BASS.BASS_GetConfig(BASS.BASS_CONFIG_AM_DISABLE)
+        if (androidCodecs >= 0) BASS.BASS_SetConfig(BASS.BASS_CONFIG_AM_DISABLE, 1)
+        try {
+            val system = BASS.STREAMFILE_NOBUFFER
+            val decoders = when (format) {
+                "flac", "lossless" -> listOf(FLAC_DECODER, GENERIC_DECODER)
+                "ape" -> listOf(APE_DECODER, GENERIC_DECODER)
+                "alac" -> listOf(ALAC_DECODER, GENERIC_DECODER)
+                else -> listOf(GENERIC_DECODER, FLAC_DECODER)
+            }
+            for (decoder in decoders) {
+                // A rejected attempt may leave the read position anywhere in the file.
+                source.rewind()
+                val handle = when (decoder) {
+                    FLAC_DECODER -> BASSFLAC.BASS_FLAC_StreamCreateFileUser(system, flags, source, null)
+                    APE_DECODER -> BASSAPE.BASS_APE_StreamCreateFileUser(system, flags, source, null)
+                    ALAC_DECODER -> BASSALAC.BASS_ALAC_StreamCreateFileUser(system, flags, source, null)
+                    else -> BASS.BASS_StreamCreateFileUser(system, flags, source, null)
+                }
+                if (handle != 0) return handle
+            }
+            return 0
+        } finally {
+            if (androidCodecs >= 0) BASS.BASS_SetConfig(BASS.BASS_CONFIG_AM_DISABLE, androidCodecs)
+        }
+    }
+
+    private fun onSourceStateChanged(source: ProgressiveHttpSource) {
+        engineHandler.post { handleSourceState(source) }
+    }
+
+    private fun handleSourceState(source: ProgressiveHttpSource) {
+        if (source !== httpSource) return
+        val networkError = source.networkError
+        if (networkError != reportedNetworkError) {
+            reportedNetworkError = networkError
+            Log.i(TAG, "Progressive stream network ${networkError ?: "recovered"}")
+            tracePlayback(
+                if (networkError == null) "network_recovered" else "network_retrying",
+                mapOf(
+                    "error" to networkError,
+                    "positionMs" to readPositionMs(),
+                    "downloadedBytes" to source.downloadedBytes,
+                    "totalBytes" to source.totalBytes,
+                ),
+            )
+            emitSnapshot()
+        }
+        val failure = source.failure
+        if (failure != null && !reportedSourceFailure) {
+            reportedSourceFailure = true
+            tracePlayback("network_failed", mapOf("error" to failure.message, "status" to failure.status))
+            emitError(
+                failure.bassCode(),
+                failure.message ?: "network error",
+                if (failure.expiredUrl) "source-expired" else "network",
+            )
+        }
+        if (source.isComplete) emitSnapshot()
+    }
+
+    private fun SourceException.bassCode(): Int = when (kind) {
+        SourceException.Kind.OFFLINE -> BASS.BASS_ERROR_NONET
+        SourceException.Kind.TIMEOUT -> BASS.BASS_ERROR_TIMEOUT
+        SourceException.Kind.HTTP -> BASS.BASS_ERROR_FILEOPEN
+        SourceException.Kind.UNSUPPORTED -> BASS.BASS_ERROR_FILEFORM
+        SourceException.Kind.CANCELLED -> CANCELLED
+    }
+
+    private fun tracePlayback(action: String, fields: Map<String, Any?>) {
+        if (diagnostics.playbackEnabled) {
+            diagnostics.record(action, fields, category = DiagnosticCategory.PLAYBACK)
+        }
+    }
+
+    private fun clearStreamCache() {
+        File(applicationContext.cacheDir, STREAM_CACHE_DIRECTORY).listFiles()?.forEach { it.delete() }
+    }
+
+    private fun registerNetworkCallback() {
+        val manager = applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE)
+            as? ConnectivityManager ?: return
+        networkAvailable = try {
+            manager.activeNetwork?.let(manager::getNetworkCapabilities)
+                ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        } catch (_: RuntimeException) {
+            null
+        }
+        // Default-network callbacks report on the current network; synchronous
+        // ConnectivityManager queries are unreliable while they run.
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) = updateNetwork(true, replaced = true)
+
+            override fun onLost(network: Network) = updateNetwork(false, replaced = false)
+
+            override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) =
+                updateNetwork(
+                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET),
+                    replaced = false,
+                )
+        }
+        try {
+            manager.registerDefaultNetworkCallback(callback)
+            networkCallback = callback
+        } catch (error: RuntimeException) {
+            Log.w(TAG, "Unable to observe network changes", error)
+        }
+    }
+
+    private fun unregisterNetworkCallback() {
+        val callback = networkCallback ?: return
+        networkCallback = null
+        val manager = applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE)
+            as? ConnectivityManager ?: return
+        try {
+            manager.unregisterNetworkCallback(callback)
+        } catch (_: RuntimeException) {
+        }
+    }
+
+    // Runs on the connectivity thread.
+    private fun updateNetwork(available: Boolean, replaced: Boolean) {
+        val previous = networkAvailable
+        networkAvailable = available
+        if (available && (previous != true || replaced)) {
+            // Sockets of a replaced network can hang until they time out; reconnect at once.
+            engineHandler.post { httpSource?.retryNow(reconnect = previous == true) }
+        }
+        if (previous == available) return
+        val event = mapOf("event" to "network", "available" to available)
+        mainHandler.post { eventSink?.success(event) }
+        engineHandler.post { tracePlayback(if (available) "network_available" else "network_lost", emptyMap()) }
     }
 
     private fun createNetworkStream(
@@ -1281,6 +1747,23 @@ class BassPlayerPlugin :
         const val BAND_PRIORITY = 50
         const val OUTPUT_GAIN_PRIORITY = -100
         const val CANCELLED = -2
+
+        const val STREAM_CACHE_DIRECTORY = "bass-stream"
+        const val SOURCE_OPEN_TIMEOUT_MS = 8_000L
+        const val STREAM_CREATE_BUDGET_MS = 10_000L
+        const val SEEK_PROBE_BYTES = 64L * 1024
+        const val SEEK_ATTEMPT_BUDGET_MS = 2_000L
+        const val START_BUFFER_SECONDS = 2.0
+        const val RESUME_BUFFER_SECONDS = 5.0
+        const val MIN_BUFFER_BYTES = 32L * 1024
+        const val MAX_BUFFER_BYTES = 8L * 1024 * 1024
+        const val FALLBACK_BYTES_PER_SECOND = 40_000.0
+        const val TRUNCATED_END_TOLERANCE_MS = 5_000L
+        const val GENERIC_DECODER = 0
+        const val FLAC_DECODER = 1
+        const val APE_DECODER = 2
+        const val ALAC_DECODER = 3
+        val LEGACY_STREAM_EXTENSIONS = setOf("m4a", "m4b", "mp4", "aac", "3gp", "ac3", "ec3", "eac3")
 
         const val STATE_IDLE = "idle"
         const val STATE_LOADING = "loading"

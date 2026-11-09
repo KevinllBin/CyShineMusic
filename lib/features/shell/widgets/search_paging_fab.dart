@@ -33,7 +33,7 @@ class _SearchPagingFabLayerState extends ConsumerState<SearchPagingFabLayer> {
   Widget build(BuildContext context) {
     final bottomArea = ShellBottomArea.maybeOf(context);
     if ((bottomArea?.nativeNavigation == true ||
-            bottomArea?.navigationMode == AppNavigationMode.dualCapsule) &&
+            bottomArea?.navigationMode == AppNavigationMode.floatingCapsule) &&
         bottomArea!.extent == 0) {
       return const SizedBox.shrink();
     }
@@ -53,7 +53,7 @@ class _SearchPagingFabLayerState extends ConsumerState<SearchPagingFabLayer> {
       bottom: switch (bottomArea?.navigationMode) {
         AppNavigationMode.native =>
           bottomArea!.extent - MediaQuery.paddingOf(context).bottom + 24,
-        AppNavigationMode.dualCapsule =>
+        AppNavigationMode.floatingCapsule =>
           bottomArea!.extent - MediaQuery.paddingOf(context).bottom + 16,
         _ => 82,
       },

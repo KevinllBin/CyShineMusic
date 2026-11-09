@@ -5,6 +5,7 @@ version: 1.0.9+10
 
 environment:
   sdk: ^3.11.4
+  flutter: '>=3.47.9'
 
 dependencies:
   flutter:
@@ -12,6 +13,8 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   flutter_riverpod: ^2.5.1
+  prism_ui:
+    path: packages/prism_ui
   dio: ^5.7.0
   shared_preferences: ^2.3.2
   flutter_secure_storage: ^10.3.1

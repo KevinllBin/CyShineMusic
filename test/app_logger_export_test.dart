@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -105,6 +107,103 @@ void main() {
   );
 
   test(
+    'uncaught errors persist before returning with categories off',
+    () async {
+      final ordinaryLog = (await AppLogger.currentLogFile())!;
+      final crashLog = File('${ordinaryLog.parent.path}/cyshine-crash.log');
+      final stack = StackTrace.fromString(
+        '#0 crashFrame ${'x' * 1600}\n#1 finalUsefulFrame',
+      );
+
+      final recording = AppLogger.recordUnhandledError(
+        'platform',
+        StateError(
+          'crash-marker https://audio.test/a?token=secret password=hidden',
+        ),
+        stack,
+      );
+      // The engine can terminate immediately after the error callback returns.
+      // Waiting for a queued normal log write would lose this record.
+      final immediate = crashLog.readAsStringSync();
+      expect(immediate, contains('crash-marker'));
+      expect(immediate, contains('finalUsefulFrame'));
+      expect(immediate, isNot(contains('secret')));
+      expect(immediate, isNot(contains('hidden')));
+      await recording;
+
+      expect(AppLogger.recordingCategories.value, isEmpty);
+      expect(await ordinaryLog.length(), 0);
+      expect(
+        (await AppLogger.readRecentLines()).join('\n'),
+        contains('crash-marker'),
+      );
+      final exported = await File(await AppLogger.exportFile()).readAsString();
+      expect(exported, contains('crash-marker'));
+      await AppLogger.clear();
+      expect(await crashLog.length(), 0);
+      expect(await AppLogger.readRecentLines(), isEmpty);
+    },
+  );
+
+  test(
+    'Android crash and exit records are retained once and redacted',
+    () async {
+      final data = <String, dynamic>{
+        'sdk': 30,
+        'javaCrash':
+            'timestampMs=1000\njava.lang.OutOfMemoryError: java-marker '
+            'https://audio.test/a?token=secret',
+        // A later user stop must not hide the preceding fatal crash.
+        'recentProcessExits': [
+          {'timestamp': 2000, 'reasonName': 'USER_REQUESTED'},
+          {'timestamp': 1000, 'reasonName': 'CRASH_NATIVE'},
+        ],
+      };
+      await Future.wait([
+        AppLogger.recordAndroidDiagnostics(data),
+        AppLogger.recordAndroidDiagnostics(data),
+      ]);
+      AppLogger.configureRecording(preferences);
+      await AppLogger.recordAndroidDiagnostics(data);
+      final lines = AppLogger.recentMemoryLines;
+      expect(
+        lines.where((line) => line.contains('previous_java_crash')),
+        hasLength(1),
+      );
+      expect(
+        lines.where((line) => line.contains('previous_process_exit')),
+        hasLength(2),
+      );
+      final exported = await File(await AppLogger.exportFile()).readAsString();
+      expect(exported, contains('java-marker'));
+      expect(exported, contains('CRASH_NATIVE'));
+      expect(exported, contains('USER_REQUESTED'));
+      expect(exported, isNot(contains('secret')));
+      expect(exported, isNot(contains('"javaCrash":')));
+    },
+  );
+
+  test(
+    'crash records stay bounded separately from normal log rotation',
+    () async {
+      await AppLogger.setRecordingCategories({AppLogCategory.application});
+      for (var i = 0; i < 100; i++) {
+        await AppLogger.recordUnhandledError(
+          'flutter',
+          StateError('bounded-marker-$i ${'x' * 3500}'),
+          StackTrace.fromString('#0 crashFrame'),
+        );
+      }
+      final normalLog = (await AppLogger.currentLogFile())!;
+      final crashLog = File('${normalLog.parent.path}/cyshine-crash.log');
+      expect(await crashLog.length(), lessThanOrEqualTo(256 * 1024));
+      final exported = await File(await AppLogger.exportFile()).readAsString();
+      expect(exported, contains('bounded-marker-99'));
+      expect(await normalLog.length(), 0);
+    },
+  );
+
+  test(
     'file export flushes, rotates in-session, and includes both log files',
     () async {
       await AppLogger.setRecordingCategories({
@@ -134,6 +233,45 @@ void main() {
         await File('${log.parent.path}/cyshine.prev.log').exists(),
         isFalse,
       );
+    },
+  );
+
+  test(
+    'global error hooks persist before delegating to existing handlers',
+    () async {
+      final previousFlutter = FlutterError.onError;
+      final previousPlatform = ui.PlatformDispatcher.instance.onError;
+      addTearDown(() {
+        FlutterError.onError = previousFlutter;
+        ui.PlatformDispatcher.instance.onError = previousPlatform;
+      });
+      final ordinaryLog = (await AppLogger.currentLogFile())!;
+      final crashLog = File('${ordinaryLog.parent.path}/cyshine-crash.log');
+      var flutterDelegated = false;
+      var platformDelegated = false;
+      FlutterError.onError = (_) {
+        expect(crashLog.readAsStringSync(), contains('framework-hook-marker'));
+        flutterDelegated = true;
+      };
+      ui.PlatformDispatcher.instance.onError = (_, _) {
+        expect(crashLog.readAsStringSync(), contains('platform-hook-marker'));
+        platformDelegated = true;
+        return true;
+      };
+      AppLogger.installErrorHandlers();
+      FlutterError.onError!(
+        FlutterErrorDetails(
+          exception: StateError('framework-hook-marker'),
+          stack: StackTrace.current,
+        ),
+      );
+      final handled = ui.PlatformDispatcher.instance.onError!(
+        StateError('platform-hook-marker'),
+        StackTrace.current,
+      );
+      expect(flutterDelegated, isTrue);
+      expect(platformDelegated, isTrue);
+      expect(handled, isTrue);
     },
   );
 }

@@ -1,3 +1,4 @@
+import 'package:prism_ui/prism_ui.dart' as prism;
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 
@@ -31,10 +32,7 @@ class MusicSourceCard extends StatelessWidget {
     final platforms = record.capabilities.keys
         .map((source) => source.label)
         .join('、');
-    final cardColor = Color.alphaBlend(
-      enabled ? scheme.primary.withValues(alpha: 0.055) : Colors.transparent,
-      scheme.surfaceContainerLow,
-    );
+    final cardColor = scheme.surfaceContainerLow;
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: Slidable(
@@ -78,25 +76,21 @@ class MusicSourceCard extends StatelessWidget {
               onTap: busy ? null : () => onToggle(!enabled),
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 14,
-                vertical: 10,
+                vertical: 4,
               ),
               horizontalTitleGap: 12,
-              minVerticalPadding: 12,
+              minVerticalPadding: 10,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
                 side: BorderSide(
-                  color: enabled
-                      ? scheme.primary.withValues(alpha: 0.62)
-                      : scheme.outlineVariant.withValues(alpha: 0.34),
+                  color: scheme.outlineVariant.withValues(alpha: 0.35),
                 ),
               ),
               leading: Container(
-                width: 42,
-                height: 42,
+                width: 24,
+                height: 24,
                 decoration: BoxDecoration(
-                  color: enabled
-                      ? scheme.primaryContainer
-                      : scheme.surfaceContainerHighest,
+                  color: Colors.transparent,
                   shape: BoxShape.circle,
                 ),
                 child: Center(
@@ -110,7 +104,7 @@ class MusicSourceCard extends StatelessWidget {
                           color: enabled
                               ? scheme.onPrimaryContainer
                               : scheme.onSurfaceVariant,
-                          size: 22,
+                          size: 20,
                         ),
                 ),
               ),
@@ -120,7 +114,7 @@ class MusicSourceCard extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: scheme.onSurface,
-                  fontSize: 16,
+                  fontSize: 15,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -183,7 +177,7 @@ class MusicSourceCard extends StatelessWidget {
                   ],
                 ),
               ),
-              trailing: Switch.adaptive(
+              trailing: prism.Switch(
                 key: ValueKey('music-source-enabled-${record.id}'),
                 value: enabled,
                 onChanged: busy ? null : onToggle,

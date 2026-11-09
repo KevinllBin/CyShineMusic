@@ -157,13 +157,15 @@ class _FloatingPlayerBarState extends ConsumerState<FloatingPlayerBar>
           child: ToolbarCapsule(
             scheme: Theme.of(context).colorScheme,
             height: widget.height,
+            liquidGlass: false,
+            padding: EdgeInsets.zero,
             // Keep the sliding contents inside the capsule's rounded ends.
             child: ClipRRect(
               borderRadius: BorderRadius.circular(999),
               child: AnimatedBuilder(
                 animation: _shift,
                 child: MiniPlayerBar(
-                  width: widget.width - 10,
+                  width: widget.width,
                   height: widget.height,
                   onOpenPlayer: () =>
                       navigateShellTo(context, widget.routeLocation, '/player'),

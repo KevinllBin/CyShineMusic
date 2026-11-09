@@ -1,3 +1,4 @@
+import '../settings/widgets/settings_sheet.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -76,7 +77,7 @@ class _DebugLogPageState extends State<DebugLogPage> {
     try {
       final path = await AppLogger.exportFile();
       if (!mounted) return;
-      await showDialog<void>(
+      await showSettingsDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('日志已导出'),

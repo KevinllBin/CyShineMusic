@@ -171,9 +171,21 @@ void main() {
     );
   });
 
-  test('a pending remote load times out after two seconds and stops', () async {
+  test('the remote load bound leaves room for a weak network', () {
+    // Native gives a response 8 seconds, then the file headers 10 more.
+    expect(
+      playerRemoteLoadTimeout,
+      greaterThanOrEqualTo(const Duration(seconds: 20)),
+    );
+    expect(playerRemoteLoadTimeout, lessThanOrEqualTo(playerLoadTimeout));
+  });
+
+  test('a pending remote load times out at its bound and stops', () async {
     final player = _PendingLoadBassPlayer();
-    final handler = PlayerAudioHandler(player: player);
+    final handler = PlayerAudioHandler(
+      player: player,
+      remoteLoadTimeout: const Duration(milliseconds: 50),
+    );
     addTearDown(handler.disposeHandler);
     await handler.initializeEngine();
 
@@ -188,7 +200,7 @@ void main() {
         isA<PlayerLoadTimeoutException>().having(
           (error) => error.timeout,
           'timeout',
-          const Duration(seconds: 2),
+          const Duration(milliseconds: 50),
         ),
       ),
     );
@@ -197,7 +209,10 @@ void main() {
 
   test('an old remote timeout leaves a newer local load intact', () async {
     final player = _PendingLoadBassPlayer();
-    final handler = PlayerAudioHandler(player: player);
+    final handler = PlayerAudioHandler(
+      player: player,
+      remoteLoadTimeout: const Duration(milliseconds: 50),
+    );
     addTearDown(handler.disposeHandler);
     await handler.initializeEngine();
 

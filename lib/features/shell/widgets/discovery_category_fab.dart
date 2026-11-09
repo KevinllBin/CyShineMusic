@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:prism_ui/prism_ui.dart' as prism;
 
 import '../../../core/models/playlist_category.dart';
 import '../../../core/storage/settings_store.dart';
@@ -32,7 +33,7 @@ class _DiscoveryCategoryFabLayerState
   Widget build(BuildContext context) {
     final bottomArea = ShellBottomArea.maybeOf(context);
     if ((bottomArea?.nativeNavigation == true ||
-            bottomArea?.navigationMode == AppNavigationMode.dualCapsule) &&
+            bottomArea?.navigationMode == AppNavigationMode.floatingCapsule) &&
         bottomArea!.extent == 0) {
       return const SizedBox.shrink();
     }
@@ -58,17 +59,52 @@ class _DiscoveryCategoryFabLayerState
       (category) => category.id == selectedId,
       orElse: () => categories.first,
     );
+    final scheme = Theme.of(context).colorScheme;
     final wideLayout = toolbarUsesWideMetrics(MediaQuery.sizeOf(context));
     final fabPadding = EdgeInsets.only(
       right: wideLayout ? 104 : 18,
       bottom: switch (bottomArea?.navigationMode) {
         AppNavigationMode.native =>
           bottomArea!.extent - MediaQuery.paddingOf(context).bottom + 24,
-        AppNavigationMode.dualCapsule =>
+        AppNavigationMode.floatingCapsule =>
           bottomArea!.extent - MediaQuery.paddingOf(context).bottom + 16,
         _ => 82,
       },
     );
+    final glass = prism.LiquidGlassScope.of(context);
+    final categoryFab = FloatingActionButton.extended(
+      key: const ValueKey('discovery-category-fab'),
+      heroTag: 'discovery-category-fab',
+      tooltip: _expanded ? '收起分类菜单' : '切换歌单分类',
+      elevation: glass ? 0 : 3,
+      highlightElevation: glass ? 0 : 4,
+      backgroundColor: glass ? Colors.transparent : scheme.secondaryContainer,
+      foregroundColor: glass ? scheme.onSecondaryContainer : null,
+      icon: AnimatedSwitcher(
+        duration: AppMotion.short,
+        child: Icon(
+          _expanded ? Icons.close_rounded : Icons.filter_list_rounded,
+          key: ValueKey(_expanded),
+        ),
+      ),
+      label: Text(
+        selected.label,
+        style: const TextStyle(fontWeight: FontWeight.w600),
+      ),
+      onPressed: () => _setExpanded(!_expanded),
+    );
+    final categoryControl = glass
+        ? ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: prism.LiquidGlass(
+              borderRadius: BorderRadius.circular(999),
+              style: prism.LiquidGlassStyle.pill(
+                prism.Theme.of(context).colorScheme,
+              ),
+              child: categoryFab,
+            ),
+          )
+        : categoryFab;
 
     return Stack(
       children: [
@@ -144,27 +180,7 @@ class _DiscoveryCategoryFabLayerState
                           ),
                   ),
                   const SizedBox(height: 10),
-                  FloatingActionButton.extended(
-                    key: const ValueKey('discovery-category-fab'),
-                    heroTag: 'discovery-category-fab',
-                    tooltip: _expanded ? '收起分类菜单' : '切换歌单分类',
-                    elevation: 3,
-                    highlightElevation: 4,
-                    icon: AnimatedSwitcher(
-                      duration: AppMotion.short,
-                      child: Icon(
-                        _expanded
-                            ? Icons.close_rounded
-                            : Icons.filter_list_rounded,
-                        key: ValueKey(_expanded),
-                      ),
-                    ),
-                    label: Text(
-                      selected.label,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    onPressed: () => _setExpanded(!_expanded),
-                  ),
+                  categoryControl,
                 ],
               ),
             ),
