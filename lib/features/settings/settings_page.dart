@@ -20,7 +20,6 @@ import '../../core/storage/settings_store.dart';
 import '../../core/sync/webdav_sync_controller.dart';
 import '../../core/ui/app_toast.dart';
 import '../../core/ui/car_display_layout.dart';
-import '../discovery/discovery_controller.dart';
 import '../debug/widgets/log_recording_menu.dart';
 import '../equalizer/equalizer_store.dart';
 import '../player/sleep_timer_controller.dart';
@@ -594,6 +593,28 @@ class SettingsPage extends ConsumerWidget {
                                     ),
                                 ],
                               ),
+                              SettingsMenuAction(
+                                key: const ValueKey('platform-button-position'),
+                                menuId: 'platform-button-position',
+                                icon: Icons.swap_horiz_rounded,
+                                title: '平台按钮位置',
+                                options: [
+                                  for (final option in const {
+                                    false: '搜索框右侧',
+                                    true: '搜索框左侧',
+                                  }.entries)
+                                    SettingsMenuOption(
+                                      id: option.key ? 'left' : 'right',
+                                      label: option.value,
+                                      selected:
+                                          settings.platformButtonOnLeft ==
+                                          option.key,
+                                      onSelected: () => ref
+                                          .read(settingsProvider.notifier)
+                                          .setPlatformButtonOnLeft(option.key),
+                                    ),
+                                ],
+                              ),
                               const SizedBox(height: 4),
                               SettingsSwitchAction(
                                 key: const ValueKey('car-pad-mode-setting'),
@@ -1007,8 +1028,6 @@ class SettingsPage extends ConsumerWidget {
           await ref
               .read(settingsProvider.notifier)
               .setDiscoverySourceOrder(order);
-          ref.read(selectedDiscoverySourceProvider.notifier).state =
-              order.first;
         },
       );
     } finally {

@@ -69,9 +69,11 @@ class SnapSheetRoute<T> extends PopupRoute<T>
     this.fitsContent = false,
     this.floating = true,
     this.initialScrollOffset = 0,
+    this.backgroundColor,
   });
 
   final SnapSheetBuilder builder;
+  final Color? backgroundColor;
   final Color sheetBarrierColor;
   final List<double> detents;
 
@@ -394,8 +396,8 @@ class _SheetModel extends ChangeNotifier {
     return peak - _rounded(peak - tallest - _keyboard, room);
   }
 
-  /// A fit sheet follows its content up to each detent but never rests below
-  /// the shortest one; each keeps what it shows above the keyboard.
+  /// A fit sheet may rest below the shortest detent when its content is short.
+  /// Each stop keeps what it shows above the keyboard.
   List<double> get _stops {
     final shortest = detents.first * _available;
     final top = _top;
@@ -407,7 +409,7 @@ class _SheetModel extends ChangeNotifier {
   }
 
   double _stopFor(double detent, double shortest, double top) {
-    final rest = clampDouble(_fitHeight, shortest, detent);
+    final rest = clampDouble(_fitHeight, fitsContent ? 0 : shortest, detent);
     final blank = rest - math.min(_fitHeight, rest);
     return math.min(top, rest + _rounded(_keyboard - blank, blank / 2));
   }
@@ -915,7 +917,9 @@ class _SnapSheetState extends State<_SnapSheet>
   @override
   Widget build(BuildContext context) {
     final route = widget.route;
-    final sheetColor = SurfaceLevel.page.colorOf(context.colorScheme);
+    final sheetColor =
+        widget.route.backgroundColor ??
+        SurfaceLevel.page.colorOf(context.colorScheme);
     final theme = Theme.of(context);
     Widget content = route.builder(context, _scrollController);
     if (route.fitsContent) {

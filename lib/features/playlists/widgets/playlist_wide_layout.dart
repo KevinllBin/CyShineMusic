@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/ui/container_transform.dart';
+import '../../../core/ui/widgets/spring_artwork_hero.dart';
 import 'immersive_playlist_chrome.dart';
 
 /// Whether playlist and leaderboard details should use their split layout.
@@ -107,14 +108,20 @@ class PlaylistWideInfoPane extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (artworkHeroTag case final tag?)
-              Hero(
-                tag: tag,
-                transitionOnUserGestures: true,
-                createRectTween: containerTransformHeroRectTween,
-                flightShuttleBuilder: buildArtworkHeroFlightShuttle,
-                // 卡片端圆角 → 这里的 20dp 圆角，由 shuttle 在飞行中插值。
-                child: HeroArtworkShape(borderRadius: radius, child: artwork),
-              )
+              if (ContainerTransformTransition.usesSpringHeroOf(context))
+                SpringArtworkHero(
+                  tag: tag,
+                  child: ClipRRect(borderRadius: radius, child: artwork),
+                )
+              else
+                Hero(
+                  tag: tag,
+                  transitionOnUserGestures: true,
+                  createRectTween: containerTransformHeroRectTween,
+                  flightShuttleBuilder: buildArtworkHeroFlightShuttle,
+                  // 卡片端圆角 → 这里的 20dp 圆角，由 shuttle 在飞行中插值。
+                  child: HeroArtworkShape(borderRadius: radius, child: artwork),
+                )
             else
               ClipRRect(borderRadius: radius, child: artwork),
             PlaylistDetailInfo(

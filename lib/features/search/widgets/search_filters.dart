@@ -1,42 +1,49 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prism_ui/prism_ui.dart' as prism;
-import 'package:prism_ui/icons/icons.dart' as glyph;
 
 import '../../../core/models/enums.dart';
 import '../../../core/models/search_category.dart';
 import '../../../core/storage/settings_store.dart';
 import '../../../theme/app_motion.dart';
+import '../../discovery/discovery_controller.dart';
 import '../search_controller.dart';
+import 'platform_identity.dart';
 
 class SearchPlatformMenu extends ConsumerWidget {
   const SearchPlatformMenu({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final selected = ref.watch(
+    final searchSource = ref.watch(
       searchControllerProvider.select((s) => s.source),
     );
+    final isSearchActive = ref.watch(
+      searchControllerProvider.select((s) => s.isSearchActive),
+    );
+    final discoverySource = ref.watch(selectedDiscoverySourceProvider);
     final enabled = ref.watch(
       settingsProvider.select((s) => s.enabledSearchSources),
     );
     final order = ref.watch(
       settingsProvider.select((s) => s.discoverySourceOrder),
     );
-    final sources = [
-      MusicSource.all,
-      ...{...order, ...enabled}.where(enabled.contains),
-    ];
+    final selected = isSearchActive ? searchSource : discoverySource;
+    final sources = isSearchActive
+        ? [
+            MusicSource.all,
+            ...{...order, ...enabled}.where(enabled.contains),
+          ]
+        : order;
     final liquidGlass = prism.LiquidGlassScope.of(context);
+    final scheme = Theme.of(context).colorScheme;
     return prism.PopupAnchor(
       key: const ValueKey('search-platform-menu-anchor'),
       targetBuilder: (open) {
-        final selectedLabel = selected == MusicSource.all
-            ? '全平台'
-            : selected.label;
+        final selectedLabel = selected.fullName;
         return Semantics(
           button: true,
-          label: '搜索平台：$selectedLabel',
+          label: '${isSearchActive ? '搜索' : '发现'}平台：$selectedLabel',
           child: prism.TonalButtonTheme(
             size: prism.TonalButtonSize.bar,
             glass: liquidGlass,
@@ -45,11 +52,51 @@ class SearchPlatformMenu extends ConsumerWidget {
                 tooltip: '平台：$selectedLabel',
                 onPressed: open,
                 style: prism.ButtonStyle.from(
-                  padding: EdgeInsets.zero,
+                  fixedSize: const Size(double.infinity, 52),
+                  minimumSize: const Size(88, 52),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   tapTargetSize: prism.TapTargetSize.shrinkWrap,
                   pressLook: prism.PressLook.none,
                 ),
-                icon: const glyph.GlyphIcon(glyph.Glyphs.more),
+                icon: ExcludeSemantics(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AnimatedContainer(
+                        duration: MediaQuery.disableAnimationsOf(context)
+                            ? Duration.zero
+                            : AppMotion.short,
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: selected.brandColor ?? scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Equal space for all short labels keeps the search bar
+                      // steady when switching between QQ and Chinese names.
+                      SizedBox(
+                        width: MediaQuery.textScalerOf(context).scale(28),
+                        child: Text(
+                          selected.shortName,
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.expand_more_rounded,
+                        size: 16,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
@@ -59,11 +106,21 @@ class SearchPlatformMenu extends ConsumerWidget {
         items: [
           for (final source in sources)
             prism.PopupMenuItem(
-              label: source == MusicSource.all ? '全平台' : source.label,
+              label: source.fullName,
+              leading: MusicPlatformIcon(source: source),
               checked: source == selected,
               executeImmediately: true,
-              onPressed: () =>
-                  ref.read(searchControllerProvider.notifier).setSource(source),
+              onPressed: () {
+                if (isSearchActive) {
+                  ref.read(searchControllerProvider.notifier).setSource(source);
+                }
+                // A concrete platform is also the next discovery default.
+                // Aggregate search has no corresponding discovery page.
+                if (source != MusicSource.all) {
+                  ref.read(selectedDiscoverySourceProvider.notifier).state =
+                      source;
+                }
+              },
             ),
         ],
       ),

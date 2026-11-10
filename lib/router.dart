@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:heroine/heroine.dart';
 
 import 'features/debug/debug_log_page.dart';
 import 'features/discovery/leaderboards_page.dart';
@@ -71,6 +72,7 @@ GoRouter createAppRouter({
             branches: [
               StatefulShellBranch(
                 initialLocation: '/',
+                observers: [HeroineController()],
                 routes: [
                   GoRoute(
                     path: '/',
@@ -426,13 +428,8 @@ class _PlayerRouteBackdrop extends StatelessWidget {
   );
 }
 
-/// 发现页卡片 → 歌单/榜单详情：页面从被点击的卡片矩形展开（M3 container
-/// transform），封面 Hero 沿同一条曲线飞到头图；返回时原路收回。起点随
-/// extra 传入，没有起点（深链、预览弹窗）时退化为整页淡入；从别的 tab
-/// 切回（[ShellTabSwitch]）时直接出现。
-///
-/// 路由时长同时驱动页面容器与封面 Hero，展开和收回共用
-/// [AppMotion.containerTransformDuration]。
+/// 发现详情：Heroine 的单层封面弹簧飞行，页面只做淡入/淡出。
+/// 起点继续用于识别卡片入口、重置首次滚动；切回 tab 时不触发飞行。
 CustomTransitionPage<void> _containerTransformPage(
   BuildContext context, {
   required LocalKey key,
@@ -455,6 +452,8 @@ CustomTransitionPage<void> _containerTransformPage(
       child: ContainerTransformTransition(
         animation: animation,
         origin: origin,
+        springHero: true,
+        enableFlight: !reduceMotion && extra is! ShellTabSwitch,
         child: child,
       ),
     ),

@@ -5,6 +5,8 @@ import 'package:cy_shine_music/features/songs/songs_toolbar_state.dart';
 import 'package:cy_shine_music/features/songs/widgets/songs_placeholders.dart';
 import 'package:cy_shine_music/features/songs/widgets/songs_sort_sheet.dart';
 
+import 'helpers/prism_test_environment.dart';
+
 void main() {
   testWidgets('songs summary exposes icon-only sort and batch actions', (
     tester,
@@ -57,6 +59,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        builder: buildPrismTestEnvironment,
         home: Scaffold(
           body: Builder(
             builder: (context) => FilledButton(

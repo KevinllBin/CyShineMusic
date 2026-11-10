@@ -5,10 +5,11 @@ import 'dart:typed_data';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:prism_ui/prism_ui.dart' as prism;
 
 import '../../../core/services/tagger.dart';
 import '../../../core/ui/cover_image_source.dart';
-import '../../../core/ui/widgets/app_navigation_button.dart';
+import '../../../core/ui/app_sheet.dart';
 import '../../../theme/app_motion.dart';
 import '../../downloads/download_history_store.dart';
 import '../player_controller.dart';
@@ -91,13 +92,10 @@ class PlaybackQueueButton extends StatelessWidget {
 }
 
 Future<void> showPlaybackQueueSheet(BuildContext context) {
-  return showModalBottomSheet<void>(
+  return showAppSheet<void>(
     context: context,
-    useRootNavigator: true,
-    isScrollControlled: true,
-    showDragHandle: false,
-    backgroundColor: Colors.transparent,
-    barrierColor: Colors.black.withValues(alpha: 0.32),
+    detents: const [0.72, 0.92],
+    maxHeight: 1000,
     builder: (_) => const _PlaybackQueueSheet(),
   );
 }
@@ -124,102 +122,32 @@ class _PlaybackQueueSheet extends ConsumerWidget {
     final currentPosition = vm.queueIndex >= 0 && vm.queueIndex < count
         ? vm.queueIndex + 1
         : (vm.queue.isEmpty && vm.track != null ? 1 : null);
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final sheetColor = Color.alphaBlend(
-      (dark ? Colors.black : Colors.white).withValues(alpha: 0.32),
-      playerSurface(context),
-    );
-
-    return FractionallySizedBox(
-      heightFactor: 0.72,
-      child: Material(
-        color: sheetColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
-        clipBehavior: Clip.antiAlias,
-        child: SafeArea(
-          top: false,
-          child: Column(
-            children: [
-              const SizedBox(height: 10),
-              Container(
-                width: 38,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: playerInk(context).withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(999),
+    return AppSheetLayout(
+      title: '播放列表',
+      subtitle: currentPosition == null
+          ? '$count 首 · ${vm.mode.label}'
+          : '$currentPosition / $count 首 · ${vm.mode.label}',
+      body: vm.queue.isNotEmpty
+          ? _PlaybackQueueList(
+              queue: vm.queue,
+              queueIndex: vm.queueIndex,
+              track: vm.track,
+              playing: vm.playing,
+              onSelect: (index) => ref
+                  .read(playerControllerProvider.notifier)
+                  .playQueueItem(index),
+            )
+          : vm.track == null
+          ? const _PlaybackQueueEmpty()
+          : ListView(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+              children: [
+                _PlaybackQueueCurrentTrackTile(
+                  track: vm.track!,
+                  playing: vm.playing,
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(22, 16, 14, 12),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '播放列表',
-                            style: TextStyle(
-                              color: playerInk(context),
-                              fontSize: 22,
-                              fontWeight: FontWeight.w600,
-                              height: 1.1,
-                              letterSpacing: -0.2,
-                            ),
-                          ),
-                          const SizedBox(height: 5),
-                          Text(
-                            currentPosition == null
-                                ? '$count 首 · ${vm.mode.label}'
-                                : '$currentPosition/$count首·${vm.mode.label}',
-                            style: TextStyle(
-                              color: playerMuted(context),
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    AppNavigationButton.close(
-                      tooltip: '关闭播放列表',
-                      onPressed: () => Navigator.of(context).pop(),
-                      foregroundColor: playerInk(context),
-                    ),
-                  ],
-                ),
-              ),
-              Divider(
-                height: 1,
-                color: playerInk(context).withValues(alpha: 0.08),
-              ),
-              Expanded(
-                child: vm.queue.isNotEmpty
-                    ? _PlaybackQueueList(
-                        queue: vm.queue,
-                        queueIndex: vm.queueIndex,
-                        track: vm.track,
-                        playing: vm.playing,
-                        onSelect: (index) => ref
-                            .read(playerControllerProvider.notifier)
-                            .playQueueItem(index),
-                      )
-                    : vm.track == null
-                    ? const _PlaybackQueueEmpty()
-                    : ListView(
-                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
-                        children: [
-                          _PlaybackQueueCurrentTrackTile(
-                            track: vm.track!,
-                            playing: vm.playing,
-                          ),
-                        ],
-                      ),
-              ),
-            ],
-          ),
-        ),
-      ),
+              ],
+            ),
     );
   }
 }
@@ -245,10 +173,11 @@ class _PlaybackQueueList extends StatefulWidget {
 
 class _PlaybackQueueListState extends State<_PlaybackQueueList> {
   ScrollController? _scrollController;
+  bool _ownsController = false;
 
   @override
   void dispose() {
-    _scrollController?.dispose();
+    if (_ownsController) _scrollController?.dispose();
     super.dispose();
   }
 
@@ -268,9 +197,22 @@ class _PlaybackQueueListState extends State<_PlaybackQueueList> {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        _scrollController ??= ScrollController(
-          initialScrollOffset: _initialScrollOffset(constraints.maxHeight),
-        );
+        if (_scrollController == null) {
+          final inherited = PrimaryScrollController.maybeOf(context);
+          _ownsController = inherited == null;
+          _scrollController = inherited ?? ScrollController();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            final controller = _scrollController;
+            if (!mounted || controller == null || !controller.hasClients) {
+              return;
+            }
+            controller.jumpTo(
+              _initialScrollOffset(
+                constraints.maxHeight,
+              ).clamp(0.0, controller.position.maxScrollExtent),
+            );
+          });
+        }
         return ListView.builder(
           key: const ValueKey('playback-queue-list'),
           controller: _scrollController,
@@ -325,82 +267,71 @@ class _PlaybackQueueEntryTile extends StatelessWidget {
       if (album.trim().isNotEmpty) album.trim(),
     ].join(' · ');
 
-    return AnimatedContainer(
-      duration: MediaQuery.disableAnimationsOf(context)
-          ? Duration.zero
-          : AppMotion.medium,
-      curve: AppMotion.emphasized,
-      decoration: BoxDecoration(
-        color: active
-            ? playerInk(context).withValues(alpha: 0.075)
-            : Colors.transparent,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(18),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 10, 8),
-            child: Row(
-              children: [
-                _QueueArtwork(
-                  path: entry.savedPath,
-                  url: entry.picUrl,
-                  bytes: active ? currentTrack?.coverBytes : null,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: active
-                              ? playerInk(context)
-                              : playerInk(context).withValues(alpha: 0.86),
-                          fontSize: 14.5,
-                          fontWeight: active
-                              ? FontWeight.w600
-                              : FontWeight.w500,
-                          height: 1.15,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: playerMuted(context),
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w500,
-                          height: 1.15,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                if (active)
-                  _PlaybackStateIcon(playing: playing)
-                else
+    return prism.Card(
+      radius: 18,
+      isSelected: active,
+      onPressed: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 8, 10, 8),
+        child: Row(
+          children: [
+            _QueueArtwork(
+              path: entry.savedPath,
+              url: entry.picUrl,
+              bytes: active ? currentTrack?.coverBytes : null,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    entry.qualityCode.toUpperCase(),
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: playerMuted(context).withValues(alpha: 0.78),
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w600,
+                      color: active
+                          ? prism.Theme.of(context).colorScheme.onSurface
+                          : prism.Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.86),
+                      fontSize: 14.5,
+                      fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                      height: 1.15,
                     ),
                   ),
-              ],
+                  const SizedBox(height: 5),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: prism.Theme.of(
+                        context,
+                      ).colorScheme.onSurfaceVariant,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w500,
+                      height: 1.15,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+            const SizedBox(width: 8),
+            if (active)
+              _PlaybackStateIcon(playing: playing)
+            else
+              Text(
+                entry.qualityCode.toUpperCase(),
+                style: TextStyle(
+                  color: prism.Theme.of(
+                    context,
+                  ).colorScheme.onSurfaceVariant.withValues(alpha: 0.78),
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -422,12 +353,10 @@ class _PlaybackQueueCurrentTrackTile extends StatelessWidget {
       track.artist,
       if (track.album.trim().isNotEmpty) track.album.trim(),
     ].join(' · ');
-    return Container(
+    return prism.Card(
+      radius: 18,
+      inert: true,
       padding: const EdgeInsets.fromLTRB(8, 8, 10, 8),
-      decoration: BoxDecoration(
-        color: playerInk(context).withValues(alpha: 0.075),
-        borderRadius: BorderRadius.circular(18),
-      ),
       child: Row(
         children: [
           _QueueArtwork(
@@ -445,7 +374,7 @@ class _PlaybackQueueCurrentTrackTile extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: playerInk(context),
+                    color: prism.Theme.of(context).colorScheme.onSurface,
                     fontSize: 14.5,
                     fontWeight: FontWeight.w600,
                   ),
@@ -456,7 +385,7 @@ class _PlaybackQueueCurrentTrackTile extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: playerMuted(context),
+                    color: prism.Theme.of(context).colorScheme.onSurfaceVariant,
                     fontSize: 11.5,
                     fontWeight: FontWeight.w500,
                   ),
@@ -536,7 +465,7 @@ class _PlaybackStateIconState extends State<_PlaybackStateIcon>
             : Icon(
                 Icons.play_arrow_rounded,
                 key: ValueKey('play-arrow'),
-                color: playerInk(context),
+                color: prism.Theme.of(context).colorScheme.onSurface,
                 size: 24,
               ),
       ),
@@ -578,7 +507,7 @@ class _AnimatedPlayingBars extends AnimatedWidget {
                 width: 2.6,
                 height: barHeights[index],
                 decoration: BoxDecoration(
-                  color: playerInk(context),
+                  color: prism.Theme.of(context).colorScheme.onSurface,
                   borderRadius: BorderRadius.circular(999),
                 ),
               ),
@@ -726,13 +655,17 @@ class _QueueArtworkState extends State<_QueueArtwork> {
       width: 50,
       height: 50,
       decoration: BoxDecoration(
-        color: playerInk(context).withValues(alpha: 0.07),
+        color: prism.Theme.of(
+          context,
+        ).colorScheme.onSurface.withValues(alpha: 0.07),
         borderRadius: BorderRadius.circular(13),
       ),
       alignment: Alignment.center,
       child: Icon(
         Icons.music_note_rounded,
-        color: playerInk(context).withValues(alpha: 0.42),
+        color: prism.Theme.of(
+          context,
+        ).colorScheme.onSurface.withValues(alpha: 0.42),
         size: 22,
       ),
     );
@@ -804,7 +737,7 @@ class _PlaybackQueueEmpty extends StatelessWidget {
       child: Text(
         '当前没有可显示的播放列表',
         style: TextStyle(
-          color: playerMuted(context),
+          color: prism.Theme.of(context).colorScheme.onSurfaceVariant,
           fontSize: 13,
           fontWeight: FontWeight.w500,
         ),

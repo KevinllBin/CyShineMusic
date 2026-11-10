@@ -2,6 +2,7 @@ import '../../settings/widgets/settings_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:prism_ui/prism_ui.dart' as prism;
 
 import '../../shell/shell_toolbar_visibility.dart';
 import '../sleep_timer_controller.dart';
@@ -118,20 +119,20 @@ class _PlayerSleepTimerSheetState
                 runSpacing: 8,
                 children: [
                   for (final preset in const [15, 30, 45, 60, 90])
-                    ChoiceChip(
+                    prism.Chip(
                       key: ValueKey('sleep-timer-preset-$preset'),
-                      label: Text('$preset 分钟'),
+                      label: '$preset 分钟',
                       selected: _presetMinutes == preset,
-                      onSelected: (_) {
+                      onPressed: () {
                         FocusManager.instance.primaryFocus?.unfocus();
                         setState(() => _presetMinutes = preset);
                       },
                     ),
-                  ChoiceChip(
+                  prism.Chip(
                     key: const ValueKey('sleep-timer-custom'),
-                    label: const Text('自定义'),
+                    label: '自定义',
                     selected: custom,
-                    onSelected: (_) => setState(() => _presetMinutes = null),
+                    onPressed: () => setState(() => _presetMinutes = null),
                   ),
                 ],
               ),
@@ -165,14 +166,14 @@ class _PlayerSleepTimerSheetState
           ),
         ),
         actions: [
-          FilledButton.icon(
+          prism.FilledButton.icon(
             key: const ValueKey('sleep-timer-start'),
             onPressed: valid ? () => _start(minutes) : null,
             icon: const Icon(Icons.timer_outlined),
             label: Text(remaining == null ? '开启定时' : '重新计时'),
           ),
           if (remaining != null) ...[
-            TextButton(
+            prism.TextButton(
               key: const ValueKey('sleep-timer-cancel'),
               onPressed: () {
                 ref.read(sleepTimerProvider.notifier).cancel();

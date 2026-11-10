@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:prism_ui/prism_ui.dart' as prism;
 
 import '../../core/ui/app_scrollbar.dart';
+import '../../core/ui/app_sheet.dart';
 import '../../core/ui/widgets/app_navigation_button.dart';
 import 'playlist_models.dart';
 import 'playlist_store.dart';
@@ -13,7 +14,18 @@ enum PlaylistBrowserMode { browse, addSongs }
 Future<String?> showPlaylistBrowserSheet(
   BuildContext context, {
   PlaylistBrowserMode mode = PlaylistBrowserMode.browse,
+  bool fromPlayer = false,
 }) {
+  if (fromPlayer) {
+    return showAppSheet<String>(
+      context: context,
+      detents: prism.snapSheetDetents,
+      fitsContent: true,
+      neutralSurface: true,
+      builder: (_) =>
+          _PlaylistBrowserSheet(mode: mode, controller: null, fromPlayer: true),
+    );
+  }
   return prism.showSnapSheet<String>(
     Navigator.of(context, rootNavigator: true).context,
     builder: (_, controller) =>
@@ -22,10 +34,15 @@ Future<String?> showPlaylistBrowserSheet(
 }
 
 class _PlaylistBrowserSheet extends ConsumerStatefulWidget {
-  const _PlaylistBrowserSheet({required this.mode, required this.controller});
+  const _PlaylistBrowserSheet({
+    required this.mode,
+    required this.controller,
+    this.fromPlayer = false,
+  });
 
   final PlaylistBrowserMode mode;
   final ScrollController? controller;
+  final bool fromPlayer;
 
   @override
   ConsumerState<_PlaylistBrowserSheet> createState() =>
@@ -47,6 +64,41 @@ class _PlaylistBrowserSheetState extends ConsumerState<_PlaylistBrowserSheet> {
     final playlists = ref.watch(localPlaylistsProvider);
     final selecting = widget.mode == PlaylistBrowserMode.addSongs;
     final scrollController = widget.controller ?? _desktopController;
+    if (widget.fromPlayer) {
+      final controller =
+          PrimaryScrollController.maybeOf(context) ?? _desktopController;
+      return AppSheetLayout(
+        title: '添加到歌单',
+        centerTitle: true,
+        subtitle: '${playlists.length} 个歌单',
+        body: AppScrollbar(
+          controller: controller,
+          child: playlists.isEmpty
+              ? _EmptyPlaylists(
+                  controller: controller,
+                  selecting: true,
+                  shrinkWrap: true,
+                )
+              : prism.PrismListView(
+                  controller: controller,
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+                  itemCount: playlists.length,
+                  itemBuilder: (context, index) => prism.ItemPositionProvider(
+                    position: prism.ItemPosition.get(index, playlists.length),
+                    child: _PlaylistSheetTile(
+                      playlist: playlists[index],
+                      selecting: true,
+                      grouped: true,
+                      onTap: () => Navigator.of(
+                        context,
+                      ).pop('/playlists/${playlists[index].id}'),
+                    ),
+                  ),
+                ),
+        ),
+      );
+    }
     return prism.SurfaceScope(
       level: prism.SurfaceLevel.page,
       child: prism.Surface(
@@ -179,15 +231,46 @@ class _PlaylistSheetTile extends StatelessWidget {
     required this.playlist,
     required this.selecting,
     required this.onTap,
+    this.grouped = false,
   });
 
   final LocalPlaylist playlist;
   final bool selecting;
   final VoidCallback onTap;
+  final bool grouped;
 
   @override
   Widget build(BuildContext context) {
     final scheme = prism.Theme.of(context).colorScheme;
+    if (grouped) {
+      return prism.DecorationListItem(
+        onPressed: onTap,
+        leading: PlaylistCover(
+          playlist: playlist,
+          size: 44,
+          radius: 12,
+          placeholder: Container(
+            width: 44,
+            height: 44,
+            color: scheme.secondaryContainer,
+            child: Icon(
+              Icons.queue_music_rounded,
+              color: scheme.onSecondaryContainer,
+            ),
+          ),
+        ),
+        title: Text(
+          playlist.name,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          '${playlist.tracks.length} 首歌曲',
+          style: prism.AppTextStyle.footnote.of(context),
+        ),
+        trailing: const Icon(Icons.add_rounded, size: 20),
+      );
+    }
     return prism.Card(
       onPressed: onTap,
       radius: 18,
@@ -226,15 +309,21 @@ class _PlaylistSheetTile extends StatelessWidget {
 }
 
 class _EmptyPlaylists extends StatelessWidget {
-  const _EmptyPlaylists({required this.controller, required this.selecting});
+  const _EmptyPlaylists({
+    required this.controller,
+    required this.selecting,
+    this.shrinkWrap = false,
+  });
 
   final ScrollController controller;
   final bool selecting;
+  final bool shrinkWrap;
 
   @override
   Widget build(BuildContext context) {
     final scheme = prism.Theme.of(context).colorScheme;
     return ListView(
+      shrinkWrap: shrinkWrap,
       controller: controller,
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(24, 36, 24, 24),

@@ -9,6 +9,7 @@ import '../../../core/models/leaderboard_info.dart';
 import '../../../core/models/music_info.dart';
 import '../../../core/models/online_collection_kind.dart';
 import '../../../core/ui/container_transform.dart';
+import '../../../core/ui/widgets/spring_artwork_hero.dart';
 import '../../../core/ui/car_display_layout.dart';
 import '../../shell/shell_bottom_area.dart';
 import '../discovery_controller.dart';
@@ -158,14 +159,12 @@ class _LeaderboardPreviewCard extends ConsumerWidget {
                 SizedBox(
                   width: 118,
                   height: double.infinity,
-                  child: Hero(
+                  child: SpringArtworkHero(
                     tag: onlinePlaylistArtworkHeroTag(
                       board.source,
                       board.boardId,
                       kind: OnlineCollectionKind.leaderboard,
                     ),
-                    transitionOnUserGestures: true,
-                    createRectTween: containerTransformHeroRectTween,
                     child: HeroArtworkShape(
                       // 封面占据卡片左列，只有左侧两角跟随卡片圆角。
                       borderRadius: const BorderRadius.horizontal(

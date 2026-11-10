@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/playlist_summary.dart';
 import '../../../core/storage/settings_store.dart';
 import '../../../core/ui/container_transform.dart';
+import '../../../core/ui/widgets/spring_artwork_hero.dart';
 import '../../../core/ui/car_display_layout.dart';
 import '../../../theme/app_motion.dart';
 import '../../shell/shell_bottom_area.dart';
@@ -25,10 +26,12 @@ class SliverMasonryPlaylistGrid extends ConsumerStatefulWidget {
   const SliverMasonryPlaylistGrid({
     super.key,
     required this.items,
+    this.animateInitialItems = true,
     this.maxWidth = double.infinity,
   });
 
   final List<PlaylistSummary> items;
+  final bool animateInitialItems;
 
   /// 网格最大宽度，超出时居中。
   final double maxWidth;
@@ -50,7 +53,7 @@ class _SliverMasonryPlaylistGridState
   @override
   void initState() {
     super.initState();
-    _recordArrivals();
+    _recordArrivals(animate: widget.animateInitialItems);
   }
 
   @override
@@ -62,8 +65,8 @@ class _SliverMasonryPlaylistGridState
     }
   }
 
-  void _recordArrivals() {
-    final now = _clock.elapsed;
+  void _recordArrivals({bool animate = true}) {
+    final now = _clock.elapsed - (animate ? Duration.zero : AppMotion.medium);
     for (final item in widget.items) {
       _arrivals.putIfAbsent(item.key, () => now);
     }
@@ -224,13 +227,11 @@ class _PlaylistDiscoveryCard extends StatelessWidget {
               children: [
                 AspectRatio(
                   aspectRatio: coverRatio,
-                  child: Hero(
+                  child: SpringArtworkHero(
                     tag: onlinePlaylistArtworkHeroTag(
                       summary.source,
                       summary.id,
                     ),
-                    transitionOnUserGestures: true,
-                    createRectTween: containerTransformHeroRectTween,
                     child: HeroArtworkShape(
                       // 封面贴着卡片顶部，只有上方两角跟随卡片圆角。
                       borderRadius: const BorderRadius.vertical(

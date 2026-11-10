@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:prism_ui/prism_ui.dart' as prism;
+
+import '../../../core/ui/app_sheet.dart';
 
 import '../songs_toolbar_state.dart';
 
@@ -8,14 +11,11 @@ Future<void> showSongsSortSheet({
   required bool initialAscending,
   required void Function(SongSortMode mode, bool ascending) onChanged,
 }) {
-  final scheme = Theme.of(context).colorScheme;
-  return showModalBottomSheet<void>(
+  return showAppSheet<void>(
     context: context,
-    useRootNavigator: true,
-    useSafeArea: true,
-    showDragHandle: true,
-    isScrollControlled: true,
-    barrierColor: scheme.scrim.withValues(alpha: 0.36),
+    heightFraction: 0.70,
+    maxHeight: 600,
+    fitsContent: true,
     builder: (_) => _SongsSortSheet(
       initialMode: initialMode,
       initialAscending: initialAscending,
@@ -59,93 +59,50 @@ class _SongsSortSheetState extends State<_SongsSortSheet> {
     widget.onChanged(_mode, _ascending);
   }
 
-  void _selectDirection(Set<bool> selection) {
-    if (selection.isEmpty) return;
-    final ascending = selection.first;
+  void _selectDirection(bool ascending) {
     if (_ascending == ascending) return;
     setState(() => _ascending = ascending);
     widget.onChanged(_mode, _ascending);
   }
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return SafeArea(
-      top: false,
-      child: Center(
-        heightFactor: 1,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 2, 8, 10),
-                  child: Text(
-                    '歌曲排序',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      color: scheme.onSurface,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                for (final mode in SongSortMode.values)
-                  ListTile(
-                    minTileHeight: 52,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    selected: mode == _mode,
-                    selectedTileColor: scheme.secondaryContainer.withValues(
-                      alpha: 0.72,
-                    ),
-                    leading: Icon(mode.icon, size: 21),
-                    title: Text(mode.label),
-                    trailing: mode == _mode
-                        ? Icon(
-                            Icons.check_rounded,
-                            color: scheme.onSecondaryContainer,
-                          )
-                        : null,
-                    onTap: () => _selectMode(mode),
-                  ),
-                const SizedBox(height: 16),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text(
-                    '排列顺序',
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                SegmentedButton<bool>(
-                  showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment<bool>(
-                      value: true,
-                      icon: Icon(Icons.arrow_upward_rounded),
-                      label: Text('升序'),
-                    ),
-                    ButtonSegment<bool>(
-                      value: false,
-                      icon: Icon(Icons.arrow_downward_rounded),
-                      label: Text('降序'),
-                    ),
-                  ],
-                  selected: {_ascending},
-                  onSelectionChanged: _selectDirection,
-                ),
-              ],
+  Widget build(BuildContext context) => AppSheetLayout(
+    title: '歌曲排序',
+    subtitle: '选择后立即应用',
+    body: ListView(
+      shrinkWrap: true,
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+      children: [
+        for (final mode in SongSortMode.values)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: prism.Card(
+              radius: 18,
+              isSelected: mode == _mode,
+              onPressed: () => _selectMode(mode),
+              child: prism.ListRow(
+                leading: Icon(mode.icon, size: 22),
+                title: Text(mode.label),
+                trailing: mode == _mode
+                    ? const prism.SelectionBadge(tonal: true)
+                    : const SizedBox.square(dimension: 22),
+              ),
             ),
           ),
+        const SizedBox(height: 16),
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 10),
+          child: Text(
+            '排列顺序',
+            style: prism.AppTextStyle.subheadline.of(context),
+          ),
         ),
-      ),
-    );
-  }
+        prism.SegmentedControl<bool>(
+          segments: const [(true, '升序'), (false, '降序')],
+          value: _ascending,
+          onChanged: _selectDirection,
+        ),
+      ],
+    ),
+  );
 }

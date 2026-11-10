@@ -9,6 +9,7 @@ import '../../../core/models/online_collection_kind.dart';
 import '../../../core/models/search_category.dart';
 import '../../../core/ui/expressive_loading_status.dart';
 import '../../../core/ui/container_transform.dart';
+import '../../../core/ui/widgets/spring_artwork_hero.dart';
 import '../../../core/ui/cover_image_source.dart';
 import '../../discovery/discovery_controller.dart';
 import '../../downloads/download_progress.dart';
@@ -218,14 +219,12 @@ class CatalogResultTile extends StatelessWidget {
             children: [
               SizedBox.square(
                 dimension: 58,
-                child: Hero(
+                child: SpringArtworkHero(
                   tag: onlinePlaylistArtworkHeroTag(
                     summary.source,
                     summary.id,
                     kind: kind,
                   ),
-                  transitionOnUserGestures: true,
-                  createRectTween: containerTransformHeroRectTween,
                   child: HeroArtworkShape(
                     borderRadius: radius,
                     child: image == null || image.isEmpty

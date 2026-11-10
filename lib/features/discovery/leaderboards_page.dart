@@ -8,6 +8,7 @@ import '../../core/models/online_collection_kind.dart';
 import '../../core/storage/settings_store.dart';
 import '../../core/ui/app_refresh_indicator.dart';
 import '../../core/ui/container_transform.dart';
+import '../../core/ui/widgets/spring_artwork_hero.dart';
 import '../../core/ui/car_display_layout.dart';
 import '../shell/widgets/scrolling_page_header.dart';
 import '../playlists/widgets/immersive_playlist_chrome.dart';
@@ -295,14 +296,12 @@ class _LeaderboardGridCard extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Expanded(
-                  child: Hero(
+                  child: SpringArtworkHero(
                     tag: onlinePlaylistArtworkHeroTag(
                       board.source,
                       board.boardId,
                       kind: OnlineCollectionKind.leaderboard,
                     ),
-                    transitionOnUserGestures: true,
-                    createRectTween: containerTransformHeroRectTween,
                     child: HeroArtworkShape(
                       // 封面贴着卡片顶部，只有上方两角跟随卡片圆角。
                       borderRadius: const BorderRadius.vertical(

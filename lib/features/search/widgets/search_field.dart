@@ -4,8 +4,6 @@ import 'package:flutter/material.dart' as material show SearchController;
 import 'package:prism_ui/prism_ui.dart' as prism;
 import 'package:prism_ui/icons/icons.dart' as glyph;
 
-import '../../../core/ui/widgets/app_navigation_button.dart';
-
 class NativeSearchField extends StatefulWidget {
   const NativeSearchField({
     super.key,
@@ -68,12 +66,11 @@ class _NativeSearchFieldState extends State<NativeSearchField> {
     final shape = WidgetStatePropertyAll(
       RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
     );
-    return SearchAnchor(
+    final anchor = SearchAnchor(
       searchController: widget.controller,
       isFullScreen: false,
-      viewLeading: AppNavigationButton.back(
-        onPressed: () => widget.controller.closeView(widget.controller.text),
-      ),
+      // A null leading restores SearchAnchor's default back button.
+      viewLeading: const SizedBox.shrink(),
       viewOnSubmitted: widget.onSubmitted,
       viewHintText: '搜索歌曲、艺人、歌单、专辑',
       viewBackgroundColor: scheme.surface,
@@ -187,6 +184,17 @@ class _NativeSearchFieldState extends State<NativeSearchField> {
               );
         return prism.ElasticPress(child: surface);
       },
+    );
+    // SearchAnchor captures Theme for its popup's separate header SearchBar.
+    // Let the shared panel provide its outline and corner clipping.
+    return Theme(
+      data: Theme.of(context).copyWith(
+        searchBarTheme: SearchBarTheme.of(context).copyWith(
+          side: const WidgetStatePropertyAll(BorderSide.none),
+          shape: const WidgetStatePropertyAll(RoundedRectangleBorder()),
+        ),
+      ),
+      child: anchor,
     );
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/music_api.dart';
@@ -10,13 +12,18 @@ import '../../core/models/playlist_info.dart';
 import '../../core/models/playlist_summary.dart';
 import '../../core/storage/settings_store.dart';
 import '../../core/ui/cover_image_source.dart';
+import 'discovery_browse_cache.dart';
 
 const int discoveryPlaylistArtworkSize = 640;
 const int discoveryPlaylistPageSize = 30;
 const int onlinePlaylistDetailInitialTrackLimit = 40;
 const int onlinePlaylistDetailTrackPageSize = 40;
+final discoveryBrowseCacheProvider = Provider<DiscoveryBrowseCache>(
+  (ref) => DiscoveryBrowseCache(),
+);
+
 final discoverySourcesProvider = Provider<List<MusicSource>>(
-  (ref) => ref.watch(settingsProvider).discoverySourceOrder,
+  (ref) => ref.watch(settingsProvider.select((s) => s.discoverySourceOrder)),
 );
 
 typedef OnlinePlaylistIdentity = ({
@@ -42,9 +49,21 @@ String onlinePlaylistArtworkHeroTag(
   return 'online-${kind.name}-artwork:${source.code}:$playlistId';
 }
 
-final selectedDiscoverySourceProvider = StateProvider<MusicSource>(
-  (ref) => ref.watch(discoverySourcesProvider).first,
-);
+final selectedDiscoverySourceProvider = StateProvider<MusicSource>((ref) {
+  const storageKey = 'selected_discovery_source_v1';
+  final sources = ref.watch(discoverySourcesProvider);
+  final prefs = ref.read(sharedPreferencesProvider);
+  final saved = MusicSource.tryFromCode(prefs.getString(storageKey) ?? '');
+  // Preserve the existing StateController API while persisting every selection,
+  // including programmatic changes, in Riverpod 2.x.
+  // ignore: deprecated_member_use
+  ref.listenSelf((previous, next) {
+    if (sources.contains(next) && prefs.getString(storageKey) != next.code) {
+      unawaited(prefs.setString(storageKey, next.code));
+    }
+  });
+  return sources.contains(saved) ? saved! : sources.first;
+});
 
 final selectedDiscoveryCategoryProvider =
     NotifierProvider.family<

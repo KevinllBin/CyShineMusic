@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:heroine/heroine.dart';
 import 'package:prism_ui/prism_ui.dart' as prism;
 
 import '../../theme/app_motion.dart';
@@ -116,7 +118,7 @@ class ContainerTransformOrigin {
 
   /// 详情完全盖住列表后调用：把卡片滚到完整可见，返回时收回到整张卡片。
   /// 每层滚动只沿自己的轴移动最小距离，卡片比视口还高时让顶部对齐。
-  void revealSource() {
+  void revealSource({Duration duration = Duration.zero}) {
     final source = _source;
     if (source == null || !source.mounted) return;
     final box = source.findRenderObject();
@@ -155,7 +157,19 @@ class ContainerTransformOrigin {
         position.minScrollExtent,
         position.maxScrollExtent,
       );
-      if (target != position.pixels) position.jumpTo(target);
+      if (target != position.pixels) {
+        if (duration == Duration.zero) {
+          position.jumpTo(target);
+        } else {
+          unawaited(
+            position.animateTo(
+              target,
+              duration: duration,
+              curve: Curves.easeOutCubic,
+            ),
+          );
+        }
+      }
     }
   }
 
@@ -197,7 +211,7 @@ class ContainerTransformOrigin {
     Element? hero;
     void visit(Element element) {
       if (hero != null) return;
-      if (element.widget is Hero) {
+      if (element.widget is Hero || element.widget is Heroine) {
         hero = element;
         return;
       }
@@ -314,9 +328,12 @@ class _ContainerTransformScrollRegionState
           child: AnimatedBuilder(
             animation:
                 _transition?.widget.animation ?? kAlwaysCompleteAnimation,
-            builder: (context, child) => HeroMode(
-              enabled: _transition?._heroEnabled ?? _atScrollOrigin,
-              child: child!,
+            builder: (context, child) => HeroineMode(
+              enabled: _transition?._springHeroEnabled ?? _atScrollOrigin,
+              child: HeroMode(
+                enabled: _transition?._heroEnabled ?? _atScrollOrigin,
+                child: child!,
+              ),
             ),
             child: widget.child,
           ),
@@ -367,11 +384,24 @@ class ContainerTransformTransition extends StatefulWidget {
     required this.animation,
     required this.origin,
     required this.child,
+    this.springHero = false,
+    this.enableFlight = true,
   });
 
   final Animation<double> animation;
   final ContainerTransformOrigin? origin;
   final Widget child;
+
+  /// 发现详情使用封面弹簧飞行 + 页面淡入，保留容器起点的滚动管理。
+  final bool springHero;
+  final bool enableFlight;
+
+  static bool usesSpringHeroOf(BuildContext context) =>
+      context
+          .findAncestorStateOfType<_ContainerTransformTransitionState>()
+          ?.widget
+          .springHero ??
+      false;
 
   /// 容器裁剪层的 key，测试用来读取当前容器矩形。
   static const Key surfaceKey = ValueKey('container-transform-surface');
@@ -396,14 +426,22 @@ class ContainerTransformTransition extends StatefulWidget {
 class _ContainerTransformTransitionState
     extends State<ContainerTransformTransition> {
   late CurvedAnimation _progress = _curve(widget.animation);
+  late CurvedAnimation _pageOpacity = _pageCurve(widget.animation);
   late AnimationStatus _status = widget.animation.status;
   bool _atScrollOrigin = true;
   bool _restoredScrollOrigin = false;
   _TransformStyle _style = _TransformStyle.container;
 
-  bool get _heroEnabled => _status == AnimationStatus.completed
+  bool get _heroEnabled => !widget.enableFlight
+      ? false
+      : _status == AnimationStatus.completed
       ? _atScrollOrigin
       : _style == _TransformStyle.container;
+
+  // Heroine can return from a remembered header position even after scrolling.
+  bool get _springHeroEnabled => widget.springHero
+      ? widget.enableFlight && !(widget.origin?.sourceLost ?? false)
+      : _heroEnabled;
 
   void _restoreScrollOrigin(bool atOrigin) {
     if (_restoredScrollOrigin) return;
@@ -421,9 +459,23 @@ class _ContainerTransformTransitionState
   void _handleStatus(AnimationStatus status) {
     // 详情已完全盖住列表：此时把卡片滚到完整可见不会被看到，返回时
     // 容器与封面都收回到整张卡片上。
-    if (status == AnimationStatus.completed &&
-        _status == AnimationStatus.forward) {
+    if ((status == AnimationStatus.completed &&
+            _status == AnimationStatus.forward) ||
+        (status == AnimationStatus.reverse &&
+            _status == AnimationStatus.completed)) {
       widget.origin?.revealSource();
+    } else if (widget.springHero && status == AnimationStatus.reverse) {
+      // An immediate back can leave the source visible behind the incoming
+      // page. Use the remaining reverse time so card reveal finishes together
+      // with the route and its cover, including a reversal near the first frame.
+      widget.origin?.revealSource(
+        duration: Duration(
+          microseconds:
+              (AppMotion.containerTransformDuration.inMicroseconds *
+                      widget.animation.value)
+                  .round(),
+        ),
+      );
     }
     setState(() {
       // 只在完整展开后选择退场方式；进入途中立即返回仍沿原轨迹倒放。
@@ -464,13 +516,22 @@ class _ContainerTransformTransitionState
     );
   }
 
+  static CurvedAnimation _pageCurve(Animation<double> parent) =>
+      CurvedAnimation(
+        parent: parent,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+
   @override
   void didUpdateWidget(covariant ContainerTransformTransition oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.animation, widget.animation)) {
       oldWidget.animation.removeStatusListener(_handleStatus);
       _progress.dispose();
+      _pageOpacity.dispose();
       _progress = _curve(widget.animation);
+      _pageOpacity = _pageCurve(widget.animation);
       _status = widget.animation.status;
       widget.animation.addStatusListener(_handleStatus);
     }
@@ -480,6 +541,7 @@ class _ContainerTransformTransitionState
   void dispose() {
     widget.animation.removeStatusListener(_handleStatus);
     _progress.dispose();
+    _pageOpacity.dispose();
     super.dispose();
   }
 
@@ -487,11 +549,16 @@ class _ContainerTransformTransitionState
   Widget build(BuildContext context) {
     // 页面每帧缩放、淡变，玻璃按钮若实时取背景就要逐帧重拍、重新模糊；
     // 过渡这么短，用静态磨砂代替，落地后再恢复实时玻璃。
-    return HeroMode(
-      enabled: _heroEnabled,
-      child: prism.LiquidGlassFlat(
-        flat: _status.isAnimating,
-        child: _buildTransition(context),
+    return HeroineMode(
+      enabled: _springHeroEnabled,
+      child: HeroMode(
+        enabled: _heroEnabled,
+        child: prism.LiquidGlassFlat(
+          flat: _status.isAnimating,
+          child: widget.springHero
+              ? FadeTransition(opacity: _pageOpacity, child: widget.child)
+              : _buildTransition(context),
+        ),
       ),
     );
   }
@@ -776,7 +843,11 @@ class HeroArtworkShape extends StatelessWidget {
   static ({BorderRadius borderRadius, Widget child}) resolve(
     BuildContext heroContext,
   ) {
-    final child = (heroContext.widget as Hero).child;
+    final child = switch (heroContext.widget) {
+      Hero(:final child) => child,
+      Heroine(:final child) => child,
+      _ => throw StateError('Expected an artwork Hero or Heroine'),
+    };
     if (child is HeroArtworkShape) {
       return (borderRadius: child.borderRadius, child: child.child);
     }

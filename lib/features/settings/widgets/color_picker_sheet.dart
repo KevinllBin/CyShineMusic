@@ -1,6 +1,7 @@
 import 'settings_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:prism_ui/prism_ui.dart' as prism;
 
 import '../../../theme/app_theme.dart';
 import '../../../theme/color_style.dart';
@@ -105,133 +106,117 @@ class _ColorPickerSheetState extends State<_ColorPickerSheet> {
     final preview = widget.previewBuilder == null
         ? AppTheme.schemeFor(_color, Theme.of(context).brightness, widget.style)
         : null;
-    final viewInsets = MediaQuery.viewInsetsOf(context);
-
-    return Padding(
-      padding: EdgeInsets.only(bottom: viewInsets.bottom),
-      child: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (widget.title != null) ...[
-                Text(widget.title!, style: textTheme.titleLarge),
-                const SizedBox(height: 16),
-              ],
-              Row(
-                children: [
-                  Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: _color,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: scheme.outlineVariant),
-                    ),
+    return SettingsSheetLayout(
+      title: widget.title ?? '选择颜色',
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: _color,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: scheme.outlineVariant),
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: TextField(
-                      controller: _hexCtrl,
-                      decoration: const InputDecoration(
-                        prefixText: '#',
-                        labelText: 'HEX',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      textCapitalization: TextCapitalization.characters,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(
-                          RegExp(r'[0-9a-fA-F]'),
-                        ),
-                        LengthLimitingTextInputFormatter(
-                          widget.allowAlpha ? 8 : 6,
-                        ),
-                      ],
-                      onTap: () => _editingHex = true,
-                      onEditingComplete: () => _editingHex = false,
-                      onSubmitted: (value) {
-                        _editingHex = false;
-                        _applyHex(value);
-                      },
-                      onChanged: _applyHex,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              _LabeledSlider(
-                label: '色相',
-                value: _hsv.hue,
-                min: 0,
-                max: 360,
-                activeColor: HSVColor.fromAHSV(1, _hsv.hue, 1, 1).toColor(),
-                onChanged: (value) => _setHsv(_hsv.withHue(value)),
-              ),
-              _LabeledSlider(
-                label: '饱和',
-                value: _hsv.saturation,
-                min: 0,
-                max: 1,
-                activeColor: _color,
-                onChanged: (value) => _setHsv(_hsv.withSaturation(value)),
-              ),
-              _LabeledSlider(
-                label: '明度',
-                value: _hsv.value,
-                min: 0,
-                max: 1,
-                activeColor: _color,
-                onChanged: (value) => _setHsv(_hsv.withValue(value)),
-              ),
-              const SizedBox(height: 12),
-              Text('预览', style: textTheme.labelLarge),
-              const SizedBox(height: 8),
-              if (preview == null)
-                widget.previewBuilder!(_color)
-              else
-                Row(
-                  children: [
-                    _Swatch(
-                      label: 'Primary',
-                      color: preview.primary,
-                      onColor: preview.onPrimary,
-                    ),
-                    const SizedBox(width: 8),
-                    _Swatch(
-                      label: 'Secondary',
-                      color: preview.secondary,
-                      onColor: preview.onSecondary,
-                    ),
-                    const SizedBox(width: 8),
-                    _Swatch(
-                      label: 'Tertiary',
-                      color: preview.tertiary,
-                      onColor: preview.onTertiary,
-                    ),
-                  ],
                 ),
-              const SizedBox(height: 20),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: TextField(
+                    controller: _hexCtrl,
+                    decoration: const InputDecoration(
+                      prefixText: '#',
+                      labelText: 'HEX',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    textCapitalization: TextCapitalization.characters,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9a-fA-F]')),
+                      LengthLimitingTextInputFormatter(
+                        widget.allowAlpha ? 8 : 6,
+                      ),
+                    ],
+                    onTap: () => _editingHex = true,
+                    onEditingComplete: () => _editingHex = false,
+                    onSubmitted: (value) {
+                      _editingHex = false;
+                      _applyHex(value);
+                    },
+                    onChanged: _applyHex,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _LabeledSlider(
+              label: '色相',
+              value: _hsv.hue,
+              min: 0,
+              max: 360,
+              activeColor: HSVColor.fromAHSV(1, _hsv.hue, 1, 1).toColor(),
+              onChanged: (value) => _setHsv(_hsv.withHue(value)),
+            ),
+            _LabeledSlider(
+              label: '饱和',
+              value: _hsv.saturation,
+              min: 0,
+              max: 1,
+              activeColor: _color,
+              onChanged: (value) => _setHsv(_hsv.withSaturation(value)),
+            ),
+            _LabeledSlider(
+              label: '明度',
+              value: _hsv.value,
+              min: 0,
+              max: 1,
+              activeColor: _color,
+              onChanged: (value) => _setHsv(_hsv.withValue(value)),
+            ),
+            const SizedBox(height: 12),
+            Text('预览', style: textTheme.labelLarge),
+            const SizedBox(height: 8),
+            if (preview == null)
+              widget.previewBuilder!(_color)
+            else
               Row(
-                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('取消'),
+                  _Swatch(
+                    label: 'Primary',
+                    color: preview.primary,
+                    onColor: preview.onPrimary,
                   ),
                   const SizedBox(width: 8),
-                  FilledButton(
-                    onPressed: () => Navigator.of(context).pop(_color),
-                    child: const Text('应用'),
+                  _Swatch(
+                    label: 'Secondary',
+                    color: preview.secondary,
+                    onColor: preview.onSecondary,
+                  ),
+                  const SizedBox(width: 8),
+                  _Swatch(
+                    label: 'Tertiary',
+                    color: preview.tertiary,
+                    onColor: preview.onTertiary,
                   ),
                 ],
               ),
-            ],
-          ),
+          ],
         ),
       ),
+      actions: [
+        prism.OutlinedButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        prism.FilledButton(
+          onPressed: () => Navigator.of(context).pop(_color),
+          child: const Text('应用'),
+        ),
+      ],
     );
   }
 }

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:prism_ui/prism_ui.dart' as prism;
 
 import 'package:cy_shine_music/core/models/enums.dart';
 import 'package:cy_shine_music/core/models/music_info.dart';
@@ -141,22 +142,23 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('窄屏在线歌曲'), findsNWidgets(2));
-      expect(find.text('高品质 320K · QQ'), findsOneWidget);
+      expect(find.text('高品质 320K'), findsOneWidget);
+      expect(find.text('不应在封面下重复的歌手 · QQ'), findsOneWidget);
       expect(
         tester
-            .widget<ListTile>(
+            .widget<prism.DecorationListItem>(
               find.byKey(const ValueKey('player-cover-action-download')),
             )
-            .enabled,
-        isTrue,
+            .onPressed,
+        isNotNull,
       );
       expect(
         tester
-            .widget<ListTile>(
+            .widget<prism.DecorationListItem>(
               find.byKey(const ValueKey('player-cover-action-playlist')),
             )
-            .enabled,
-        isTrue,
+            .onPressed,
+        isNotNull,
       );
 
       await tester.tap(
@@ -164,7 +166,13 @@ void main() {
       );
       await _pumpUi(tester);
 
-      expect(find.text('添加歌曲到'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(prism.AppBar),
+          matching: find.text('添加到歌单'),
+        ),
+        findsOneWidget,
+      );
       await tester.tap(find.text('在线收藏'));
       await _pumpUi(tester);
 
@@ -184,9 +192,11 @@ void main() {
       expect(storedTrack.musicJson, music.toJson());
       expect(storedTrack.musicInfo?.toJson(), music.toJson());
 
-      await tester.tap(find.byKey(const ValueKey('player-cover-menu-button')));
-      await _pumpUi(tester);
-
+      // Closing the nested playlist picker returns to the cover actions.
+      expect(
+        find.byKey(const ValueKey('player-cover-actions-sheet')),
+        findsOneWidget,
+      );
       await tester.tap(
         find.byKey(const ValueKey('player-cover-action-quality')),
       );
@@ -196,14 +206,14 @@ void main() {
         find.byKey(const ValueKey('player-quality-sheet')),
         findsOneWidget,
       );
-      expect(find.text('文件大小 9.48 MB'), findsOneWidget);
+      expect(find.text('9.48 MB'), findsOneWidget);
       expect(find.text('文件大小未知'), findsNothing);
       expect(find.text('较高品质 192K'), findsNothing);
       expect(
         find.byKey(const ValueKey('player-quality-option-192k')),
         findsNothing,
       );
-      expect(find.text('文件大小 3.82 MB'), findsOneWidget);
+      expect(find.text('3.82 MB'), findsOneWidget);
 
       await tester.tap(
         find.byKey(const ValueKey('player-quality-option-128k')),
@@ -242,30 +252,30 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('player-cover-menu-button')));
     await _pumpUi(tester);
-    expect(find.text('FLAC · 本地'), findsOneWidget);
+    expect(find.text('本地歌手 · 本地'), findsOneWidget);
     expect(
       tester
-          .widget<ListTile>(
+          .widget<prism.DecorationListItem>(
             find.byKey(const ValueKey('player-cover-action-download')),
           )
-          .enabled,
-      isFalse,
+          .onPressed,
+      isNull,
     );
     expect(
       tester
-          .widget<ListTile>(
+          .widget<prism.DecorationListItem>(
             find.byKey(const ValueKey('player-cover-action-quality')),
           )
-          .enabled,
-      isFalse,
+          .onPressed,
+      isNull,
     );
     expect(
       tester
-          .widget<ListTile>(
+          .widget<prism.DecorationListItem>(
             find.byKey(const ValueKey('player-cover-action-playlist')),
           )
-          .enabled,
-      isFalse,
+          .onPressed,
+      isNull,
     );
     expect(tester.takeException(), isNull);
   });
@@ -825,7 +835,7 @@ void main() {
       find.byKey(const ValueKey('player-cover-actions-sheet')),
       findsOneWidget,
     );
-    expect(find.text('仅在手机播放封面页显示'), findsOneWidget);
+    expect(find.text('仅在手机播放封面页显示。'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

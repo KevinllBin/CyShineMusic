@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:prism_ui/prism_ui.dart' as prism;
 
 import '../../../core/models/enums.dart';
 import '../../../core/models/music_info.dart';
+import '../../../core/ui/app_sheet.dart';
+import '../../../core/ui/app_toast.dart';
+import '../../../core/ui/widgets/quality_option_tile.dart';
 import '../player_controller.dart';
 
 List<QualityOption> availablePlaybackQualityOptions(PlayerTrack track) {
@@ -28,7 +32,7 @@ String playerQualityLabel(PlayerTrack track) {
     Quality.atmosPlus => 'Atmos+',
     Quality.flac24bit => '24-bit FLAC',
     null => track.qualityLabel,
-    _ => _qualityName(quality),
+    _ => qualityName(quality),
   };
 }
 
@@ -40,19 +44,22 @@ Future<void> showPlaybackQualitySheet(
   final options = availablePlaybackQualityOptions(track);
   final current = Quality.tryFromCode(track.qualityLabel);
   if (track.isLocal || options.length < 2) return;
+  final container = ProviderScope.containerOf(context, listen: false);
   final controller = ref.read(playerControllerProvider.notifier);
-  final scheme = Theme.of(context).colorScheme;
-  final selected = await showModalBottomSheet<Quality>(
+  final selected = await showAppSheet<Quality>(
     context: context,
-    useRootNavigator: true,
-    useSafeArea: true,
-    showDragHandle: true,
-    isScrollControlled: true,
-    constraints: const BoxConstraints(maxWidth: 560),
-    barrierColor: scheme.scrim.withValues(alpha: 0.36),
+    detents: prism.snapSheetDetents,
+    neutralSurface: true,
+    fitsContent: true,
     builder: (_) => _PlaybackQualitySheet(options: options, current: current),
   );
-  if (selected == null || selected == current) return;
+  if (selected == null || selected == current || !controller.mounted) return;
+  if (container.read(playerControllerProvider).track?.id != track.id) {
+    if (context.mounted) {
+      showAppToast(context, '当前歌曲已变化，请重新选择音质');
+    }
+    return;
+  }
   await controller.switchQuality(selected);
 }
 
@@ -63,89 +70,29 @@ class _PlaybackQualitySheet extends StatelessWidget {
   final Quality? current;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final maxHeight = MediaQuery.sizeOf(context).height * 0.72;
-    return SafeArea(
-      key: const ValueKey('player-quality-sheet'),
-      top: false,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: maxHeight),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 2, 8, 10),
-                child: Text(
-                  '播放音质',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    color: scheme.onSurface,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+  Widget build(BuildContext context) => AppSheetLayout(
+    key: const ValueKey('player-quality-sheet'),
+    title: '播放音质',
+    centerTitle: true,
+    body: SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          prism.generateGroup([
+            for (final option in options)
+              QualityOptionTile(
+                key: ValueKey('player-quality-option-${option.type.code}'),
+                option: option,
+                selected: option.type == current,
+                onPressed: () => Navigator.of(context).pop(option.type),
               ),
-              Flexible(
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: options.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 4),
-                  itemBuilder: (context, index) {
-                    final option = options[index];
-                    final selected = option.type == current;
-                    return ListTile(
-                      key: ValueKey(
-                        'player-quality-option-${option.type.code}',
-                      ),
-                      minTileHeight: 62,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      selected: selected,
-                      selectedTileColor: scheme.secondaryContainer.withValues(
-                        alpha: 0.72,
-                      ),
-                      title: Text(
-                        _qualityName(option.type),
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: Text('文件大小 ${_knownQualitySize(option)!}'),
-                      trailing: selected
-                          ? Icon(
-                              Icons.check_circle_rounded,
-                              color: scheme.onSecondaryContainer,
-                            )
-                          : null,
-                      onTap: () => Navigator.of(context).pop(option.type),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
+          ]),
+          const prism.ListFooter(text: '切换后保留当前播放进度。'),
+        ],
       ),
-    );
-  }
-}
-
-String _qualityName(Quality quality) {
-  return switch (quality) {
-    Quality.master => '母带音质',
-    Quality.atmosPlus => 'Atmos Plus',
-    Quality.atmos => '杜比全景声',
-    Quality.hires => 'Hi-Res',
-    Quality.flac24bit => '24-bit FLAC',
-    Quality.flac => '无损 FLAC',
-    Quality.wav => 'WAV',
-    Quality.ape => 'APE',
-    Quality.k320 => '高品质 320K',
-    Quality.k192 => '较高品质 192K',
-    Quality.k128 => '标准品质 128K',
-  };
+    ),
+  );
 }
 
 String? _knownQualitySize(QualityOption option) {

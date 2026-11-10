@@ -14,6 +14,7 @@ import '../../../core/ui/cover_image_source.dart';
 import '../../../core/ui/cover_placeholder.dart';
 import '../../../core/ui/route_settle.dart';
 import '../../../core/ui/widgets/app_navigation_button.dart';
+import '../../../core/ui/widgets/spring_artwork_hero.dart';
 import '../../../theme/app_motion.dart';
 import '../../../theme/app_theme.dart';
 import '../../shell/widgets/scrolling_page_header.dart';
@@ -262,6 +263,7 @@ class ImmersivePlaylistHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final height = _immersivePlaylistHeaderHeight(context);
+    final springHero = ContainerTransformTransition.usesSpringHeroOf(context);
     final artwork = PlaylistArtworkImage(
       provider: artworkProvider,
       loading: artworkLoading,
@@ -303,29 +305,38 @@ class ImmersivePlaylistHeader extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           if (artworkHeroTag case final tag?)
-            Hero(
-              tag: tag,
-              transitionOnUserGestures: true,
-              createRectTween: containerTransformHeroRectTween,
-              // 使用 Hero 默认占位保留布局，避免大头图与移动封面同时绘制。
-              flightShuttleBuilder:
-                  (flightContext, animation, direction, fromHero, toHero) =>
-                      buildArtworkHeroFlightShuttle(
-                        flightContext,
-                        animation,
-                        direction,
-                        fromHero,
-                        toHero,
-                        overlay: Stack(
-                          fit: StackFit.expand,
-                          children: [...overlays, topBarOverlay],
+            if (springHero)
+              SpringArtworkHero(
+                tag: tag,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [artwork, ...overlays],
+                ),
+              )
+            else
+              Hero(
+                tag: tag,
+                transitionOnUserGestures: true,
+                createRectTween: containerTransformHeroRectTween,
+                // 使用 Hero 默认占位保留布局，避免大头图与移动封面同时绘制。
+                flightShuttleBuilder:
+                    (flightContext, animation, direction, fromHero, toHero) =>
+                        buildArtworkHeroFlightShuttle(
+                          flightContext,
+                          animation,
+                          direction,
+                          fromHero,
+                          toHero,
+                          overlay: Stack(
+                            fit: StackFit.expand,
+                            children: [...overlays, topBarOverlay],
+                          ),
                         ),
-                      ),
-              child: artwork,
-            )
+                child: artwork,
+              )
           else
             artwork,
-          ...overlays,
+          if (!springHero || artworkHeroTag == null) ...overlays,
           if (showTopBar) topBarOverlay,
         ],
       ),

@@ -60,13 +60,16 @@ class _DiscoverySourceOrderSheetState
         buildDefaultDragHandles: false,
         itemBuilder: (context, index) {
           final source = _order[index];
-          return ListTile(
+          return prism.Card(
             key: ValueKey(source.code),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-            title: Text(source.label),
-            trailing: ReorderableDragStartListener(
-              index: index,
-              child: Icon(Icons.drag_handle_rounded, color: scheme.outline),
+            inert: true,
+            radius: 18,
+            child: prism.ListRow(
+              title: Text(source.label),
+              trailing: ReorderableDragStartListener(
+                index: index,
+                child: Icon(Icons.drag_handle_rounded, color: scheme.outline),
+              ),
             ),
           );
         },

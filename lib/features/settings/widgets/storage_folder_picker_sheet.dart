@@ -1,5 +1,6 @@
 import 'settings_sheet.dart';
 import 'package:flutter/material.dart';
+import 'package:prism_ui/prism_ui.dart' as prism;
 
 import '../../../core/services/storage_browser_service.dart';
 import '../../../core/ui/widgets/app_navigation_button.dart';
@@ -16,8 +17,8 @@ Future<String?> showStorageFolderPickerSheet(
     context: context,
     useRootNavigator: true,
 
-    showDragHandle: false,
-    backgroundColor: Colors.transparent,
+    heightFraction: 0.76,
+    maxHeight: 800,
 
     builder: (context) => StorageFolderPickerSheet(
       title: title,
@@ -122,119 +123,39 @@ class _StorageFolderPickerSheetState extends State<StorageFolderPickerSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
     final currentPath = _currentPath;
     return PopScope<String>(
       canPop: currentPath == null,
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop) _back();
       },
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: FractionallySizedBox(
-          heightFactor: 1,
-          child: Material(
-            color: scheme.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-            clipBehavior: Clip.antiAlias,
-            child: Column(
-              children: [
-                const SizedBox(height: 10),
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: scheme.onSurfaceVariant.withValues(alpha: 0.34),
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 14, 12, 8),
-                  child: Row(
-                    children: [
-                      if (currentPath == null && _history.isEmpty)
-                        AppNavigationButton.close(
-                          onPressed: () => Navigator.of(context).pop(),
-                        )
-                      else
-                        AppNavigationButton.back(
-                          tooltip: '返回上一级',
-                          onPressed: _back,
-                        ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              widget.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              currentPath ?? '存储位置',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: scheme.outline,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        tooltip: '刷新',
-                        onPressed: _loading ? null : _load,
-                        icon: const Icon(Icons.refresh_rounded),
-                      ),
-                    ],
-                  ),
-                ),
-                Divider(height: 1, color: scheme.outlineVariant),
-                Expanded(child: _buildBody(context)),
-                Divider(height: 1, color: scheme.outlineVariant),
-                SafeArea(
-                  top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            child: const Text('取消'),
-                          ),
-                        ),
-                        if (widget.fileExtensions == null) ...[
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: FilledButton.icon(
-                              onPressed:
-                                  currentPath == null ||
-                                      _loading ||
-                                      _error != null
-                                  ? null
-                                  : () =>
-                                        Navigator.of(context).pop(currentPath),
-                              icon: const Icon(Icons.check_rounded),
-                              label: const Text('选择此文件夹'),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+      child: SettingsSheetLayout(
+        title: widget.title,
+        subtitle: currentPath ?? '存储位置',
+        onClose: () => Navigator.of(context).pop(),
+        leading: currentPath == null && _history.isEmpty
+            ? null
+            : AppNavigationButton.back(tooltip: '返回上一级', onPressed: _back),
+        trailing: prism.IconButton(
+          tooltip: '刷新',
+          onPressed: _loading ? null : _load,
+          icon: const Icon(Icons.refresh_rounded),
         ),
+        body: _buildBody(context),
+        actions: [
+          prism.OutlinedButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          if (widget.fileExtensions == null)
+            prism.FilledButton.icon(
+              onPressed: currentPath == null || _loading || _error != null
+                  ? null
+                  : () => Navigator.of(context).pop(currentPath),
+              icon: const Icon(Icons.check_rounded),
+              label: const Text('选择此文件夹'),
+            ),
+        ],
       ),
     );
   }
@@ -249,7 +170,7 @@ class _StorageFolderPickerSheetState extends State<StorageFolderPickerSheet> {
         icon: Icons.folder_off_outlined,
         title: '无法读取文件夹',
         subtitle: error,
-        action: TextButton.icon(
+        action: prism.TextButton.icon(
           onPressed: _load,
           icon: const Icon(Icons.refresh_rounded),
           label: const Text('重试'),
@@ -265,7 +186,7 @@ class _StorageFolderPickerSheetState extends State<StorageFolderPickerSheet> {
             ? '没有子文件夹'
             : '没有可导入的脚本或子文件夹',
         subtitle: _currentPath == null ? '请确认已授予存储访问权限' : _currentPath!,
-        action: TextButton.icon(
+        action: prism.TextButton.icon(
           onPressed: _load,
           icon: const Icon(Icons.refresh_rounded),
           label: const Text('刷新'),
@@ -276,7 +197,7 @@ class _StorageFolderPickerSheetState extends State<StorageFolderPickerSheet> {
       duration: AppMotion.medium,
       child: ListView.builder(
         key: ValueKey(_currentPath ?? 'roots'),
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
         itemCount: _entries.length,
         itemBuilder: (context, index) {
           final entry = _entries[index];
@@ -297,24 +218,33 @@ class _StorageEntryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final subtitle = entry.isRoot ? _rootSubtitle(entry) : entry.path;
-    return ListTile(
-      enabled: entry.canRead,
-      leading: Icon(
-        entry.isRoot
-            ? Icons.storage_rounded
-            : entry.isDirectory
-            ? Icons.folder_rounded
-            : Icons.javascript_rounded,
-        color: entry.canRead ? scheme.primary : scheme.outline,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: prism.Card(
+        radius: 18,
+        onPressed: entry.canRead ? onTap : null,
+        child: prism.ListRow(
+          leading: Icon(
+            entry.isRoot
+                ? Icons.storage_rounded
+                : entry.isDirectory
+                ? Icons.folder_rounded
+                : Icons.javascript_rounded,
+            color: entry.canRead ? scheme.primary : scheme.outline,
+          ),
+          title: Text(entry.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text(
+            subtitle,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: Icon(
+            entry.isDirectory
+                ? Icons.chevron_right_rounded
+                : Icons.file_open_outlined,
+          ),
+        ),
       ),
-      title: Text(entry.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis),
-      trailing: Icon(
-        entry.isDirectory
-            ? Icons.chevron_right_rounded
-            : Icons.file_open_outlined,
-      ),
-      onTap: onTap,
     );
   }
 

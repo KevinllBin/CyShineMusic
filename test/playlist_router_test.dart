@@ -415,8 +415,7 @@ void main() {
     await _pumpUi(tester);
 
     expect(find.text('播放列表'), findsOneWidget);
-    final bottomSheet = tester.widget<BottomSheet>(find.byType(BottomSheet));
-    expect(bottomSheet.showDragHandle, isFalse);
+    expect(find.byType(prism.SheetDragHandle), findsOneWidget);
 
     final playingBars = find.byKey(const ValueKey('playing-bars'));
     expect(playingBars, findsOneWidget);

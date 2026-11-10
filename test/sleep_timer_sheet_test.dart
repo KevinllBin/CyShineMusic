@@ -4,6 +4,7 @@ import 'package:cy_shine_music/features/shell/shell_toolbar_visibility.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:prism_ui/prism_ui.dart' as prism;
 
 import 'helpers/prism_test_environment.dart';
 
@@ -61,17 +62,17 @@ void main() {
 
       final input = find.byType(TextField);
       final start = find.byKey(const ValueKey('sleep-timer-start'));
-      expect(tester.widget<FilledButton>(start).onPressed, isNull);
+      expect(tester.widget<prism.FilledButton>(start).onPressed, isNull);
       for (final invalid in ['0', '181']) {
         await tester.enterText(input, invalid);
         await tester.pump();
-        expect(tester.widget<FilledButton>(start).onPressed, isNull);
+        expect(tester.widget<prism.FilledButton>(start).onPressed, isNull);
         expect(container.read(sleepTimerProvider), isNull);
       }
 
       await tester.enterText(input, '12');
       await tester.pump();
-      expect(tester.widget<FilledButton>(start).onPressed, isNotNull);
+      expect(tester.widget<prism.FilledButton>(start).onPressed, isNotNull);
       await tester.ensureVisible(start);
       await tester.tap(start);
       await tester.pumpAndSettle();
