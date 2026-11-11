@@ -17,7 +17,10 @@ Future<T?> showAppSheet<T>({
   double maxHeight = 620,
   List<double>? detents,
   bool fitsContent = false,
-  bool floating = true,
+
+  /// 一级 Sheet 贴住屏幕边缘；从已有 Sheet 继续打开的二级 Sheet
+  /// 需要在调用处显式传入 `floating: true`，保留层叠留白。
+  bool floating = false,
   bool neutralSurface = false,
 }) {
   assert(heightFraction > 0 && heightFraction <= 1);

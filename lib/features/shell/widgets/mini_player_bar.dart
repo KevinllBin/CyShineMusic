@@ -16,11 +16,13 @@ class MiniPlayerBar extends ConsumerWidget {
     required this.width,
     required this.height,
     required this.onOpenPlayer,
+    this.large = false,
   });
 
   final double width;
   final double height;
   final VoidCallback onOpenPlayer;
+  final bool large;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -49,11 +51,17 @@ class MiniPlayerBar extends ConsumerWidget {
     // Shorter capsules scale the artwork and buttons down so they keep an
     // even inset inside the pill.
     final compact = width < 240;
-    final coverSlotSize = math.min(compact ? 36.0 : 40.0, height - 8);
+    final coverSlotSize = math.min(
+      compact ? 36.0 : (large ? 44.0 : 40.0),
+      height - 8,
+    );
     final coverSize = coverSlotSize * (square ? 0.82 : 1.0);
-    final buttonSize = math.min(compact ? 36.0 : 40.0, height - 6);
+    final buttonSize = math.min(
+      compact ? 36.0 : (large ? 42.0 : 40.0),
+      height - 6,
+    );
     // Square artwork needs more leading space than circular artwork.
-    final leadingMargin = square ? 15.0 : 5.0;
+    final leadingMargin = square ? 15.0 : (large ? 7.0 : 5.0);
     final trailingMargin = (height - buttonSize) / 2;
 
     return Row(
@@ -102,6 +110,7 @@ class MiniPlayerBar extends ConsumerWidget {
                       track: track,
                       compact: compact,
                       scheme: scheme,
+                      large: large,
                     ),
                   ),
                 ],
@@ -113,6 +122,7 @@ class MiniPlayerBar extends ConsumerWidget {
           tooltip: '上一首',
           icon: Icons.skip_previous_rounded,
           size: buttonSize,
+          iconSize: large ? 26 : 24,
           onPressed: canControl && vm.canPrev ? controller.playPrevious : null,
         ),
         _MiniPlayButton(
@@ -122,11 +132,13 @@ class MiniPlayerBar extends ConsumerWidget {
           canControl: canControl,
           controller: controller,
           size: buttonSize,
+          iconSize: large ? 28 : 26,
         ),
         _MiniControlButton(
           tooltip: '下一首',
           icon: Icons.skip_next_rounded,
           size: buttonSize,
+          iconSize: large ? 26 : 24,
           onPressed: canControl && vm.canNext ? controller.playNext : null,
         ),
         SizedBox(width: trailingMargin),
@@ -170,11 +182,13 @@ class _TrackLabels extends StatelessWidget {
     required this.track,
     required this.compact,
     required this.scheme,
+    required this.large,
   });
 
   final PlayerTrack? track;
   final bool compact;
   final ColorScheme scheme;
+  final bool large;
 
   @override
   Widget build(BuildContext context) {
@@ -186,7 +200,7 @@ class _TrackLabels extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
           color: scheme.onSurfaceVariant.withValues(alpha: 0.72),
-          fontSize: 14,
+          fontSize: large ? 14.5 : 14,
           fontWeight: FontWeight.w600,
         ),
       );
@@ -202,20 +216,20 @@ class _TrackLabels extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: scheme.onSurface,
-            fontSize: 14,
+            fontSize: large ? 14.5 : 14,
             fontWeight: FontWeight.w600,
             height: 1.2,
           ),
         ),
         if (!compact && artist.isNotEmpty) ...[
-          const SizedBox(height: 1),
+          SizedBox(height: large ? 2 : 1),
           Text(
             artist,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: scheme.onSurfaceVariant,
-              fontSize: 11.5,
+              fontSize: large ? 12 : 11.5,
               fontWeight: FontWeight.w500,
               height: 1.2,
             ),
@@ -231,12 +245,14 @@ class _MiniControlButton extends StatelessWidget {
     required this.tooltip,
     required this.icon,
     required this.size,
+    required this.iconSize,
     required this.onPressed,
   });
 
   final String tooltip;
   final IconData icon;
   final double size;
+  final double iconSize;
   final VoidCallback? onPressed;
 
   @override
@@ -250,7 +266,7 @@ class _MiniControlButton extends StatelessWidget {
       constraints: BoxConstraints.tightFor(width: size, height: size),
       icon: Icon(
         icon,
-        size: 24,
+        size: iconSize,
         color: scheme.onSurfaceVariant.withValues(alpha: enabled ? 1 : 0.35),
       ),
     );
@@ -265,6 +281,7 @@ class _MiniPlayButton extends StatelessWidget {
     required this.canControl,
     required this.controller,
     required this.size,
+    required this.iconSize,
   });
 
   final bool playing;
@@ -273,6 +290,7 @@ class _MiniPlayButton extends StatelessWidget {
   final bool canControl;
   final PlayerController controller;
   final double size;
+  final double iconSize;
 
   @override
   Widget build(BuildContext context) {
@@ -296,7 +314,7 @@ class _MiniPlayButton extends StatelessWidget {
       glyph = Icon(
         icon,
         key: ValueKey('mini-play:${icon.codePoint}'),
-        size: 26,
+        size: iconSize,
         color: color,
       );
     }

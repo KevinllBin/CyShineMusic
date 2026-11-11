@@ -16,7 +16,7 @@ const double _playerVerticalPadding = 6;
 
 double miniPlayerHeight(BuildContext context) {
   final scaler = MediaQuery.textScalerOf(context);
-  return math.max(46, (scaler.scale(14) + scaler.scale(11.5)) * 1.2 + 9);
+  return math.max(58, (scaler.scale(14.5) + scaler.scale(12)) * 1.2 + 15);
 }
 
 /// Height of the floating player strip. Content scrolls underneath it, so
@@ -70,12 +70,13 @@ class NativeBottomNavigation extends ConsumerWidget {
               ),
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final width = math.min(constraints.maxWidth, 300.0);
+                  final width = math.min(constraints.maxWidth, 340.0);
                   return Center(
                     child: FloatingPlayerBar(
                       routeLocation: routeLocation,
                       width: width,
                       height: miniPlayerHeight(context),
+                      large: true,
                     ),
                   );
                 },

@@ -96,6 +96,7 @@ Future<void> showPlaybackQueueSheet(BuildContext context) {
     context: context,
     detents: const [0.72, 0.92],
     maxHeight: 1000,
+    floating: false,
     builder: (_) => const _PlaybackQueueSheet(),
   );
 }

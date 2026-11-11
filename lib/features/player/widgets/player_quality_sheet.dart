@@ -51,6 +51,7 @@ Future<void> showPlaybackQualitySheet(
     detents: prism.snapSheetDetents,
     neutralSurface: true,
     fitsContent: true,
+    floating: true,
     builder: (_) => _PlaybackQualitySheet(options: options, current: current),
   );
   if (selected == null || selected == current || !controller.mounted) return;

@@ -29,6 +29,7 @@ Future<void> showQualityPickerSheet(
       detents: prism.snapSheetDetents,
       neutralSurface: true,
       fitsContent: true,
+      floating: true,
       builder: (_) => QualityPickerSheet(
         music: music,
         toastContext: context,

@@ -22,26 +22,23 @@ Future<String?> showPlaylistBrowserSheet(
       detents: prism.snapSheetDetents,
       fitsContent: true,
       neutralSurface: true,
-      builder: (_) =>
-          _PlaylistBrowserSheet(mode: mode, controller: null, fromPlayer: true),
+      floating: true,
+      builder: (_) => _PlaylistBrowserSheet(mode: mode, fromPlayer: true),
     );
   }
-  return prism.showSnapSheet<String>(
-    Navigator.of(context, rootNavigator: true).context,
-    builder: (_, controller) =>
-        _PlaylistBrowserSheet(mode: mode, controller: controller),
+  return showAppSheet<String>(
+    context: context,
+    detents: prism.snapSheetDetents,
+    maxHeight: 1000,
+    floating: false,
+    builder: (_) => _PlaylistBrowserSheet(mode: mode),
   );
 }
 
 class _PlaylistBrowserSheet extends ConsumerStatefulWidget {
-  const _PlaylistBrowserSheet({
-    required this.mode,
-    required this.controller,
-    this.fromPlayer = false,
-  });
+  const _PlaylistBrowserSheet({required this.mode, this.fromPlayer = false});
 
   final PlaylistBrowserMode mode;
-  final ScrollController? controller;
   final bool fromPlayer;
 
   @override
@@ -63,24 +60,23 @@ class _PlaylistBrowserSheetState extends ConsumerState<_PlaylistBrowserSheet> {
     final scheme = prism.Theme.of(context).colorScheme;
     final playlists = ref.watch(localPlaylistsProvider);
     final selecting = widget.mode == PlaylistBrowserMode.addSongs;
-    final scrollController = widget.controller ?? _desktopController;
+    final scrollController =
+        PrimaryScrollController.maybeOf(context) ?? _desktopController;
     if (widget.fromPlayer) {
-      final controller =
-          PrimaryScrollController.maybeOf(context) ?? _desktopController;
       return AppSheetLayout(
         title: '添加到歌单',
         centerTitle: true,
         subtitle: '${playlists.length} 个歌单',
         body: AppScrollbar(
-          controller: controller,
+          controller: scrollController,
           child: playlists.isEmpty
               ? _EmptyPlaylists(
-                  controller: controller,
+                  controller: scrollController,
                   selecting: true,
                   shrinkWrap: true,
                 )
               : prism.PrismListView(
-                  controller: controller,
+                  controller: scrollController,
                   shrinkWrap: true,
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
                   itemCount: playlists.length,
@@ -107,7 +103,6 @@ class _PlaylistBrowserSheetState extends ConsumerState<_PlaylistBrowserSheet> {
           top: false,
           child: Column(
             children: [
-              if (widget.controller != null) const prism.SheetDragHandle(),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
                 child: Row(
