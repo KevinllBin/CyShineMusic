@@ -16,9 +16,6 @@ import 'package:cy_shine_music/features/player/player_audio_handler.dart';
 import 'package:cy_shine_music/features/shell/widgets/shell_header.dart';
 import 'package:cy_shine_music/router.dart';
 import 'package:cy_shine_music/theme/app_theme.dart';
-import 'package:prism_ui/prism_ui.dart' as prism;
-
-import 'helpers/prism_test_environment.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -38,7 +35,7 @@ void main() {
       });
       final prefs = await SharedPreferences.getInstance();
       final audioHandler = PlayerAudioHandler();
-      final router = createAppRouter(initialLocation: '/settings/network');
+      final router = createAppRouter(initialLocation: '/settings/sources');
       addTearDown(() {
         router.dispose();
         unawaited(audioHandler.disposeHandler());
@@ -51,7 +48,6 @@ void main() {
             playerAudioHandlerProvider.overrideWithValue(audioHandler),
           ],
           child: MaterialApp.router(
-            builder: buildPrismTestEnvironment,
             debugShowCheckedModeBanner: false,
             theme: AppTheme.light(),
             routerConfig: router,
@@ -60,19 +56,10 @@ void main() {
       );
       await _pumpUi(tester);
 
-      await tester.tap(find.text('音源管理'));
-      await _pumpUi(tester);
-
-      expect(
-        find.descendant(
-          of: find.byType(ShellHeader),
-          matching: find.text('音源管理'),
-        ),
-        findsOneWidget,
-      );
+      expect(find.text('音源管理'), findsOneWidget);
       expect(find.byType(SliverAppBar), findsNothing);
       expect(find.byIcon(Icons.arrow_back_rounded), findsNothing);
-      expect(find.byTooltip('返回上一页').hitTestable(), findsOneWidget);
+      expect(find.byIcon(Icons.arrow_back_ios_new_rounded), findsOneWidget);
       final localImport = find.widgetWithText(FilledButton, '本地导入');
       final buttonTheme = FilledButtonTheme.of(
         tester.element(localImport),
@@ -123,11 +110,8 @@ void main() {
             debugShowCheckedModeBanner: false,
             theme: AppTheme.light(),
             routerConfig: router,
-            builder: (context, child) => buildPrismTestEnvironment(
-              context,
-              AppToastOverlay(
-                child: StartupGate(child: child ?? const SizedBox.shrink()),
-              ),
+            builder: (context, child) => AppToastOverlay(
+              child: StartupGate(child: child ?? const SizedBox.shrink()),
             ),
           ),
         ),
@@ -176,7 +160,6 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        builder: buildPrismTestEnvironment,
         theme: AppTheme.light(),
         home: Scaffold(
           body: MusicSourceCard(
@@ -237,7 +220,6 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        builder: buildPrismTestEnvironment,
         theme: AppTheme.light(),
         home: Scaffold(
           body: MusicSourceCard(
@@ -254,7 +236,7 @@ void main() {
     );
 
     expect(find.text('备用 1'), findsOneWidget);
-    final toggle = tester.widget<prism.Switch>(find.byType(prism.Switch));
+    final toggle = tester.widget<Switch>(find.byType(Switch));
     expect(toggle.value, isTrue);
     await tester.tap(find.byType(ListTile));
     expect(toggledValue, isFalse);

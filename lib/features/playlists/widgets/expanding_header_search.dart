@@ -1,16 +1,9 @@
-import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
-import 'package:prism_ui/prism_ui.dart' as prism;
-import 'package:prism_ui/icons/icons.dart' as glyph;
 
-import '../../../core/ui/widgets/header_control_style.dart';
 import '../../../theme/app_motion.dart';
 import '../../shell/widgets/scrolling_page_header.dart';
-
-const double _searchButtonSize = 44;
-const double _searchFieldGap = 12;
 
 /// The right-hand search button grows leftward over the title. The text field
 /// keeps its final width while being revealed, avoiding relayout during typing.
@@ -32,7 +25,6 @@ class ExpandingHeaderSearch extends StatefulWidget {
     this.collapsedContent,
     this.autoFocus = true,
     this.shrinkWrap = false,
-    this.closedEndInset = 0,
   });
 
   final String title;
@@ -48,11 +40,6 @@ class ExpandingHeaderSearch extends StatefulWidget {
   final Widget? collapsedContent;
   final bool autoFocus;
   final bool shrinkWrap;
-
-  /// Space reserved by actions that sit to the right of the search lead while
-  /// the bar is closed. Prism UI releases this space as the field grows so the
-  /// open search layer can cover the complete toolbar.
-  final double closedEndInset;
 
   @override
   State<ExpandingHeaderSearch> createState() => _ExpandingHeaderSearchState();
@@ -117,6 +104,7 @@ class _ExpandingHeaderSearchState extends State<ExpandingHeaderSearch>
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return SizedBox(
       height: 44,
       child: AnimatedBuilder(
@@ -126,7 +114,6 @@ class _ExpandingHeaderSearchState extends State<ExpandingHeaderSearch>
           final showingField = widget.expanded || !_motion.isDismissed;
           return Stack(
             alignment: Alignment.centerRight,
-            clipBehavior: Clip.none,
             children: [
               IgnorePointer(
                 ignoring: showingField,
@@ -175,133 +162,118 @@ class _ExpandingHeaderSearchState extends State<ExpandingHeaderSearch>
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final width = constraints.maxWidth;
-                    final endInset = widget.closedEndInset * (1 - progress);
-                    final availableWidth = math.max(44, width - endInset);
-                    final groupWidth = lerpDouble(
-                      _searchButtonSize,
-                      availableWidth,
-                      progress,
-                    )!;
-                    final finalFieldWidth = math.max(
-                      0.0,
-                      availableWidth - _searchButtonSize - _searchFieldGap,
-                    );
-                    final fieldWidth = math.max(
-                      0.0,
-                      groupWidth - _searchButtonSize - _searchFieldGap,
-                    );
-                    return Padding(
-                      // The closed lead sits immediately before the overflow
-                      // action. This inset is released as the field takes over
-                      // the complete toolbar.
-                      padding: EdgeInsetsDirectional.only(end: endInset),
-                      child: Align(
-                        alignment: AlignmentDirectional.centerEnd,
-                        child: SizedBox(
-                          width: groupWidth,
-                          height: _searchButtonSize,
-                          child: _SearchSurface(
-                            expanded: showingField,
-                            child: TextFieldTapRegion(
-                              child: Stack(
-                                clipBehavior: Clip.none,
-                                children: [
-                                  if (showingField && fieldWidth > 0)
-                                    Positioned(
-                                      left: 0,
-                                      top: 0,
-                                      width: fieldWidth,
-                                      height: _searchButtonSize,
-                                      child: _SearchPane(
-                                        child: ClipRect(
-                                          child: IgnorePointer(
-                                            ignoring: !widget.expanded,
-                                            child: Opacity(
-                                              opacity:
-                                                  ((progress - 0.05) / 0.95)
-                                                      .clamp(0, 1),
-                                              child: OverflowBox(
-                                                alignment: AlignmentDirectional
-                                                    .centerStart,
-                                                minWidth: finalFieldWidth,
-                                                maxWidth: finalFieldWidth,
-                                                child: prism.SearchField(
-                                                  key: const ValueKey(
-                                                    'header-search-field',
-                                                  ),
-                                                  controller: widget.controller,
-                                                  focusNode: widget.focusNode,
-                                                  hintText: widget.hint,
-                                                  height: _searchButtonSize,
-                                                  onChanged: widget.onChanged,
-                                                  onSubmitted: () => widget
-                                                      .focusNode
-                                                      .unfocus(),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
+                    return Align(
+                      alignment: Alignment.centerRight,
+                      child: SizedBox(
+                        width: lerpDouble(44, width, progress),
+                        height: 44,
+                        child: FloatingHeaderSurface(
+                          onImage: widget.onImage,
+                          child: ColoredBox(
+                            color: scheme.surfaceContainerHigh.withValues(
+                              alpha: progress,
+                            ),
+                            child: Stack(
+                              children: [
+                                if (showingField)
                                   Positioned(
-                                    right: 0,
                                     top: 0,
                                     bottom: 0,
-                                    width: _searchButtonSize,
-                                    child: prism.TonalButtonTheme(
-                                      size: prism.TonalButtonSize.bar,
-                                      glass: prism.LiquidGlassScope.of(context),
-                                      child: prism.ElasticPress(
-                                        child: prism.IconButton(
-                                          tooltip: widget.expanded
-                                              ? '取消'
-                                              : widget.tooltip,
-                                          onPressed: widget.expanded
-                                              ? widget.onClose
-                                              : widget.onOpen,
-                                          style:
-                                              prism.ButtonStyle.from(
-                                                fixedSize: const Size.square(
-                                                  _searchButtonSize,
-                                                ),
-                                                minimumSize: const Size.square(
-                                                  _searchButtonSize,
-                                                ),
-                                                padding: EdgeInsets.zero,
-                                                tapTargetSize: prism
-                                                    .TapTargetSize
-                                                    .shrinkWrap,
-                                                pressLook: prism.PressLook.none,
-                                              ).merge(
-                                                headerControlButtonStyle(
-                                                  context,
-                                                ),
+                                    left: 0,
+                                    right: 44,
+                                    child: ClipRect(
+                                      child: OverflowBox(
+                                        alignment: Alignment.centerLeft,
+                                        minWidth: (width - 44).clamp(
+                                          0,
+                                          double.infinity,
+                                        ),
+                                        maxWidth: (width - 44).clamp(
+                                          0,
+                                          double.infinity,
+                                        ),
+                                        child: IgnorePointer(
+                                          ignoring: !widget.expanded,
+                                          child: Opacity(
+                                            opacity: ((progress - 0.2) / 0.8)
+                                                .clamp(0, 1),
+                                            child: TextField(
+                                              key: const ValueKey(
+                                                'header-search-field',
                                               ),
-                                          icon: AnimatedSwitcher(
-                                            duration:
-                                                MediaQuery.disableAnimationsOf(
-                                                  context,
-                                                )
-                                                ? Duration.zero
-                                                : AppMotion.short,
-                                            child: glyph.GlyphIcon(
-                                              widget.expanded
-                                                  ? glyph.Glyphs.close
-                                                  : glyph.Glyphs.search,
-                                              key: ValueKey(widget.expanded),
-                                              size: prism
-                                                  .TonalButtonSize
-                                                  .bar
-                                                  .icon,
+                                              controller: widget.controller,
+                                              focusNode: widget.focusNode,
+                                              onChanged: widget.onChanged,
+                                              textInputAction:
+                                                  TextInputAction.search,
+                                              onSubmitted: (_) =>
+                                                  widget.focusNode.unfocus(),
+                                              style: TextStyle(
+                                                color: scheme.onSurface,
+                                                fontSize: 14,
+                                                height: 1.2,
+                                              ),
+                                              decoration: InputDecoration(
+                                                hintText: widget.hint,
+                                                isDense: true,
+                                                filled: false,
+                                                hintStyle: TextStyle(
+                                                  color:
+                                                      scheme.onSurfaceVariant,
+                                                  fontSize: 13,
+                                                ),
+                                                contentPadding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 14,
+                                                      vertical: 13,
+                                                    ),
+                                                border: InputBorder.none,
+                                                enabledBorder: InputBorder.none,
+                                                focusedBorder: InputBorder.none,
+                                              ),
                                             ),
                                           ),
                                         ),
                                       ),
                                     ),
                                   ),
-                                ],
-                              ),
+                                Positioned(
+                                  right: 0,
+                                  top: 0,
+                                  bottom: 0,
+                                  width: 44,
+                                  child: IconButton(
+                                    tooltip: widget.expanded
+                                        ? '退出搜索'
+                                        : widget.tooltip,
+                                    onPressed: widget.expanded
+                                        ? widget.onClose
+                                        : widget.onOpen,
+                                    color: Color.lerp(
+                                      widget.onImage
+                                          ? Colors.white
+                                          : scheme.onSurfaceVariant,
+                                      scheme.onSurfaceVariant,
+                                      progress,
+                                    ),
+                                    icon: AnimatedSwitcher(
+                                      duration:
+                                          MediaQuery.disableAnimationsOf(
+                                            context,
+                                          )
+                                          ? Duration.zero
+                                          : AppMotion.short,
+                                      child: Icon(
+                                        widget.expanded
+                                            ? Icons.close_rounded
+                                            : Icons.search_rounded,
+                                        key: ValueKey(widget.expanded),
+                                        size: 20,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -316,44 +288,4 @@ class _ExpandingHeaderSearchState extends State<ExpandingHeaderSearch>
       ),
     );
   }
-}
-
-/// A closed search uses the same themed button as the other header actions.
-/// With glass enabled, the expanding field and cancel share a GooSurface.
-/// Otherwise each control draws its own fill and outline for contrast.
-class _SearchSurface extends StatelessWidget {
-  const _SearchSurface({required this.expanded, required this.child});
-
-  final bool expanded;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!expanded || !prism.LiquidGlassScope.of(context)) return child;
-    final scheme = prism.Theme.of(context).colorScheme;
-    return prism.GooSurface(
-      glass: prism.LiquidGlassStyle.regular(scheme),
-      color: prism.SurfaceScope.of(context).next.colorOf(scheme),
-      child: child,
-    );
-  }
-}
-
-class _SearchPane extends StatelessWidget {
-  const _SearchPane({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => prism.ElasticPress(
-    child: prism.LiquidGlassScope.of(context)
-        ? prism.GooPane(child: child)
-        : DecoratedBox(
-            decoration: ShapeDecoration(
-              color: headerControlFill(context),
-              shape: StadiumBorder(side: headerControlBorder(context)),
-            ),
-            child: child,
-          ),
-  );
 }

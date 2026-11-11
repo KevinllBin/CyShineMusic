@@ -1,24 +1,15 @@
-import 'package:prism_ui/prism_ui.dart' as prism;
-import 'package:prism_ui/icons/prism_glyphs.dart' as prism_glyphs;
-import 'package:prism_ui/icons/icons.dart' as glyph;
-import 'package:prism_ui/icons/icons.dart' as prism_glyph;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/ui/widgets/app_navigation_button.dart';
-import '../../../core/ui/widgets/header_control_style.dart';
 import '../../../theme/app_motion.dart';
 import '../../settings/settings_section.dart';
 import '../../songs/songs_toolbar_state.dart';
 import '../../playlists/widgets/expanding_header_search.dart';
-import '../../playlists/widgets/playlist_management_menu.dart';
 import '../shell_route_utils.dart';
 import 'library_view_menu.dart';
+import '../../../core/ui/widgets/morphing_menu_button.dart';
 import 'scrolling_page_header.dart';
-import 'settings_header_surface.dart';
-
-const double _songsHeaderActionGap = 12;
 
 class ShellHeader extends ConsumerWidget {
   const ShellHeader({
@@ -70,40 +61,12 @@ class ShellHeader extends ConsumerWidget {
         child: SongsHeader(state: songsToolbar!, scheme: scheme),
       );
       if (floating) {
-        return _FloatingHeaderBackdrop(height: top + 80, child: header);
+        return _FloatingHeaderBackdrop(
+          height: top + (songsToolbar.batchMode ? 112 : 80),
+          child: header,
+        );
       }
       return header;
-    }
-
-    if (location.startsWith('/settings') || location == '/debug') {
-      return SizedBox(
-        height: top + 72,
-        child: SettingsHeaderSurface(
-          child: prism.TonalButtonTheme(
-            glass: prism.LiquidGlassScope.of(context),
-            child: prism.AppBar(
-              title: Text(headerTitle),
-              titleTextStyle: parentLocation == null
-                  ? prism.AppTextStyle.pageTitle.of(context)
-                  : prism.AppTextStyle.headline.of(context),
-              titleSpacing: parentLocation == null ? null : 0,
-              leading: parentLocation == null
-                  ? null
-                  : Center(
-                      child: AppNavigationButton.back(
-                        onPressed: () {
-                          if (context.canPop()) {
-                            context.pop();
-                          } else {
-                            context.go(parentLocation);
-                          }
-                        },
-                      ),
-                    ),
-            ),
-          ),
-        ),
-      );
     }
 
     return ShellSectionHeader(
@@ -111,14 +74,14 @@ class ShellHeader extends ConsumerWidget {
       scrollOffset: scrollOffset,
       floating: floating,
       compact: compact,
-      trailing: location == '/playlists'
-          ? const PlaylistManagementMenu()
-          : null,
       fontSize: onlineCollectionDetail ? 18 : (compact ? 22 : null),
       leading: parentLocation != null || location == '/playlists/import'
-          ? AppNavigationButton.back(
+          ? IconButton(
+              tooltip: '返回上一页',
               onPressed: () {
-                if (parentLocation != null) {
+                if (settingsParent != null && context.canPop()) {
+                  context.pop();
+                } else if (parentLocation != null) {
                   context.go(parentLocation);
                 } else if (context.canPop()) {
                   context.pop();
@@ -126,6 +89,11 @@ class ShellHeader extends ConsumerWidget {
                   context.go(playlistBackLocation);
                 }
               },
+              icon: Icon(
+                Icons.arrow_back_ios_new_rounded,
+                color: scheme.onSurface,
+                size: 21,
+              ),
             )
           : null,
     );
@@ -211,7 +179,9 @@ class ShellSectionHeader extends StatelessWidget {
             child: Row(
               children: [
                 if (leading case final leading?) ...[
-                  SizedBox.square(dimension: 48, child: Center(child: leading)),
+                  FloatingHeaderSurface(
+                    child: SizedBox.square(dimension: 48, child: leading),
+                  ),
                   const SizedBox(width: 14),
                 ],
                 Expanded(
@@ -237,7 +207,6 @@ class ShellSectionHeader extends StatelessWidget {
                     ),
                   ),
                 ),
-                ?trailing,
               ],
             ),
           ),
@@ -337,131 +306,134 @@ class SongsHeader extends StatelessWidget {
     );
 
     if (state.batchMode) {
-      return SizedBox(
+      return Column(
         key: const ValueKey('songs-header-batch'),
-        height: 44,
-        child: Row(
-          children: [
-            AppNavigationButton.back(
-              tooltip: '退出批量管理',
-              onPressed: state.onToggleBatch,
-            ),
-            Expanded(
-              child: AnimatedSwitcher(
-                duration: AppMotion.short,
-                child: Text(
-                  '已选中 ${state.selectedCount} 项',
-                  key: ValueKey(state.selectedCount),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: title.style,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: 44,
+            child: Align(alignment: Alignment.centerLeft, child: title),
+          ),
+          Container(
+            key: const ValueKey('songs-batch-header'),
+            height: 44,
+            decoration: BoxDecoration(
+              border: Border(
+                top: BorderSide(
+                  color: scheme.outlineVariant.withValues(alpha: 0.34),
+                ),
+                bottom: BorderSide(
+                  color: scheme.outlineVariant.withValues(alpha: 0.34),
                 ),
               ),
             ),
-            if (state.hasSongs)
-              _SongsHeaderGlyphButton(
-                tooltip: state.allSelected ? '取消全选' : '全选',
-                glyph: state.allSelected
-                    ? prism_glyphs.AppGlyphs.deselect
-                    : prism_glyphs.AppGlyphs.selectAll,
-                onPressed: state.onToggleSelectAll,
-              ),
-          ],
-        ),
+            child: Row(
+              children: [
+                TextButton(
+                  onPressed: state.hasSongs ? state.onToggleSelectAll : null,
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(72, 44),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    alignment: Alignment.centerLeft,
+                  ),
+                  child: Text(state.allSelected ? '取消全选' : '全选'),
+                ),
+                Expanded(
+                  child: AnimatedSwitcher(
+                    duration: AppMotion.short,
+                    child: Text(
+                      '已选中 ${state.selectedCount} 项',
+                      key: ValueKey(state.selectedCount),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: scheme.onSurface,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox.square(
+                  dimension: 44,
+                  child: IconButton(
+                    tooltip: '退出批量管理',
+                    onPressed: state.onToggleBatch,
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       );
     }
 
-    final controller = state.searchController;
-    final focusNode = state.searchFocusNode;
-    final hasInlineSearch = controller != null && focusNode != null;
-    final overflow = _LibraryOverflowMenu(
-      onOpenHistory: state.onOpenHistory,
-      onShuffle: state.hasSongs ? state.onShuffle : null,
-      onUpdatePlaylist: state.onUpdatePlaylist,
-      updatingPlaylist: state.updatingPlaylist,
-    );
-    final closedBar = Row(
+    final controls = Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Expanded(
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: FloatingHeaderSurface(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: LibraryViewMenu(
-                title: state.libraryTitle,
-                activePlaylistId: state.activePlaylistId,
-                scheme: scheme,
-                onSelected: state.onSelectLibraryPlaylist ?? (_) {},
-              ),
+        Flexible(
+          child: FloatingHeaderSurface(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: LibraryViewMenu(
+              title: state.libraryTitle,
+              activePlaylistId: state.activePlaylistId,
+              scheme: scheme,
+              onSelected: state.onSelectLibraryPlaylist ?? (_) {},
             ),
           ),
         ),
-        const SizedBox(width: _songsHeaderActionGap),
+        const SizedBox(width: 6),
         _SongsHeaderIconButton(
-          tooltip: '歌单管理',
+          tooltip: '歌单',
           icon: Icons.queue_music_rounded,
           onPressed: state.onOpenPlaylists,
         ),
-        const SizedBox(width: _songsHeaderActionGap),
-        // The inline search is painted above this row. Reserve its closed
-        // button width so long titles cannot push playlist management under it.
-        if (hasInlineSearch)
-          SizedBox(width: prism.TonalButtonSize.bar.button)
-        else
-          _SongsHeaderIconButton(
-            tooltip: state.searchLabel,
-            icon: Icons.search_rounded,
-            onPressed: state.onSearch,
-          ),
-        const SizedBox(width: _songsHeaderActionGap),
-        overflow,
       ],
     );
-
-    if (!hasInlineSearch) {
-      return SizedBox(
-        key: const ValueKey('songs-header-normal'),
-        height: 44,
-        child: closedBar,
-      );
-    }
-
+    final controller = state.searchController;
+    final focusNode = state.searchFocusNode;
     return SizedBox(
       key: const ValueKey('songs-header-normal'),
       height: 44,
-      child: Stack(
-        clipBehavior: Clip.none,
+      child: Row(
         children: [
-          // Prism UI fades the covered app-bar content out of the search layer
-          // and removes it from hit testing while the field owns the toolbar.
-          AnimatedOpacity(
-            opacity: state.searchMode ? 0 : 1,
-            duration: AppMotion.short,
-            curve: AppMotion.emphasized,
-            child: IgnorePointer(
-              ignoring: state.searchMode,
-              child: ExcludeSemantics(
-                excluding: state.searchMode,
-                child: closedBar,
-              ),
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: controller == null || focusNode == null
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(child: controls),
+                        const SizedBox(width: 6),
+                        _SongsHeaderIconButton(
+                          tooltip: state.searchLabel,
+                          icon: Icons.search_rounded,
+                          onPressed: state.onSearch,
+                        ),
+                      ],
+                    )
+                  : ExpandingHeaderSearch(
+                      title: state.libraryTitle,
+                      collapsedContent: controls,
+                      shrinkWrap: true,
+                      controller: controller,
+                      focusNode: focusNode,
+                      expanded: state.searchMode,
+                      autoFocus: state.searchAutoFocus,
+                      tooltip: state.searchLabel,
+                      onOpen: state.onSearch ?? () {},
+                      onClose: state.onCloseSearch ?? () {},
+                      onChanged: state.onSearchChanged ?? (_) {},
+                    ),
             ),
           ),
-          Positioned.fill(
-            child: ExpandingHeaderSearch(
-              title: state.libraryTitle,
-              hint: '搜索',
-              collapsedContent: const SizedBox.shrink(),
-              closedEndInset:
-                  _songsHeaderActionGap + prism.TonalButtonSize.bar.button,
-              controller: controller,
-              focusNode: focusNode,
-              expanded: state.searchMode,
-              autoFocus: state.searchAutoFocus,
-              tooltip: state.searchLabel,
-              onOpen: state.onSearch ?? () {},
-              onClose: state.onCloseSearch ?? () {},
-              onChanged: state.onSearchChanged ?? (_) {},
-            ),
+          const SizedBox(width: 6),
+          _LibraryOverflowMenu(
+            onOpenHistory: state.onOpenHistory,
+            onShuffle: state.hasSongs ? state.onShuffle : null,
+            onUpdatePlaylist: state.onUpdatePlaylist,
+            updatingPlaylist: state.updatingPlaylist,
           ),
         ],
       ),
@@ -482,46 +454,14 @@ class _SongsHeaderIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return prism.TonalButtonTheme(
-      size: prism.TonalButtonSize.bar,
-      glass: prism.LiquidGlassScope.of(context),
-      child: prism.ElasticPress(
-        enabled: onPressed != null,
-        child: prism.IconButton(
+    return FloatingHeaderSurface(
+      child: SizedBox.square(
+        dimension: 44,
+        child: IconButton(
           tooltip: tooltip,
           onPressed: onPressed,
-          style: headerControlButtonStyle(context),
-          icon: Icon(icon, size: prism.TonalButtonSize.bar.icon),
-        ),
-      ),
-    );
-  }
-}
-
-class _SongsHeaderGlyphButton extends StatelessWidget {
-  const _SongsHeaderGlyphButton({
-    required this.tooltip,
-    required this.glyph,
-    required this.onPressed,
-  });
-
-  final String tooltip;
-  final prism_glyph.Glyph glyph;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return prism.TonalButtonTheme(
-      size: prism.TonalButtonSize.bar,
-      glass: prism.LiquidGlassScope.of(context),
-      child: prism.ElasticPress(
-        child: prism.IconButton(
-          tooltip: tooltip,
-          onPressed: onPressed,
-          icon: prism_glyph.GlyphIcon(
-            glyph,
-            size: prism.TonalButtonSize.bar.icon,
-          ),
+          icon: Icon(icon, size: 20),
+          visualDensity: VisualDensity.compact,
         ),
       ),
     );
@@ -543,45 +483,41 @@ class _LibraryOverflowMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final glass = prism.LiquidGlassScope.of(context);
-    return prism.PopupAnchor(
+    return MorphingMenuButton(
       key: const ValueKey('songs-overflow-menu'),
-      targetBuilder: (open) => prism.TonalButtonTheme(
-        size: prism.TonalButtonSize.bar,
-        glass: glass,
-        child: prism.IconButton(
-          tooltip: '更多歌曲操作',
-          style: const prism.ButtonStyle(
-            shape: CircleBorder(),
-            tapTargetSize: prism.TapTargetSize.padded,
-          ).merge(headerControlButtonStyle(context)),
-          onPressed: open,
-          icon: const glyph.GlyphIcon(glyph.Glyphs.more),
+      tooltip: '更多歌曲操作',
+      // The toolbar menu hides leading icons, so the shared default leaves
+      // too much unused space on the right. Keep a little room for scaling
+      // while trimming roughly one third of that blank area.
+      width: 184,
+      motionStyle: MorphingMenuMotionStyle.toolbar,
+      buttonBuilder: (button) => FloatingHeaderSurface(child: button),
+      actions: [
+        MorphingMenuAction(
+          label: '随机播放',
+          leading: const Icon(Icons.shuffle_rounded),
+          showLeading: false,
+          onSelected: onShuffle,
         ),
-      ),
-      popupBuilder: (_) => prism.PopupMenu(
-        items: [
-          prism.PopupMenuItem(
-            label: '随机播放',
-            glyph: prism_glyphs.AppGlyphs.shuffle,
-            executeImmediately: true,
-            onPressed: onShuffle,
+        if (onUpdatePlaylist != null)
+          MorphingMenuAction(
+            label: updatingPlaylist ? '正在更新' : '更新歌单',
+            leading: updatingPlaylist
+                ? const SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2.2),
+                  )
+                : const Icon(Icons.refresh_rounded),
+            showLeading: false,
+            onSelected: updatingPlaylist ? null : onUpdatePlaylist,
           ),
-          if (onUpdatePlaylist != null)
-            prism.PopupMenuItem(
-              label: updatingPlaylist ? '正在更新' : '更新歌单',
-              glyph: prism_glyphs.AppGlyphs.refresh,
-              executeImmediately: true,
-              onPressed: updatingPlaylist ? null : onUpdatePlaylist,
-            ),
-          prism.PopupMenuItem(
-            label: '下载历史',
-            glyph: prism_glyphs.AppGlyphs.clock,
-            executeImmediately: true,
-            onPressed: onOpenHistory ?? () => context.go('/downloads'),
-          ),
-        ],
-      ),
+        MorphingMenuAction(
+          label: '下载历史',
+          leading: const Icon(Icons.history_rounded),
+          showLeading: false,
+          onSelected: onOpenHistory ?? () => context.go('/downloads'),
+        ),
+      ],
     );
   }
 }

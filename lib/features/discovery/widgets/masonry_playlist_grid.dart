@@ -7,21 +7,78 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/playlist_summary.dart';
 import '../../../core/storage/settings_store.dart';
 import '../../../core/ui/container_transform.dart';
-import '../../../core/ui/widgets/spring_artwork_hero.dart';
 import '../../../core/ui/car_display_layout.dart';
-import '../../../theme/app_motion.dart';
-import '../../shell/shell_bottom_area.dart';
 import '../discovery_controller.dart';
 import 'discovery_helpers.dart';
 import 'discovery_playlist_cover.dart';
-import 'discovery_prism_surface.dart';
 import 'playlist_preview_dialog.dart';
 
-/// 发现页瀑布流，按列懒加载：每列是一个 [SliverList]，并排放在
-/// [SliverCrossAxisGroup] 里，只构建视口附近的卡片。分页追加时不会重建、
-/// 重排已经加载的全部卡片，刷得越深也不会越卡。
-///
-/// 卡片分到哪一列只取决于卡片顺序与估算高度，追加分页不会让已有卡片换列。
+class MasonryPlaylistGrid extends ConsumerWidget {
+  const MasonryPlaylistGrid({super.key, required this.items});
+
+  final List<PlaylistSummary> items;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final carPadModeEnabled = ref.watch(
+      settingsProvider.select((settings) => settings.carPadModeEnabled),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columnCount = CarDisplayLayout.enabledOf(context)
+            ? (constraints.maxWidth / 240).floor().clamp(2, 6)
+            : carPadModeEnabled || constraints.maxWidth >= 700
+            ? 3
+            : 2;
+        const gap = 10.0;
+        final width =
+            (constraints.maxWidth - gap * (columnCount - 1)) / columnCount;
+        final columns = List.generate(columnCount, (_) => <_MasonryEntry>[]);
+        final heights = List<double>.filled(columnCount, 0);
+        for (final item in items) {
+          final ratio = _coverRatio(item);
+          var target = 0;
+          for (var index = 1; index < heights.length; index++) {
+            if (heights[index] < heights[target]) target = index;
+          }
+          columns[target].add(_MasonryEntry(item, ratio));
+          heights[target] += width / ratio + 82 + gap;
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (var index = 0; index < columns.length; index++) ...[
+              if (index > 0) const SizedBox(width: gap),
+              Expanded(
+                child: Column(
+                  children: [
+                    for (final entry in columns[index]) ...[
+                      _PlaylistDiscoveryCard(
+                        summary: entry.summary,
+                        coverRatio: entry.coverRatio,
+                      ),
+                      const SizedBox(height: gap),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  double _coverRatio(PlaylistSummary item) {
+    const ratios = <double>[0.76, 0.88, 1, 1.12, 1.24];
+    var hash = 17;
+    for (final codeUnit in item.key.codeUnits) {
+      hash = 37 * hash + codeUnit;
+    }
+    return ratios[hash.abs() % ratios.length];
+  }
+}
+
 class SliverMasonryPlaylistGrid extends ConsumerStatefulWidget {
   const SliverMasonryPlaylistGrid({
     super.key,
@@ -44,38 +101,6 @@ class SliverMasonryPlaylistGrid extends ConsumerStatefulWidget {
 class _SliverMasonryPlaylistGridState
     extends ConsumerState<SliverMasonryPlaylistGrid> {
   static const _gap = 10.0;
-
-  /// 每张卡片到达（首屏或分页追加）的时刻。只有刚到达的卡片播放入场动画；
-  /// 滚出视口被回收、再滚回来的卡片直接出现，不会边滚边闪。
-  final _clock = Stopwatch()..start();
-  final _arrivals = <String, Duration>{};
-
-  @override
-  void initState() {
-    super.initState();
-    _recordArrivals(animate: widget.animateInitialItems);
-  }
-
-  @override
-  void didUpdateWidget(covariant SliverMasonryPlaylistGrid oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.items, widget.items) ||
-        oldWidget.items.length != widget.items.length) {
-      _recordArrivals();
-    }
-  }
-
-  void _recordArrivals({bool animate = true}) {
-    final now = _clock.elapsed - (animate ? Duration.zero : AppMotion.medium);
-    for (final item in widget.items) {
-      _arrivals.putIfAbsent(item.key, () => now);
-    }
-  }
-
-  bool _justArrived(PlaylistSummary item) {
-    final arrival = _arrivals[item.key];
-    return arrival != null && _clock.elapsed - arrival < AppMotion.medium;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -144,7 +169,6 @@ class _SliverMasonryPlaylistGridState
           child: _PlaylistDiscoveryCard(
             summary: entry.summary,
             coverRatio: entry.coverRatio,
-            reveal: _justArrived(entry.summary),
           ),
         );
       },
@@ -172,18 +196,16 @@ class _PlaylistDiscoveryCard extends StatelessWidget {
   const _PlaylistDiscoveryCard({
     required this.summary,
     required this.coverRatio,
-    required this.reveal,
   });
 
   final PlaylistSummary summary;
   final double coverRatio;
-  final bool reveal;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final path = discoveryPlaylistDetailPath(summary);
-    const radius = BorderRadius.all(Radius.circular(18));
+    const radius = BorderRadius.all(Radius.circular(8));
     // 详情页从这张卡片的矩形展开（容器变换），封面 Hero 沿同一条曲线飞到
     // 头图；起点必须在 push 之前、卡片还在屏幕上时采集。
     ContainerTransformOrigin? captureOrigin() =>
@@ -191,97 +213,87 @@ class _PlaylistDiscoveryCard extends StatelessWidget {
           context,
           borderRadius: radius,
           color: scheme.surfaceContainer,
-          revealPadding: ShellBottomArea.revealPaddingOf(context),
         );
-    return DiscoveryReveal(
-      enabled: reveal,
-      child: DiscoveryPrismSurface(
-        key: ValueKey('discovery-card-${summary.key}'),
+    return Card(
+      key: ValueKey('discovery-card-${summary.key}'),
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: scheme.surfaceContainer,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
         borderRadius: radius,
-        shadows: [
-          BoxShadow(
-            color: scheme.shadow.withValues(alpha: 0.10),
-            blurRadius: 22,
-            offset: const Offset(0, 8),
-          ),
-        ],
-        child: Material(
-          color: Colors.transparent,
-          clipBehavior: Clip.antiAlias,
-          borderRadius: radius,
-          child: InkWell(
-            onTap: () => context.push(
-              path,
-              extra: ContainerTransformExtra(summary, origin: captureOrigin()),
+        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.24)),
+      ),
+      child: InkWell(
+        onTap: () => context.push(
+          path,
+          extra: ContainerTransformExtra(summary, origin: captureOrigin()),
+        ),
+        onLongPress: () {
+          final origin = captureOrigin();
+          showDialog<void>(
+            context: context,
+            builder: (_) =>
+                PlaylistPreviewDialog(summary: summary, origin: origin),
+          );
+        },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AspectRatio(
+              aspectRatio: coverRatio,
+              child: Hero(
+                tag: onlinePlaylistArtworkHeroTag(summary.source, summary.id),
+                transitionOnUserGestures: true,
+                createRectTween: containerTransformHeroRectTween,
+                child: HeroArtworkShape(
+                  // 封面贴着卡片顶部，只有上方两角跟随卡片圆角。
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(8),
+                  ),
+                  child: DiscoveryPlaylistCover(
+                    url: summary.coverUrl,
+                    size: 36,
+                  ),
+                ),
+              ),
             ),
-            onLongPress: () {
-              final origin = captureOrigin();
-              showDialog<void>(
-                context: context,
-                builder: (_) =>
-                    PlaylistPreviewDialog(summary: summary, origin: origin),
-              );
-            },
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                AspectRatio(
-                  aspectRatio: coverRatio,
-                  child: SpringArtworkHero(
-                    tag: onlinePlaylistArtworkHeroTag(
-                      summary.source,
-                      summary.id,
-                    ),
-                    child: HeroArtworkShape(
-                      // 封面贴着卡片顶部，只有上方两角跟随卡片圆角。
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(18),
-                      ),
-                      child: DiscoveryPlaylistCover(
-                        url: summary.coverUrl,
-                        size: 36,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    height: 38,
+                    child: Text(
+                      summary.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: scheme.onSurface,
+                        fontSize: 13.5,
+                        height: 1.28,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0,
                       ),
                     ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(13, 12, 13, 13),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        height: 38,
-                        child: Text(
-                          summary.name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: scheme.onSurface,
-                            fontSize: 13.5,
-                            height: 1.28,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        _summaryMeta(summary),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: scheme.onSurfaceVariant,
-                          fontSize: 11,
-                          height: 1.1,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
+                  const SizedBox(height: 5),
+                  Text(
+                    _summaryMeta(summary),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: scheme.onSurfaceVariant,
+                      fontSize: 11,
+                      height: 1.1,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );

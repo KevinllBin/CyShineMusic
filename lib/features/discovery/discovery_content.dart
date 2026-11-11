@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,58 +10,131 @@ import '../../core/ui/app_refresh_indicator.dart';
 import '../../core/ui/car_display_layout.dart';
 import '../../theme/app_motion.dart';
 import '../shell/shell_bottom_area.dart';
-import 'discovery_browse_cache.dart';
 import 'discovery_controller.dart';
+import 'discovery_browse_cache.dart';
 import 'widgets/discovery_helpers.dart';
 import 'widgets/discovery_placeholders.dart';
-import 'widgets/discovery_source_transition.dart';
+import 'widgets/discovery_source_selector.dart';
 import 'widgets/leaderboard_spotlight.dart';
 import 'widgets/masonry_playlist_grid.dart';
 
-class DiscoveryContent extends ConsumerWidget {
+class DiscoveryContent extends ConsumerStatefulWidget {
   const DiscoveryContent({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final source = ref.watch(selectedDiscoverySourceProvider);
-    return DiscoverySourceTransition(
-      source: source,
-      child: _DiscoverySourcePage(key: ValueKey(source), source: source),
-    );
-  }
+  ConsumerState<DiscoveryContent> createState() => _DiscoveryContentState();
 }
 
-class _DiscoverySourcePage extends ConsumerWidget {
-  const _DiscoverySourcePage({super.key, required this.source});
+class _DiscoveryContentState extends ConsumerState<DiscoveryContent> {
+  late final PageController _pageController;
 
-  final MusicSource source;
+  /// 抑制 onPageChanged → provider → animateToPage 的回环。
+  bool _syncingFromPager = false;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final categoryId = ref.watch(selectedDiscoveryCategoryProvider(source));
-    // 分类切换只更新精选歌单，排行榜所在的页面骨架保持挂载。
-    return _DiscoveryList(
-      source: source,
-      categoryId: categoryId,
-      browseCache: ref.watch(discoveryBrowseCacheProvider),
-      featured: ref.watch(featuredPlaylistsProvider(source)),
-      onRefresh: () async {
-        ref.invalidate(featuredPlaylistsProvider(source));
-        ref.invalidate(leaderboardBoardsProvider(source));
-        await Future.wait([
-          ref.read(featuredPlaylistsProvider(source).future),
-          ref.read(leaderboardBoardsProvider(source).future),
-        ]);
+  void initState() {
+    super.initState();
+    final source = ref.read(selectedDiscoverySourceProvider);
+    final sources = ref.read(discoverySourcesProvider);
+    _pageController = PageController(
+      initialPage: math.max(0, sources.indexOf(source)),
+    );
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _handlePageChanged(int index, List<MusicSource> sources) {
+    _syncingFromPager = true;
+    ref.read(selectedDiscoverySourceProvider.notifier).state = sources[index];
+    _syncingFromPager = false;
+  }
+
+  void _animateToSource(MusicSource source, List<MusicSource> sources) {
+    final index = sources.indexOf(source);
+    if (index < 0 || !_pageController.hasClients) return;
+    final current =
+        _pageController.page?.round() ?? _pageController.initialPage;
+    if (current == index) return;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _pageController.jumpToPage(index);
+    } else {
+      _pageController.animateToPage(
+        index,
+        duration: AppMotion.medium,
+        curve: AppMotion.emphasized,
+      );
+    }
+  }
+
+  Widget _buildSourcePage(
+    BuildContext context,
+    int index,
+    List<MusicSource> sources,
+  ) {
+    final source = sources[index];
+    return Consumer(
+      builder: (context, ref, _) {
+        final categoryId = ref.watch(selectedDiscoveryCategoryProvider(source));
+        // 页面骨架常驻：切换歌单分类只让「精选歌单」区块进入加载态，
+        // 上方的官方排行榜不随之卸载重建。
+        return _DiscoveryList(
+          source: source,
+          categoryId: categoryId,
+          browseCache: ref.watch(discoveryBrowseCacheProvider),
+          featured: ref.watch(featuredPlaylistsProvider(source)),
+          onRefresh: () async {
+            ref.invalidate(featuredPlaylistsProvider(source));
+            ref.invalidate(leaderboardBoardsProvider(source));
+            await Future.wait([
+              ref.read(featuredPlaylistsProvider(source).future),
+              ref.read(leaderboardBoardsProvider(source).future),
+            ]);
+          },
+          onRetry: () => ref.invalidate(featuredPlaylistsProvider(source)),
+          onLoadMore: (page) => ref
+              .read(musicApiProvider)
+              .featuredPlaylists(
+                source: source,
+                page: page,
+                limit: discoveryPlaylistPageSize,
+                categoryId: categoryId,
+              ),
+        );
       },
-      onRetry: () => ref.invalidate(featuredPlaylistsProvider(source)),
-      onLoadMore: (page) => ref
-          .read(musicApiProvider)
-          .featuredPlaylists(
-            source: source,
-            page: page,
-            limit: discoveryPlaylistPageSize,
-            categoryId: categoryId,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sources = ref.watch(discoverySourcesProvider);
+    // 点击音源标签等外部写入 provider 时，让 pager 跟着动画过去。
+    ref.listen<MusicSource>(selectedDiscoverySourceProvider, (previous, next) {
+      if (_syncingFromPager || previous == next) return;
+      _animateToSource(next, ref.read(discoverySourcesProvider));
+    });
+    return Column(
+      children: [
+        DiscoverySourceSelector(
+          sources: sources,
+          pageController: _pageController,
+        ),
+        const SizedBox(height: 6),
+        Expanded(
+          child: PageView.builder(
+            key: const PageStorageKey('discovery-source-pager'),
+            controller: _pageController,
+            physics: const BouncingScrollPhysics(),
+            onPageChanged: (index) => _handlePageChanged(index, sources),
+            itemCount: sources.length,
+            itemBuilder: (context, index) =>
+                _buildSourcePage(context, index, sources),
           ),
+        ),
+      ],
     );
   }
 }
@@ -292,7 +367,6 @@ class _DiscoveryListState extends State<_DiscoveryList> {
         SliverMasonryPlaylistGrid(
           key: ValueKey('featured-grid-${widget.categoryId}'),
           items: _items,
-          animateInitialItems: false,
           maxWidth: maxWidth,
         ),
         if (_loadingMore)

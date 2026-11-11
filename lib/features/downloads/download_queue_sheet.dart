@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
-import 'package:prism_ui/prism_ui.dart' as prism;
 
 import '../../core/ui/configurable_m3e_progress.dart';
-import '../../core/ui/app_sheet.dart';
 import '../../theme/app_motion.dart';
+import '../../theme/app_theme.dart';
 import 'download_progress.dart';
 
 Future<void> showDownloadQueueSheet(BuildContext context) {
-  return showAppSheet<void>(
+  return showModalBottomSheet<void>(
     context: context,
-    detents: const [0.62, 0.9],
+    showDragHandle: true,
+    isScrollControlled: true,
     builder: (_) => const _DownloadQueueSheet(),
   );
 }
@@ -25,72 +25,105 @@ class _DownloadQueueSheet extends ConsumerWidget {
     final progress = ref.watch(downloadProgressProvider);
     final tasks = progress.tasks.reversed.toList();
     final canClear = progress.tasks.any((task) => !task.isBusy);
-    return AppSheetLayout(
-      title: '下载队列',
-      subtitle:
-          '${tasks.length} 个任务 · ${tasks.where((task) => task.isBusy).length} 个进行中',
-      trailing: canClear
-          ? prism.TextButton(
-              onPressed: () =>
-                  ref.read(downloadProgressProvider.notifier).clearFinished(),
-              child: const Text('清理'),
-            )
-          : null,
-      body: tasks.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.download_done_rounded,
-                    size: 42,
-                    color: scheme.onSurfaceVariant,
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Text(
+                  '下载队列',
+                  style: TextStyle(
+                    color: scheme.onSurface,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
                   ),
-                  const SizedBox(height: 10),
-                  Text(
-                    '暂无下载任务',
-                    style: TextStyle(color: scheme.onSurfaceVariant),
+                ),
+                const Spacer(),
+                if (canClear)
+                  TextButton.icon(
+                    onPressed: () => ref
+                        .read(downloadProgressProvider.notifier)
+                        .clearFinished(),
+                    icon: const Icon(Icons.cleaning_services_outlined),
+                    label: const Text('清理'),
                   ),
-                ],
-              ),
-            )
-          : SlidableAutoCloseBehavior(
-              child: ListView.separated(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
-                itemCount: tasks.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 10),
-                itemBuilder: (context, index) {
-                  final task = tasks[index];
-                  final tile = _DownloadTaskTile(task: task);
-                  final child = task.isBusy
-                      ? tile
-                      : ClipRRect(
-                          borderRadius: BorderRadius.circular(18),
-                          child: Slidable(
-                            key: ValueKey(task.id),
-                            groupTag: 'download-queue',
-                            endActionPane: ActionPane(
-                              motion: const BehindMotion(),
-                              extentRatio: 0.28,
-                              children: [
-                                SlidableAction(
-                                  onPressed: (_) => ref
-                                      .read(downloadProgressProvider.notifier)
-                                      .remove(task.id),
-                                  backgroundColor: scheme.error,
-                                  foregroundColor: scheme.onError,
-                                  icon: Icons.delete_outline_rounded,
-                                  label: '删除',
-                                ),
-                              ],
-                            ),
-                            child: tile,
-                          ),
-                        );
-                  return _AnimatedQueueItem(index: index, child: child);
-                },
-              ),
+              ],
             ),
+            const SizedBox(height: 8),
+            if (tasks.isEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 34, 12, 42),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.download_done_rounded,
+                      size: 42,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      '暂无下载任务',
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.58,
+                ),
+                child: SlidableAutoCloseBehavior(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: tasks.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) {
+                      final task = tasks[index];
+                      final tile = _DownloadTaskTile(task: task);
+                      final child = task.isBusy
+                          ? tile
+                          : ClipRRect(
+                              borderRadius: BorderRadius.circular(22),
+                              child: Slidable(
+                                key: ValueKey(task.id),
+                                groupTag: 'download-queue',
+                                endActionPane: ActionPane(
+                                  motion: const BehindMotion(),
+                                  extentRatio: 0.28,
+                                  children: [
+                                    SlidableAction(
+                                      onPressed: (_) => ref
+                                          .read(
+                                            downloadProgressProvider.notifier,
+                                          )
+                                          .remove(task.id),
+                                      backgroundColor: scheme.error,
+                                      foregroundColor: scheme.onError,
+                                      icon: Icons.delete_outline_rounded,
+                                      label: '删除',
+                                    ),
+                                  ],
+                                ),
+                                child: tile,
+                              ),
+                            );
+                      return _AnimatedQueueItem(index: index, child: child);
+                    },
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -108,10 +141,15 @@ class _DownloadTaskTile extends StatelessWidget {
         : task.stage == DownloadStage.done
         ? scheme.primary
         : scheme.tertiary;
-    return prism.Card(
-      inert: true,
-      radius: 18,
+    return AnimatedContainer(
+      duration: AppMotion.medium,
+      curve: AppMotion.emphasized,
       padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: scheme.appContainerHigh,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -183,7 +221,7 @@ class _DownloadTaskTile extends StatelessWidget {
                     : animatedValue,
                 trackThickness: 2.6,
                 activeColor: tone,
-                trackColor: scheme.surfaceContainerHighest,
+                trackColor: scheme.appContainerHighest,
                 waveAmplitude: 1.3,
                 trailingMargin: 8,
               );

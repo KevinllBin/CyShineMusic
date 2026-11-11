@@ -166,9 +166,6 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(searchControllerProvider);
-    final platformButtonOnLeft = ref.watch(
-      settingsProvider.select((settings) => settings.platformButtonOnLeft),
-    );
 
     ref.listen<Set<MusicSource>>(
       settingsProvider.select((settings) => settings.enabledSearchSources),
@@ -195,34 +192,18 @@ class _SearchPageState extends ConsumerState<SearchPage> {
               title: state.isSearchActive ? '搜索' : '发现',
               compact: true,
               fontSize: 22,
+              trailing: state.isSearchActive
+                  ? const SearchPlatformMenu()
+                  : null,
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 2, 12, 4),
-              child: Row(
-                children: [
-                  if (platformButtonOnLeft) ...[
-                    const SearchPlatformMenu(
-                      key: ValueKey('search-platform-menu-slot'),
-                    ),
-                    const SizedBox(width: 10),
-                  ],
-                  Expanded(
-                    key: const ValueKey('search-input-slot'),
-                    child: NativeSearchField(
-                      controller: _controller,
-                      onSubmitted: (v) => _runSearch(keyword: v),
-                      loading: state.loading,
-                      suggestionsBuilder: _buildSuggestionTiles,
-                      onClear: _returnToDiscovery,
-                    ),
-                  ),
-                  if (!platformButtonOnLeft) ...[
-                    const SizedBox(width: 10),
-                    const SearchPlatformMenu(
-                      key: ValueKey('search-platform-menu-slot'),
-                    ),
-                  ],
-                ],
+              child: NativeSearchField(
+                controller: _controller,
+                onSubmitted: (v) => _runSearch(keyword: v),
+                loading: state.loading,
+                suggestionsBuilder: _buildSuggestionTiles,
+                onClear: _returnToDiscovery,
               ),
             ),
             if (state.isSearchActive) ...[

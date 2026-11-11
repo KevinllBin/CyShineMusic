@@ -4,9 +4,6 @@ import 'package:cy_shine_music/features/shell/shell_toolbar_visibility.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:prism_ui/prism_ui.dart' as prism;
-
-import 'helpers/prism_test_environment.dart';
 
 void main() {
   testWidgets('preset timer survives closing the sheet and can be cancelled', (
@@ -52,27 +49,24 @@ void main() {
       final container = await _pumpHarness(tester);
       await tester.tap(find.text('打开定时'));
       await tester.pumpAndSettle();
-      final custom = find.byKey(const ValueKey('sleep-timer-custom'));
-      await tester.ensureVisible(custom);
-      await tester.pumpAndSettle();
-      await tester.tap(custom);
+      await tester.tap(find.text('自定义'));
       await tester.pumpAndSettle();
       tester.view.viewInsets = const FakeViewPadding(bottom: 260);
       await tester.pumpAndSettle();
 
       final input = find.byType(TextField);
-      final start = find.byKey(const ValueKey('sleep-timer-start'));
-      expect(tester.widget<prism.FilledButton>(start).onPressed, isNull);
+      final start = find.widgetWithText(FilledButton, '开启定时');
+      expect(tester.widget<FilledButton>(start).onPressed, isNull);
       for (final invalid in ['0', '181']) {
         await tester.enterText(input, invalid);
         await tester.pump();
-        expect(tester.widget<prism.FilledButton>(start).onPressed, isNull);
+        expect(tester.widget<FilledButton>(start).onPressed, isNull);
         expect(container.read(sleepTimerProvider), isNull);
       }
 
       await tester.enterText(input, '12');
       await tester.pump();
-      expect(tester.widget<prism.FilledButton>(start).onPressed, isNotNull);
+      expect(tester.widget<FilledButton>(start).onPressed, isNotNull);
       await tester.ensureVisible(start);
       await tester.tap(start);
       await tester.pumpAndSettle();
@@ -96,7 +90,6 @@ Future<ProviderContainer> _pumpHarness(WidgetTester tester) async {
         ),
       ],
       child: MaterialApp(
-        builder: buildPrismTestEnvironment,
         home: Scaffold(
           body: Consumer(
             builder: (context, ref, _) => Center(

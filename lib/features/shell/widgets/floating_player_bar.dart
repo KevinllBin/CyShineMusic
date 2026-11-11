@@ -27,13 +27,11 @@ class FloatingPlayerBar extends ConsumerStatefulWidget {
     required this.routeLocation,
     required this.width,
     required this.height,
-    this.large = false,
   });
 
   final String routeLocation;
   final double width;
   final double height;
-  final bool large;
 
   @override
   ConsumerState<FloatingPlayerBar> createState() => _FloatingPlayerBarState();
@@ -159,16 +157,14 @@ class _FloatingPlayerBarState extends ConsumerState<FloatingPlayerBar>
           child: ToolbarCapsule(
             scheme: Theme.of(context).colorScheme,
             height: widget.height,
-            padding: EdgeInsets.zero,
             // Keep the sliding contents inside the capsule's rounded ends.
             child: ClipRRect(
               borderRadius: BorderRadius.circular(999),
               child: AnimatedBuilder(
                 animation: _shift,
                 child: MiniPlayerBar(
-                  width: widget.width,
+                  width: widget.width - 10,
                   height: widget.height,
-                  large: widget.large,
                   onOpenPlayer: () =>
                       navigateShellTo(context, widget.routeLocation, '/player'),
                 ),

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:prism_ui/prism_ui.dart' as prism;
 
 import '../../../core/models/enums.dart';
 import '../../../core/models/music_info.dart';
@@ -8,36 +7,17 @@ import '../../../core/music_sources/music_source_controller.dart';
 import '../../../core/music_sources/music_url_resolver.dart';
 import '../../../core/services/download_service.dart';
 import '../../../core/ui/app_toast.dart';
-import '../../../core/ui/app_sheet.dart';
-import '../../../core/ui/widgets/quality_option_tile.dart';
 import '../../../core/ui/expressive_download_button.dart';
 import '../../music_sources/music_source_action_guard.dart';
 
 Future<void> showQualityPickerSheet(
   BuildContext context,
-  MusicInfo music, {
-  bool asSheet = false,
-}) async {
+  MusicInfo music,
+) async {
   final available = await ensureOnlineMusicSourcesAvailable(context, [
     music.source,
   ]);
   if (!available || !context.mounted) return;
-  // Only the player cover opts into the nested sheet presentation.
-  if (asSheet) {
-    await showAppSheet<void>(
-      context: context,
-      detents: prism.snapSheetDetents,
-      neutralSurface: true,
-      fitsContent: true,
-      floating: true,
-      builder: (_) => QualityPickerSheet(
-        music: music,
-        toastContext: context,
-        asSheet: true,
-      ),
-    );
-    return;
-  }
   await showDialog<void>(
     context: context,
     useRootNavigator: true,
@@ -51,12 +31,10 @@ class QualityPickerSheet extends ConsumerStatefulWidget {
     super.key,
     required this.music,
     required this.toastContext,
-    this.asSheet = false,
   });
 
   final MusicInfo music;
   final BuildContext toastContext;
-  final bool asSheet;
 
   @override
   ConsumerState<QualityPickerSheet> createState() => _QualityPickerSheetState();
@@ -83,39 +61,6 @@ class _QualityPickerSheetState extends ConsumerState<QualityPickerSheet> {
         : qualities;
     if (!_selectionWasUserChosen || !fallback.any((q) => q.type == _selected)) {
       _selected = fallback.first.type;
-    }
-
-    if (widget.asSheet) {
-      return AppSheetLayout(
-        title: '下载音质',
-        centerTitle: true,
-        subtitle:
-            '${widget.music.name} · '
-            '${widget.music.singer.isEmpty ? '未知歌手' : widget.music.singer}',
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              prism.generateGroup([
-                for (final option in fallback)
-                  QualityOptionTile(
-                    key: ValueKey(
-                      'download-quality-option-${option.type.code}',
-                    ),
-                    option: option,
-                    selected: false,
-                    showSelection: false,
-                    onPressed: _submitting
-                        ? null
-                        : () => _download(option.type),
-                  ),
-              ]),
-              const prism.ListFooter(text: '轻点音质即可加入下载队列。'),
-            ],
-          ),
-        ),
-      );
     }
 
     return Dialog(
@@ -321,10 +266,7 @@ class _QualityPickerSheetState extends ConsumerState<QualityPickerSheet> {
         : '${option.type.code} · $size';
   }
 
-  Future<void> _onConfirm() => _download(_selected);
-
-  Future<void> _download(Quality quality) async {
-    if (_submitting) return;
+  Future<void> _onConfirm() async {
     setState(() => _submitting = true);
     final navigator = Navigator.of(context);
     final toastOverlay = Overlay.of(widget.toastContext);
@@ -353,7 +295,7 @@ class _QualityPickerSheetState extends ConsumerState<QualityPickerSheet> {
     try {
       final result = await service.downloadOne(
         music: widget.music,
-        quality: quality,
+        quality: _selected,
         embed: embed,
       );
       showAppToastOnOverlay(

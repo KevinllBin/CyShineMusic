@@ -8,8 +8,6 @@ import 'package:flutter/material.dart';
 enum AppColorStyle {
   soft('soft', '柔和', '低饱和，接近系统默认', DynamicSchemeVariant.tonalSpot),
   vivid('vivid', '鲜明', '保留色相并提高彩度', DynamicSchemeVariant.vibrant),
-  tinted('tinted', '染色', '协调的同色系强调色', DynamicSchemeVariant.fidelity),
-  monochrome('monochrome', '单色', '中性的黑白灰配色', DynamicSchemeVariant.monochrome),
   faithful('faithful', '忠实', '尽量还原所选颜色', DynamicSchemeVariant.fidelity),
   creative('creative', '创意', '偏移色相，配色更跳', DynamicSchemeVariant.expressive);
 
@@ -21,8 +19,6 @@ enum AppColorStyle {
   final DynamicSchemeVariant variant;
 
   static const AppColorStyle fallback = AppColorStyle.soft;
-
-  static const choices = [vivid, tinted, soft, monochrome];
 
   static AppColorStyle fromCode(String? code) {
     if (code == null) return fallback;

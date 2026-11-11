@@ -4,8 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:cy_shine_music/features/downloads/download_history_entry.dart';
 import 'package:cy_shine_music/features/songs/widgets/song_row.dart';
 
-import 'helpers/prism_test_environment.dart';
-
 void main() {
   testWidgets('song row exposes next-play, playlist and delete menu actions', (
     tester,
@@ -18,7 +16,6 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        builder: buildPrismTestEnvironment,
         theme: ThemeData(
           useMaterial3: true,
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
@@ -76,7 +73,6 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        builder: buildPrismTestEnvironment,
         theme: ThemeData(
           useMaterial3: true,
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
@@ -136,7 +132,6 @@ void main() {
 
 Widget _songRowApp({required bool playingActive}) {
   return MaterialApp(
-    builder: buildPrismTestEnvironment,
     theme: ThemeData(
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),

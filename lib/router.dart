@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:heroine/heroine.dart';
 
 import 'features/debug/debug_log_page.dart';
 import 'features/discovery/leaderboards_page.dart';
@@ -13,7 +12,6 @@ import 'core/models/online_collection_kind.dart';
 import 'core/models/playlist_summary.dart';
 import 'core/ui/container_transform.dart';
 import 'core/ui/skippable_exit_transition.dart';
-import 'core/ui/widgets/settings_route_page.dart';
 import 'features/playlists/online_playlist_import_page.dart';
 import 'features/playlists/playlist_detail_page.dart';
 import 'features/playlists/playlist_management_page.dart';
@@ -61,18 +59,12 @@ GoRouter createAppRouter({
           );
         },
         routes: [
-          StatefulShellRoute(
+          StatefulShellRoute.indexedStack(
             key: tabShellKey,
             builder: (context, state, navigationShell) => navigationShell,
-            navigatorContainerBuilder: (context, navigationShell, children) =>
-                _PrismBranchContainer(
-                  currentIndex: navigationShell.currentIndex,
-                  children: children,
-                ),
             branches: [
               StatefulShellBranch(
                 initialLocation: '/',
-                observers: [HeroineController()],
                 routes: [
                   GoRoute(
                     path: '/',
@@ -260,84 +252,57 @@ GoRouter createAppRouter({
                 routes: [
                   GoRoute(
                     path: '/settings',
-                    pageBuilder: (context, state) => SettingsRoutePage(
-                      key: state.pageKey,
-                      origin: state.extra is SettingsContainerOrigin
-                          ? state.extra as SettingsContainerOrigin
-                          : null,
-                      isRoot: true,
+                    pageBuilder: (context, state) => NoTransitionPage(
                       child: _shellPageContent(
                         state,
                         child: const SettingsPage(),
                       ),
                     ),
-                    routes: [
-                      for (final section in SettingsSection.values)
-                        GoRoute(
-                          path: section.name,
-                          pageBuilder: (context, state) => SettingsRoutePage(
-                            key: state.pageKey,
-                            origin: state.extra is SettingsContainerOrigin
-                                ? state.extra as SettingsContainerOrigin
-                                : null,
-                            child: _shellPageContent(
-                              state,
-                              child: SettingsPage(section: section),
-                            ),
-                          ),
-                        ),
-                      GoRoute(
-                        path: 'localMusic',
-                        redirect: (_, _) => SettingsSection.downloads.location,
-                      ),
-                      GoRoute(
-                        path: 'sources',
-                        pageBuilder: (context, state) => SettingsRoutePage(
-                          key: state.pageKey,
-                          origin: state.extra is SettingsContainerOrigin
-                              ? state.extra as SettingsContainerOrigin
-                              : null,
-                          child: _shellPageContent(
-                            state,
-                            child: const MusicSourcePage(),
-                          ),
+                  ),
+                  for (final section in SettingsSection.values)
+                    GoRoute(
+                      path: section.location,
+                      pageBuilder: (context, state) => NoTransitionPage(
+                        child: _shellPageContent(
+                          state,
+                          child: SettingsPage(section: section),
                         ),
                       ),
-                      GoRoute(
-                        path: 'webdav',
-                        pageBuilder: (context, state) => SettingsRoutePage(
-                          key: state.pageKey,
-                          origin: state.extra is SettingsContainerOrigin
-                              ? state.extra as SettingsContainerOrigin
-                              : null,
-                          child: _shellPageContent(
-                            state,
-                            child: const WebDavSyncPage(),
-                          ),
-                        ),
+                    ),
+                  GoRoute(
+                    path: '/settings/localMusic',
+                    redirect: (_, _) => SettingsSection.downloads.location,
+                  ),
+                  GoRoute(
+                    path: '/settings/sources',
+                    pageBuilder: (context, state) => NoTransitionPage(
+                      child: _shellPageContent(
+                        state,
+                        child: const MusicSourcePage(),
                       ),
-                      GoRoute(
-                        path: 'equalizer',
-                        pageBuilder: (context, state) => SettingsRoutePage(
-                          key: state.pageKey,
-                          origin: state.extra is SettingsContainerOrigin
-                              ? state.extra as SettingsContainerOrigin
-                              : null,
-                          child: _shellPageContent(
-                            state,
-                            child: const EqualizerPage(),
-                          ),
-                        ),
+                    ),
+                  ),
+                  GoRoute(
+                    path: '/settings/webdav',
+                    pageBuilder: (context, state) => NoTransitionPage(
+                      child: _shellPageContent(
+                        state,
+                        child: const WebDavSyncPage(),
                       ),
-                    ],
+                    ),
+                  ),
+                  GoRoute(
+                    path: '/settings/equalizer',
+                    pageBuilder: (context, state) => NoTransitionPage(
+                      child: _shellPageContent(
+                        state,
+                        child: const EqualizerPage(),
+                      ),
+                    ),
                   ),
                   GoRoute(
                     path: '/debug',
-                    pageBuilder: (context, state) => SettingsRoutePage(
-                      key: state.pageKey,
-                      origin: state.extra is SettingsContainerOrigin
-                          ? state.extra as SettingsContainerOrigin
-                          : null,
+                    pageBuilder: (context, state) => NoTransitionPage(
                       child: _shellPageContent(
                         state,
                         child: const DebugLogPage(),
@@ -374,48 +339,6 @@ Widget _shellPageContent(GoRouterState state, {required Widget child}) {
   );
 }
 
-/// Keeps branch navigators alive while giving bottom-tab changes Prism UI's
-/// restrained fade and scale handoff. Scroll positions, nested routes and
-/// editor state therefore survive a tab switch.
-class _PrismBranchContainer extends StatelessWidget {
-  const _PrismBranchContainer({
-    required this.currentIndex,
-    required this.children,
-  });
-
-  final int currentIndex;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    final duration = reduceMotion ? Duration.zero : AppMotion.medium;
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        for (var index = 0; index < children.length; index++)
-          AnimatedOpacity(
-            opacity: index == currentIndex ? 1 : 0,
-            duration: duration,
-            curve: AppMotion.emphasized,
-            child: AnimatedScale(
-              scale: index == currentIndex ? 1 : 0.985,
-              duration: duration,
-              curve: AppMotion.emphasized,
-              child: IgnorePointer(
-                ignoring: index != currentIndex,
-                child: TickerMode(
-                  enabled: index == currentIndex,
-                  child: children[index],
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
 class _PlayerRouteBackdrop extends StatelessWidget {
   const _PlayerRouteBackdrop();
   @override
@@ -428,8 +351,13 @@ class _PlayerRouteBackdrop extends StatelessWidget {
   );
 }
 
-/// 发现详情：Heroine 的单层封面弹簧飞行，页面只做淡入/淡出。
-/// 起点继续用于识别卡片入口、重置首次滚动；切回 tab 时不触发飞行。
+/// 发现页卡片 → 歌单/榜单详情：页面从被点击的卡片矩形展开（M3 container
+/// transform），封面 Hero 沿同一条曲线飞到头图；返回时原路收回。起点随
+/// extra 传入，没有起点（深链、预览弹窗）时退化为整页淡入；从别的 tab
+/// 切回（[ShellTabSwitch]）时直接出现。
+///
+/// 路由时长同时驱动页面容器与封面 Hero，展开和收回共用
+/// [AppMotion.containerTransformDuration]。
 CustomTransitionPage<void> _containerTransformPage(
   BuildContext context, {
   required LocalKey key,
@@ -452,8 +380,6 @@ CustomTransitionPage<void> _containerTransformPage(
       child: ContainerTransformTransition(
         animation: animation,
         origin: origin,
-        springHero: true,
-        enableFlight: !reduceMotion && extra is! ShellTabSwitch,
         child: child,
       ),
     ),

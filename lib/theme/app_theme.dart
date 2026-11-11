@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app_motion.dart';
 import 'color_style.dart';
+import 'custom_theme.dart';
 
 class AppTheme {
   const AppTheme._();
@@ -30,8 +31,9 @@ class AppTheme {
 
   static ThemeData fromScheme(
     ColorScheme scheme, {
-    AppColorStyle style = AppColorStyle.soft,
-  }) => _buildFromScheme(scheme, style: style);
+    CustomThemeColors? colors,
+    AppColorStyle style = AppColorStyle.fallback,
+  }) => _buildFromScheme(scheme, colors: colors, style: style);
 
   /// 用给定风格展开种子色。设置页的风格预览也走这里，保证预览与实际一致。
   static ColorScheme schemeFor(
@@ -49,60 +51,24 @@ class AppTheme {
     Color seed,
     AppColorStyle style,
   ) {
-    return _buildFromScheme(schemeFor(seed, brightness, style), style: style);
-  }
-
-  /// Applies the same surface policy used by the live theme to settings
-  /// previews. Soft and monochrome keep the deliberately neutral page surface;
-  /// vivid and tinted retain the variant's generated surface tones so the
-  /// selected color actually reaches the page background and containers.
-  static ColorScheme surfaceSchemeFor(ColorScheme base, AppColorStyle style) =>
-      switch (style) {
-        AppColorStyle.soft || AppColorStyle.monochrome => neutralSurfaces(base),
-        _ => base,
-      };
-
-  static ColorScheme neutralSurfaces(ColorScheme base) {
-    final dark = base.brightness == Brightness.dark;
-    return base.copyWith(
-      surface: dark ? const Color(0xFF101012) : Colors.white,
-      surfaceDim: dark ? const Color(0xFF101012) : const Color(0xFFE4E4E7),
-      surfaceBright: dark ? const Color(0xFF363639) : Colors.white,
-      surfaceContainerLowest: dark ? const Color(0xFF0C0C0E) : Colors.white,
-      surfaceContainerLow: dark ? const Color(0xFF1C1C1E) : Colors.white,
-      surfaceContainer: dark
-          ? const Color(0xFF242426)
-          : const Color(0xFFF2F2F5),
-      surfaceContainerHigh: dark
-          ? const Color(0xFF2C2C2E)
-          : const Color(0xFFEDEDF0),
-      surfaceContainerHighest: dark
-          ? const Color(0xFF363639)
-          : const Color(0xFFE5E5EA),
-      onSurface: dark ? const Color(0xFFF5F5F7) : const Color(0xFF1C1C1E),
-      onSurfaceVariant: dark
-          ? const Color(0xFFAEAEB2)
-          : const Color(0xFF6E6E73),
-      outline: dark ? const Color(0xFF8E8E93) : const Color(0xFF8E8E93),
-      outlineVariant: dark ? const Color(0xFF3A3A3C) : const Color(0xFFDCDCE0),
-      surfaceTint: Colors.transparent,
-    );
+    return _buildFromScheme(schemeFor(seed, brightness, style));
   }
 
   static ThemeData _buildFromScheme(
     ColorScheme base, {
-    AppColorStyle style = AppColorStyle.soft,
+    CustomThemeColors? colors,
+    AppColorStyle style = AppColorStyle.fallback,
   }) {
-    final scheme = surfaceSchemeFor(base, style);
-    return ThemeData(
+    final scheme = colors?.applyTo(base, style) ?? base;
+    final theme = ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
-
+      extensions: [AppThemeBase(base)],
       // NavigationBar 会把 32dp 的指示胶囊和标签在这个高度里垂直居中，
       // 内容本身约 52dp；再往下压会被 loose 约束挤扁并溢出到背景之外。
       navigationBarTheme: const NavigationBarThemeData(height: 64),
       fontFamilyFallback: fontFallback,
-      scaffoldBackgroundColor: scheme.surface,
+      scaffoldBackgroundColor: colors?.background ?? base.appSurface,
       visualDensity: VisualDensity.standard,
       splashFactory: InkRipple.splashFactory,
       appBarTheme: AppBarTheme(
@@ -141,7 +107,7 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationThemeData(
         filled: true,
-        fillColor: scheme.surfaceContainerHigh,
+        fillColor: colors?.container ?? base.appInputFill,
         hoverColor: scheme.onSurface.withValues(alpha: 0.04),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
@@ -220,7 +186,9 @@ class AppTheme {
       ),
       searchBarTheme: SearchBarThemeData(
         elevation: const WidgetStatePropertyAll(0),
-        backgroundColor: WidgetStatePropertyAll(scheme.surfaceContainerHigh),
+        backgroundColor: WidgetStatePropertyAll(
+          colors?.container ?? base.appInputFill,
+        ),
         surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
         side: WidgetStatePropertyAll(BorderSide(color: scheme.outlineVariant)),
         shape: WidgetStatePropertyAll(
@@ -237,14 +205,46 @@ class AppTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       ),
     );
+    if (colors == null ||
+        (colors.text == null &&
+            colors.background == null &&
+            colors.container == null)) {
+      return theme;
+    }
+    return theme.copyWith(
+      textTheme: theme.textTheme.apply(
+        bodyColor: scheme.onSurface,
+        displayColor: scheme.onSurface,
+      ),
+    );
   }
 }
 
-extension AppColorScheme on ColorScheme {
-  /// Match Prism's page level; its dark card level uses surfaceContainer.
-  Color get appSettingsSurface =>
-      brightness == Brightness.dark ? surface : surfaceContainer;
+/// Keep the original scheme so resetting a field in the editor also works
+/// when the system's dynamic colors form the base of a custom theme.
+class AppThemeBase extends ThemeExtension<AppThemeBase> {
+  const AppThemeBase(this.scheme);
 
+  final ColorScheme scheme;
+
+  @override
+  bool operator ==(Object other) =>
+      other is AppThemeBase && scheme == other.scheme;
+
+  @override
+  int get hashCode => scheme.hashCode;
+
+  @override
+  AppThemeBase copyWith({ColorScheme? scheme}) =>
+      AppThemeBase(scheme ?? this.scheme);
+
+  @override
+  AppThemeBase lerp(covariant AppThemeBase? other, double t) => other == null
+      ? this
+      : AppThemeBase(ColorScheme.lerp(scheme, other.scheme, t));
+}
+
+extension AppColorScheme on ColorScheme {
   Color get appSurface => surfaceContainerLow.withValues(alpha: 1);
 
   Color get appContainerLow => surfaceContainerLow;

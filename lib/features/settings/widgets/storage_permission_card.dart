@@ -107,7 +107,13 @@ class _StoragePermissionCardState extends ConsumerState<StoragePermissionCard>
         SettingsAction(
           icon: Icons.library_music_outlined,
           title: '音乐和音频',
-          value: _checkFailed ? '检查失败' : null,
+          subtitle: _checkFailed
+              ? '无法读取权限状态，点击重试'
+              : _audioGranted == null
+              ? '正在检查读取权限'
+              : _audioGranted == true
+              ? '已允许读取选定文件夹中的音乐和封面'
+              : '允许读取本地歌曲，在线听歌不受影响',
           trailing: _audioGranted == true
               ? Icons.check_circle_outline_rounded
               : Icons.chevron_right_rounded,
@@ -116,7 +122,9 @@ class _StoragePermissionCardState extends ConsumerState<StoragePermissionCard>
         SettingsAction(
           icon: Icons.folder_shared_outlined,
           title: '所有文件访问（兼容）',
-          value: _checkFailed ? '检查失败' : null,
+          subtitle: _wideGranted == true
+              ? '已开启；用于旧系统、U盘或未入库的文件'
+              : '可选，用于旧系统、U盘和系统音乐库无法读取的位置',
           trailing: _wideGranted == true
               ? Icons.check_circle_outline_rounded
               : Icons.chevron_right_rounded,

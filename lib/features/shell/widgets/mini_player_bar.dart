@@ -16,13 +16,11 @@ class MiniPlayerBar extends ConsumerWidget {
     required this.width,
     required this.height,
     required this.onOpenPlayer,
-    this.large = false,
   });
 
   final double width;
   final double height;
   final VoidCallback onOpenPlayer;
-  final bool large;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -48,25 +46,16 @@ class MiniPlayerBar extends ConsumerWidget {
     final canControl = track != null && !vm.loading;
     // Narrow capsules (small screens at min action width) drop the artist
     // line and shrink the artwork/buttons so everything still fits.
-    // Shorter capsules scale the artwork and buttons down so they keep an
-    // even inset inside the pill.
+    // Shorter capsules (the secondary player in dual capsule mode) scale the
+    // artwork and buttons down so they keep an even inset inside the pill.
     final compact = width < 240;
-    final coverSlotSize = math.min(
-      compact ? 36.0 : (large ? 44.0 : 40.0),
-      height - 8,
-    );
+    final coverSlotSize = math.min(compact ? 36.0 : 44.0, height - 8);
     final coverSize = coverSlotSize * (square ? 0.82 : 1.0);
-    final buttonSize = math.min(
-      compact ? 36.0 : (large ? 42.0 : 40.0),
-      height - 6,
-    );
-    // Square artwork needs more leading space than circular artwork.
-    final leadingMargin = square ? 15.0 : (large ? 7.0 : 5.0);
-    final trailingMargin = (height - buttonSize) / 2;
+    final buttonSize = math.min(compact ? 36.0 : 40.0, height - 6);
 
     return Row(
       children: [
-        SizedBox(width: leadingMargin),
+        const SizedBox(width: 4),
         Expanded(
           child: Tooltip(
             message: '打开播放页',
@@ -110,7 +99,6 @@ class MiniPlayerBar extends ConsumerWidget {
                       track: track,
                       compact: compact,
                       scheme: scheme,
-                      large: large,
                     ),
                   ),
                 ],
@@ -122,7 +110,6 @@ class MiniPlayerBar extends ConsumerWidget {
           tooltip: '上一首',
           icon: Icons.skip_previous_rounded,
           size: buttonSize,
-          iconSize: large ? 26 : 24,
           onPressed: canControl && vm.canPrev ? controller.playPrevious : null,
         ),
         _MiniPlayButton(
@@ -132,16 +119,14 @@ class MiniPlayerBar extends ConsumerWidget {
           canControl: canControl,
           controller: controller,
           size: buttonSize,
-          iconSize: large ? 28 : 26,
         ),
         _MiniControlButton(
           tooltip: '下一首',
           icon: Icons.skip_next_rounded,
           size: buttonSize,
-          iconSize: large ? 26 : 24,
           onPressed: canControl && vm.canNext ? controller.playNext : null,
         ),
-        SizedBox(width: trailingMargin),
+        const SizedBox(width: 4),
       ],
     );
   }
@@ -182,13 +167,11 @@ class _TrackLabels extends StatelessWidget {
     required this.track,
     required this.compact,
     required this.scheme,
-    required this.large,
   });
 
   final PlayerTrack? track;
   final bool compact;
   final ColorScheme scheme;
-  final bool large;
 
   @override
   Widget build(BuildContext context) {
@@ -200,7 +183,7 @@ class _TrackLabels extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
           color: scheme.onSurfaceVariant.withValues(alpha: 0.72),
-          fontSize: large ? 14.5 : 14,
+          fontSize: 13,
           fontWeight: FontWeight.w600,
         ),
       );
@@ -216,20 +199,20 @@ class _TrackLabels extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: scheme.onSurface,
-            fontSize: large ? 14.5 : 14,
+            fontSize: 13,
             fontWeight: FontWeight.w600,
             height: 1.2,
           ),
         ),
         if (!compact && artist.isNotEmpty) ...[
-          SizedBox(height: large ? 2 : 1),
+          const SizedBox(height: 1),
           Text(
             artist,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: scheme.onSurfaceVariant,
-              fontSize: large ? 12 : 11.5,
+              fontSize: 10.5,
               fontWeight: FontWeight.w500,
               height: 1.2,
             ),
@@ -245,14 +228,12 @@ class _MiniControlButton extends StatelessWidget {
     required this.tooltip,
     required this.icon,
     required this.size,
-    required this.iconSize,
     required this.onPressed,
   });
 
   final String tooltip;
   final IconData icon;
   final double size;
-  final double iconSize;
   final VoidCallback? onPressed;
 
   @override
@@ -266,7 +247,7 @@ class _MiniControlButton extends StatelessWidget {
       constraints: BoxConstraints.tightFor(width: size, height: size),
       icon: Icon(
         icon,
-        size: iconSize,
+        size: 24,
         color: scheme.onSurfaceVariant.withValues(alpha: enabled ? 1 : 0.35),
       ),
     );
@@ -281,7 +262,6 @@ class _MiniPlayButton extends StatelessWidget {
     required this.canControl,
     required this.controller,
     required this.size,
-    required this.iconSize,
   });
 
   final bool playing;
@@ -290,12 +270,11 @@ class _MiniPlayButton extends StatelessWidget {
   final bool canControl;
   final PlayerController controller;
   final double size;
-  final double iconSize;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final color = scheme.onPrimaryContainer.withValues(
+    final color = scheme.onSurfaceVariant.withValues(
       alpha: canControl ? 1 : 0.35,
     );
     final Widget glyph;
@@ -303,7 +282,10 @@ class _MiniPlayButton extends StatelessWidget {
       glyph = SizedBox.square(
         key: const ValueKey('mini-play:spinner'),
         dimension: 16,
-        child: CircularProgressIndicator(strokeWidth: 2.4, color: color),
+        child: CircularProgressIndicator(
+          strokeWidth: 2.4,
+          color: scheme.onSurfaceVariant,
+        ),
       );
     } else {
       final icon = ended
@@ -314,11 +296,11 @@ class _MiniPlayButton extends StatelessWidget {
       glyph = Icon(
         icon,
         key: ValueKey('mini-play:${icon.codePoint}'),
-        size: iconSize,
+        size: 26,
         color: color,
       );
     }
-    return IconButton.filledTonal(
+    return IconButton(
       tooltip: ended
           ? '重播'
           : playing
@@ -329,13 +311,6 @@ class _MiniPlayButton extends StatelessWidget {
           : null,
       padding: EdgeInsets.zero,
       constraints: BoxConstraints.tightFor(width: size, height: size),
-      style: IconButton.styleFrom(
-        backgroundColor: scheme.primaryContainer,
-        disabledBackgroundColor: scheme.onSurface.withValues(alpha: 0.05),
-        shape: const CircleBorder(),
-        minimumSize: Size.square(size),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
       icon: AnimatedSwitcher(
         duration: MediaQuery.disableAnimationsOf(context)
             ? Duration.zero

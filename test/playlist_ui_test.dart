@@ -26,10 +26,6 @@ import 'package:cy_shine_music/features/playlists/playlist_detail_toolbar_state.
 import 'package:cy_shine_music/features/playlists/playlist_management_page.dart';
 import 'package:cy_shine_music/features/playlists/playlist_models.dart';
 import 'package:cy_shine_music/features/playlists/playlist_store.dart';
-import 'package:cy_shine_music/features/playlists/widgets/playlist_management_menu.dart';
-import 'package:prism_ui/prism_ui.dart' as prism;
-
-import 'helpers/prism_test_environment.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -70,10 +66,7 @@ void main() {
     expect(find.text('歌单管理'), findsOneWidget);
     expect(find.text('通勤'), findsOneWidget);
     expect(find.text('0 首歌曲'), findsWidgets);
-    await tester.drag(
-      find.byType(prism.PrismListView).last,
-      const Offset(0, -420),
-    );
+    await tester.drag(find.byType(ListView).last, const Offset(0, -420));
     await tester.pumpAndSettle();
     expect(find.text('歌单管理'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -144,11 +137,10 @@ void main() {
     await tester.tap(find.text('打开歌单'));
     await tester.pumpAndSettle();
 
-    expect(find.text('我的歌单').hitTestable(), findsOneWidget);
-    expect(find.byTooltip('关闭').hitTestable(), findsOneWidget);
-    final headerRect = tester.getRect(find.text('我的歌单'));
-    expect(headerRect.top, greaterThanOrEqualTo(0));
-    expect(headerRect.bottom, lessThanOrEqualTo(320));
+    final sheet = tester.widget<DraggableScrollableSheet>(
+      find.byType(DraggableScrollableSheet),
+    );
+    expect(sheet.minChildSize, greaterThanOrEqualTo(0.55));
     expect(tester.takeException(), isNull);
   });
 
@@ -265,16 +257,12 @@ void main() {
     await _useCompactViewport(tester);
     final prefs = await _prefsWith([_playlist(id: 'night', name: '夜晚循环')]);
 
-    await tester.pumpWidget(_testApp(prefs, _managementPage()));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('歌单管理操作'));
+    await tester.pumpWidget(_testApp(prefs, const PlaylistManagementPage()));
     await tester.pumpAndSettle();
     expect(find.text('新建歌单'), findsOneWidget);
     expect(find.text('在线导入'), findsOneWidget);
     expect(find.text('洛雪导入'), findsOneWidget);
     expect(find.text('夜晚循环'), findsOneWidget);
-    expect(await tester.binding.handlePopRoute(), isTrue);
-    await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
 
     await tester.pumpWidget(_testApp(prefs, const OnlinePlaylistImportPage()));
@@ -331,20 +319,15 @@ void main() {
     addTearDown(container.dispose);
 
     await tester.pumpWidget(
-      _testAppWithContainer(container, _managementPage()),
+      _testAppWithContainer(container, const PlaylistManagementPage()),
     );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('歌单管理操作'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('洛雪导入'));
     await tester.pump();
     await tester.pump();
 
     expect(api.coverRequests, 1);
-    expect(
-      container.read(playlistManagementMenuProvider).importLabel,
-      '封面 0/1',
-    );
+    expect(find.text('封面 0/1'), findsOneWidget);
     expect(container.read(localPlaylistsProvider), isEmpty);
 
     api.complete('https://img.test/imported-cover.jpg');
@@ -452,7 +435,7 @@ void main() {
     await _useCompactViewport(tester);
     final prefs = await _prefsWith([_playlist(id: 'rename', name: '原歌单名')]);
 
-    await tester.pumpWidget(_testApp(prefs, _managementPage()));
+    await tester.pumpWidget(_testApp(prefs, const PlaylistManagementPage()));
     await tester.pumpAndSettle();
 
     Future<void> openRenameDialog() async {
@@ -509,7 +492,7 @@ void main() {
     addTearDown(container.dispose);
 
     await tester.pumpWidget(
-      _testAppWithContainer(container, _managementPage()),
+      _testAppWithContainer(container, const PlaylistManagementPage()),
     );
     await tester.pumpAndSettle();
 
@@ -580,7 +563,7 @@ void main() {
     expect(toolbar.hasDownloadable, isTrue);
     toolbar.onToggleBatch!();
     await tester.pumpAndSettle();
-    expect(find.byType(prism.Checkbox), findsNWidgets(2));
+    expect(find.byType(Checkbox), findsNWidgets(2));
 
     container.read(playlistDetailToolbarStateProvider).onToggleSelectAll!();
     await tester.pump();
@@ -596,7 +579,7 @@ void main() {
       container.read(playlistDetailToolbarStateProvider).batchMode,
       isFalse,
     );
-    expect(find.byType(prism.Checkbox), findsNothing);
+    expect(find.byType(Checkbox), findsNothing);
     expect(find.text('下载 2 首'), findsNothing);
     expect(service.calls, 2);
 
@@ -726,11 +709,6 @@ void main() {
   });
 }
 
-Widget _managementPage() => Scaffold(
-  appBar: AppBar(actions: const [PlaylistManagementMenu()]),
-  body: const PlaylistManagementPage(),
-);
-
 Future<void> _useCompactViewport(
   WidgetTester tester, {
   Size size = const Size(320, 720),
@@ -756,7 +734,6 @@ Widget _testApp(SharedPreferences prefs, Widget home) {
   return ProviderScope(
     overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
     child: MaterialApp(
-      builder: buildPrismTestEnvironment,
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
@@ -770,7 +747,6 @@ Widget _testAppWithContainer(ProviderContainer container, Widget home) {
   return UncontrolledProviderScope(
     container: container,
     child: MaterialApp(
-      builder: buildPrismTestEnvironment,
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),

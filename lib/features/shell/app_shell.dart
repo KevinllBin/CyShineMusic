@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -24,12 +25,13 @@ import 'shell_bottom_area.dart';
 import 'shell_route_utils.dart';
 import 'shell_toolbar_visibility.dart';
 import 'tab_location_memory.dart';
+import 'widgets/bottom_toolbar.dart';
 import 'widgets/discovery_category_fab.dart';
 import 'widgets/dual_capsule_bottom_navigation.dart';
 import 'widgets/native_bottom_navigation.dart';
 import 'widgets/search_paging_fab.dart';
-import 'widgets/toolbar_capsule.dart';
 import 'widgets/toolbar_metrics.dart';
+import 'widgets/toolbar_capsule.dart';
 
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({
@@ -75,6 +77,10 @@ class _AppShellState extends ConsumerState<AppShell>
   double _dragStartProgress = 0;
   Timer? _returnToDesktopTimer;
   AppToastHandle? _returnToDesktopToast;
+
+  bool _toolbarScrollSequenceActive = false;
+  double _lastToolbarScrollDelta = 0;
+  double _toolbarTravelExtent = toolbarDefaultTravelExtent;
 
   @override
   void initState() {
@@ -145,7 +151,9 @@ class _AppShellState extends ConsumerState<AppShell>
     }
     if (oldWidget.location != widget.location) {
       _resetTopLevelBack();
-      // Keep the bottom controls fully revealed when the route shell changes.
+      _toolbarScrollSequenceActive = false;
+      _lastToolbarScrollDelta = 0;
+      // Preserve the underlying toolbar's scroll position during the morph.
       if (!_pullActive && _pull.value == 0) {
         _toolbarRevealController.value = 1;
       }
@@ -491,6 +499,98 @@ class _AppShellState extends ConsumerState<AppShell>
     });
   }
 
+  bool _handleToolbarScrollNotification(ScrollNotification notification) {
+    // While a player pull owns the toolbar reveal, scrolling must not fight it.
+    if (_pullActive ||
+        _settleTarget == 0 ||
+        ref.read(settingsProvider).navigationMode !=
+            AppNavigationMode.singleCapsule) {
+      return false;
+    }
+    final songsBatchMode =
+        isSongsLibraryLocation(widget.location) &&
+        ref.read(songsToolbarStateProvider).batchMode;
+    final playlistBatchMode =
+        isPlaylistDetailLocation(widget.location) &&
+        ref.read(playlistDetailToolbarStateProvider).batchMode;
+    if (!ref.read(shellToolbarVisibleProvider) ||
+        songsBatchMode ||
+        playlistBatchMode) {
+      _toolbarScrollSequenceActive = false;
+      _lastToolbarScrollDelta = 0;
+      _toolbarRevealController.stop(canceled: false);
+      return false;
+    }
+    // Discovery's vertical lists sit inside the horizontal source PageView.
+    // Search results and other routes still only accept the outermost list.
+    final maxScrollDepth =
+        widget.location == '/' &&
+            !ref.read(searchControllerProvider).isSearchActive
+        ? 1
+        : 0;
+    if (widget.location == '/player' ||
+        notification.depth > maxScrollDepth ||
+        notification.metrics.axis != Axis.vertical) {
+      return false;
+    }
+
+    if (notification is ScrollStartNotification &&
+        notification.dragDetails != null) {
+      _toolbarScrollSequenceActive = true;
+      _lastToolbarScrollDelta = 0;
+      _toolbarRevealController.stop(canceled: false);
+      return false;
+    }
+
+    if (notification is ScrollUpdateNotification &&
+        notification.dragDetails != null) {
+      _toolbarScrollSequenceActive = true;
+      _applyToolbarScrollDelta(notification.scrollDelta ?? 0);
+      return false;
+    }
+
+    if (notification is OverscrollNotification &&
+        notification.dragDetails != null) {
+      _toolbarScrollSequenceActive = true;
+      _applyToolbarScrollDelta(notification.overscroll);
+      return false;
+    }
+
+    if (notification is ScrollEndNotification) {
+      _finishToolbarScrollSequence();
+    }
+    return false;
+  }
+
+  void _finishToolbarScrollSequence() {
+    if (!_toolbarScrollSequenceActive) return;
+    _toolbarScrollSequenceActive = false;
+    _settleToolbarAfterScroll();
+  }
+
+  void _applyToolbarScrollDelta(double delta) {
+    if (delta.abs() < toolbarScrollDeltaEpsilon) return;
+    _lastToolbarScrollDelta = delta;
+    _toolbarRevealController.stop(canceled: false);
+    _toolbarRevealController.value =
+        (_toolbarRevealController.value - delta / _toolbarTravelExtent)
+            .clamp(0.0, 1.0)
+            .toDouble();
+  }
+
+  void _settleToolbarAfterScroll() {
+    final reveal = _toolbarRevealController.value;
+    final target = switch (_lastToolbarScrollDelta) {
+      > toolbarScrollDeltaEpsilon =>
+        reveal <= toolbarHideDirectionThreshold ? 0.0 : 1.0,
+      < -toolbarScrollDeltaEpsilon =>
+        reveal >= toolbarShowDirectionThreshold ? 1.0 : 0.0,
+      _ => reveal >= 0.5 ? 1.0 : 0.0,
+    };
+    _lastToolbarScrollDelta = 0;
+    _animateToolbarTo(target);
+  }
+
   void _animateToolbarTo(double target) {
     if (_pullActive) return;
     if ((_toolbarRevealController.value - target).abs() < 0.001) {
@@ -536,15 +636,20 @@ class _AppShellState extends ConsumerState<AppShell>
     );
     final pageBackground = Theme.of(context).scaffoldBackgroundColor;
     final isPlayer = widget.location == '/player';
+    final toolbarTravelExtent = _bottomToolbarTravelExtent(context);
+    _toolbarTravelExtent = toolbarTravelExtent;
     final navigationMode = ref.watch(
       settingsProvider.select((settings) => settings.navigationMode),
     );
-    final showPlayerBar = ref.watch(
-      playerControllerProvider.select(
-        (state) => state.hasTrack || state.loading,
-      ),
-    );
+    final showPlayerBar =
+        navigationMode != AppNavigationMode.singleCapsule &&
+        ref.watch(
+          playerControllerProvider.select(
+            (state) => state.hasTrack || state.loading,
+          ),
+        );
     final shellControlsVisible =
+        navigationMode != AppNavigationMode.singleCapsule &&
         MediaQuery.viewInsetsOf(context).bottom == 0 &&
         ref.watch(shellToolbarVisibleProvider) &&
         !(isSongsLibraryLocation(contentLocation) &&
@@ -570,13 +675,15 @@ class _AppShellState extends ConsumerState<AppShell>
         ? nativeFloatingPlayerExtent(context)
         : 0.0;
     final dualBottomExtent =
-        shellControlsVisible &&
-            navigationMode == AppNavigationMode.floatingCapsule
-        ? floatingCapsuleBottomAreaHeight(context, showPlayer: showPlayerBar)
+        shellControlsVisible && navigationMode == AppNavigationMode.dualCapsule
+        ? dualCapsuleBottomAreaHeight(context, showPlayer: showPlayerBar)
         : 0.0;
+
     ref.listen<AppNavigationMode>(
       settingsProvider.select((settings) => settings.navigationMode),
       (previous, next) {
+        _toolbarScrollSequenceActive = false;
+        _lastToolbarScrollDelta = 0;
         _toolbarRevealController.stop(canceled: false);
         _toolbarRevealController.value = 1;
       },
@@ -588,6 +695,8 @@ class _AppShellState extends ConsumerState<AppShell>
     ref.listen<SongsToolbarState>(songsToolbarStateProvider, (previous, next) {
       if (!isSongsLibraryLocation(contentLocation)) return;
       if (next.batchMode) {
+        _toolbarScrollSequenceActive = false;
+        _lastToolbarScrollDelta = 0;
         _toolbarRevealController.stop(canceled: false);
       } else if (previous?.batchMode == true) {
         _animateToolbarTo(1);
@@ -599,6 +708,8 @@ class _AppShellState extends ConsumerState<AppShell>
     ) {
       if (!isPlaylistDetailLocation(contentLocation)) return;
       if (next.batchMode) {
+        _toolbarScrollSequenceActive = false;
+        _lastToolbarScrollDelta = 0;
         _toolbarRevealController.stop(canceled: false);
       } else if (previous?.batchMode == true) {
         _animateToolbarTo(1);
@@ -615,11 +726,13 @@ class _AppShellState extends ConsumerState<AppShell>
             navigationMode: navigationMode,
             extent: switch (navigationMode) {
               AppNavigationMode.native => nativeBottomExtent,
-              AppNavigationMode.floatingCapsule => dualBottomExtent,
+              AppNavigationMode.dualCapsule => dualBottomExtent,
+              AppNavigationMode.singleCapsule => 0.0,
             },
             floatingExtent: switch (navigationMode) {
               AppNavigationMode.native => nativeFloatingExtent,
-              AppNavigationMode.floatingCapsule => dualBottomExtent,
+              AppNavigationMode.dualCapsule => dualBottomExtent,
+              AppNavigationMode.singleCapsule => 0.0,
             },
             child: Scaffold(
               extendBody: true,
@@ -639,7 +752,18 @@ class _AppShellState extends ConsumerState<AppShell>
                       // Keep the outer navigator mounted across tab changes;
                       // its StatefulShellRoute owns the retained branch stacks.
                       child: RepaintBoundary(
-                        child: ClipRect(child: widget.child),
+                        child: ClipRect(
+                          child: Listener(
+                            behavior: HitTestBehavior.translucent,
+                            onPointerUp: (_) => _finishToolbarScrollSequence(),
+                            onPointerCancel: (_) =>
+                                _finishToolbarScrollSequence(),
+                            child: NotificationListener<ScrollNotification>(
+                              onNotification: _handleToolbarScrollNotification,
+                              child: widget.child,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -674,8 +798,8 @@ class _AppShellState extends ConsumerState<AppShell>
                         );
                       },
                       child: switch (navigationMode) {
-                        AppNavigationMode.floatingCapsule =>
-                          FloatingCapsuleBottomNavigation(
+                        AppNavigationMode.dualCapsule =>
+                          DualCapsuleBottomNavigation(
                             location: contentLocation,
                             routeLocation: contentRoute,
                             showPlayer: showPlayerBar,
@@ -689,6 +813,12 @@ class _AppShellState extends ConsumerState<AppShell>
                           showPlayer: showPlayerBar,
                           visible: shellControlsVisible,
                           reveal: _toolbarRevealController,
+                        ),
+                        AppNavigationMode.singleCapsule => BottomToolbar(
+                          location: contentLocation,
+                          routeLocation: contentRoute,
+                          reveal: _toolbarRevealController,
+                          travelExtent: toolbarTravelExtent,
                         ),
                       },
                     ),
@@ -875,6 +1005,15 @@ Future<void> _moveAppTaskToBack() async {
     // If the native channel is unavailable, still consume back so Android does
     // not destroy the Flutter route stack.
   }
+}
+
+double _bottomToolbarTravelExtent(BuildContext context) {
+  final toolbarHeight = toolbarHeightFor(context);
+  final safeBottom = math.max(
+    MediaQuery.paddingOf(context).bottom,
+    toolbarMinimumBottomInset,
+  );
+  return toolbarHeight + safeBottom;
 }
 
 class _PlayerSurfaceClipper extends CustomClipper<RRect> {

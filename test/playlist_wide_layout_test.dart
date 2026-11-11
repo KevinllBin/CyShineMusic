@@ -17,8 +17,6 @@ import 'package:cy_shine_music/features/playlists/playlist_detail_page.dart';
 import 'package:cy_shine_music/features/playlists/playlist_models.dart';
 import 'package:cy_shine_music/features/playlists/playlist_store.dart';
 
-import 'helpers/prism_test_environment.dart';
-
 const _wideLayoutKey = ValueKey('playlist-wide-layout');
 const _infoPaneKey = ValueKey('playlist-wide-info-pane');
 const _headerKey = ValueKey('immersive-playlist-header');
@@ -93,11 +91,7 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: MaterialApp.router(
-          builder: buildPrismTestEnvironment,
-          theme: _theme(),
-          routerConfig: router,
-        ),
+        child: MaterialApp.router(theme: _theme(), routerConfig: router),
       ),
     );
     await tester.pumpAndSettle();
@@ -146,7 +140,6 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
-          builder: buildPrismTestEnvironment,
           theme: _theme(),
           home: const OnlinePlaylistDetailPage(
             source: MusicSource.kw,
@@ -185,7 +178,6 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
-          builder: buildPrismTestEnvironment,
           theme: _theme(),
           home: const OnlinePlaylistDetailPage(
             source: MusicSource.kw,
@@ -214,7 +206,6 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
-          builder: buildPrismTestEnvironment,
           theme: _theme(),
           home: const OnlinePlaylistDetailPage(
             source: MusicSource.kw,
@@ -245,7 +236,6 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
-          builder: buildPrismTestEnvironment,
           theme: _theme(),
           home: const OnlinePlaylistDetailPage(
             source: MusicSource.kw,
@@ -262,11 +252,7 @@ void main() {
     expect(size.height, 62);
     // SliverPadding 左右各 12，与数据行同宽。
     expect(size.width, 390 - 24);
-    expect(
-      tester.getTopLeft(skeletons.at(1)).dy -
-          tester.getTopLeft(skeletons.first).dy,
-      63,
-    );
+    expect(find.byType(Divider), findsNWidgets(4));
     expect(tester.takeException(), isNull);
   });
 }
@@ -321,7 +307,6 @@ Future<ProviderContainer> _pumpLocalDetail(
     UncontrolledProviderScope(
       container: container,
       child: MaterialApp(
-        builder: buildPrismTestEnvironment,
         theme: _theme(),
         home: PlaylistDetailPage(playlistId: playlist.id),
       ),

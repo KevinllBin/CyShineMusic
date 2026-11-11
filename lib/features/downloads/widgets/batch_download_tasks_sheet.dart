@@ -1,17 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:prism_ui/prism_ui.dart' as prism;
 
 import '../../../core/services/batch_download_controller.dart';
 import '../../../core/ui/configurable_m3e_progress.dart';
-import '../../../core/ui/app_sheet.dart';
 import '../download_progress.dart';
 
 Future<void> showBatchDownloadTasksSheet(BuildContext context) {
-  return showAppSheet<void>(
+  return showModalBottomSheet<void>(
     context: context,
-    detents: const [0.76, 0.92],
-    maxHeight: 1000,
+    showDragHandle: true,
+    isScrollControlled: true,
     builder: (_) => const _BatchDownloadTasksSheet(),
   );
 }
@@ -38,20 +36,39 @@ class _BatchDownloadTasksSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tasks = ref.watch(batchDownloadProvider);
-    return AppSheetLayout(
-      title: '批量下载任务',
-      subtitle: '共 ${tasks.length} 个任务 · 已下载的歌曲会保留',
-      body: tasks.isEmpty
-          ? const Center(child: Text('暂无批量下载任务'))
-          : ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
-              itemCount: tasks.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 10),
-              itemBuilder: (_, index) => _BatchTaskCard(
-                key: ValueKey(tasks[index].id),
-                task: tasks[index],
+    final scheme = Theme.of(context).colorScheme;
+    return SafeArea(
+      top: false,
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.76,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('批量下载任务', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 6),
+              Text(
+                '共 ${tasks.length} 个任务 · 已下载的歌曲会保留',
+                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
               ),
-            ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: tasks.isEmpty
+                    ? const Center(child: Text('暂无批量下载任务'))
+                    : ListView.separated(
+                        itemCount: tasks.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 12),
+                        itemBuilder: (_, index) => _BatchTaskCard(
+                          key: ValueKey(tasks[index].id),
+                          task: tasks[index],
+                        ),
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -94,10 +111,13 @@ class _BatchTaskCard extends ConsumerWidget {
                   task.totalCount)
               .clamp(0.0, 1.0);
 
-    return prism.Card(
-      inert: true,
-      radius: 18,
+    return Container(
       padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -168,19 +188,19 @@ class _BatchTaskCard extends ConsumerWidget {
             runSpacing: 4,
             alignment: WrapAlignment.end,
             children: [
-              prism.TextButton.icon(
+              TextButton.icon(
                 onPressed: () => _remove(context, controller),
                 icon: const Icon(Icons.delete_outline_rounded, size: 18),
                 label: const Text('删除任务'),
               ),
               if (!task.isRunning && task.failedCount > 0)
-                prism.TextButton.icon(
+                TextButton.icon(
                   onPressed: () => controller.retryFailed(task.id),
                   icon: const Icon(Icons.refresh_rounded, size: 18),
                   label: const Text('重试失败'),
                 ),
               if (task.hasPending)
-                prism.FilledButton.icon(
+                FilledButton.tonalIcon(
                   onPressed: () => task.isRunning
                       ? controller.pause(task.id)
                       : controller.resume(task.id),
@@ -209,11 +229,11 @@ class _BatchTaskCard extends ConsumerWidget {
         title: const Text('删除下载任务？'),
         content: const Text('未完成的下载会取消，已下载的音乐和下载记录会保留。'),
         actions: [
-          prism.TextButton(
+          TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: const Text('取消'),
           ),
-          prism.FilledButton(
+          FilledButton(
             onPressed: () => Navigator.pop(context, true),
             child: const Text('删除任务'),
           ),

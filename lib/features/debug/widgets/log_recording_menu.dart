@@ -40,6 +40,9 @@ class _LogRecordingMenuState extends State<LogRecordingMenu> {
         menuId: widget.menuId,
         icon: Icons.receipt_long_outlined,
         title: '记录分类',
+        subtitle: enabled.isEmpty
+            ? '未开启日志记录，点击选择（可多选）'
+            : '正在记录：${AppLogCategory.values.where(enabled.contains).map((item) => item.label).join('、')}',
         multiSelect: true,
         options: [
           for (final category in AppLogCategory.values)

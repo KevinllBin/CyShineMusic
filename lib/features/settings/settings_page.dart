@@ -1,11 +1,10 @@
-import '../../theme/app_theme.dart';
-import 'widgets/settings_sheet.dart';
 import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../../core/app_info.dart';
@@ -20,6 +19,8 @@ import '../../core/storage/settings_store.dart';
 import '../../core/sync/webdav_sync_controller.dart';
 import '../../core/ui/app_toast.dart';
 import '../../core/ui/car_display_layout.dart';
+import '../../theme/dynamic_color_status.dart';
+import '../discovery/discovery_controller.dart';
 import '../debug/widgets/log_recording_menu.dart';
 import '../equalizer/equalizer_store.dart';
 import '../player/sleep_timer_controller.dart';
@@ -28,16 +29,19 @@ import '../shell/shell_toolbar_visibility.dart';
 import '../shell/shell_bottom_area.dart';
 import '../shell/widgets/scrolling_page_header.dart';
 import '../songs/local_song_scan_cache.dart';
-import '../update/app_update_prompt.dart';
 import 'settings_section.dart';
+import 'widgets/color_picker_sheet.dart';
 import 'widgets/app_icon_sheet.dart';
-import 'widgets/appearance_theme_settings.dart';
+import 'widgets/color_style_row.dart';
+import 'widgets/custom_theme_sheet.dart';
 import 'widgets/discovery_source_order_sheet.dart';
-import 'widgets/player_appearance_settings.dart';
+import 'widgets/player_interface_settings_sheet.dart';
 import 'widgets/settings_action.dart';
 import 'widgets/settings_menu.dart';
 import 'widgets/storage_permission_card.dart';
 import 'widgets/storage_folder_picker_sheet.dart';
+import 'widgets/theme_mode_row.dart';
+import 'widgets/theme_seed_row.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key, this.section});
@@ -64,12 +68,48 @@ class SettingsPage extends ConsumerWidget {
     final baseTheme = Theme.of(context);
     final scheme = baseTheme.colorScheme;
 
+    Widget themePresets = const SizedBox.shrink();
+    if (section == SettingsSection.appearance) {
+      final dynamicColor = ref.watch(dynamicColorStatusProvider);
+      themePresets = Column(
+        children: [
+          ThemeSeedRow(
+            value: settings.themeSeed,
+            onPick: (color) =>
+                ref.read(settingsProvider.notifier).setThemeSeed(color),
+            onCustomize: () => _pickThemeSeed(context, ref),
+          ),
+          const SizedBox(height: 18),
+          ColorStyleRow(
+            value: settings.colorStyle,
+            seed: settings.themeSeed,
+            enabled:
+                settings.customTheme.enabled ||
+                !(settings.useDynamicColor && dynamicColor.available),
+            onPick: (style) =>
+                ref.read(settingsProvider.notifier).setColorStyle(style),
+          ),
+          const SizedBox(height: 18),
+          DynamicColorRow(
+            value: settings.useDynamicColor,
+            available: dynamicColor.available,
+            onChanged: (value) =>
+                ref.read(settingsProvider.notifier).setUseDynamicColor(value),
+          ),
+        ],
+      );
+      if (settings.customTheme.enabled) {
+        themePresets = Semantics(
+          enabled: false,
+          child: ExcludeFocus(child: IgnorePointer(child: themePresets)),
+        );
+      }
+    }
+
     return Theme(
-      data: baseTheme.copyWith(
-        scaffoldBackgroundColor: scheme.appSettingsSurface,
-      ),
+      data: baseTheme.copyWith(scaffoldBackgroundColor: scheme.surface),
       child: Scaffold(
-        backgroundColor: scheme.appSettingsSurface,
+        backgroundColor: scheme.surface,
         body: CustomScrollView(
           key: PageStorageKey('settings-${section?.name ?? 'overview'}-scroll'),
           physics: const BouncingScrollPhysics(
@@ -79,9 +119,9 @@ class SettingsPage extends ConsumerWidget {
             const SliverToBoxAdapter(child: ScrollHeaderSpacer()),
             SliverPadding(
               padding: EdgeInsets.fromLTRB(
-                16,
-                0,
-                16,
+                28,
+                2,
+                28,
                 ShellBottomArea.contentPadding(context, 118),
               ),
               sliver: SliverToBoxAdapter(
@@ -96,26 +136,29 @@ class SettingsPage extends ConsumerWidget {
                       children: [
                         if (section == null)
                           SettingsCard(
-                            title: null,
+                            title: '设置分类',
                             children: [
                               for (final category in SettingsSection.values)
                                 SettingsAction(
                                   key: ValueKey('settings-${category.name}'),
                                   icon: category.icon,
                                   title: category.title,
+                                  subtitle: category == SettingsSection.about
+                                      ? '当前版本：$versionLabel'
+                                      : category.subtitle,
                                   trailing: Icons.chevron_right_rounded,
-                                  destination: category.location,
+                                  onTap: () => context.go(category.location),
                                 ),
                             ],
                           ),
                         if (section == SettingsSection.network)
                           SettingsCard(
-                            title: null,
+                            title: '音源与网络',
                             children: [
                               SettingsAction(
                                 icon: Symbols.audio_file,
                                 title: '音源管理',
-                                value: sourceState!.when(
+                                subtitle: sourceState!.when(
                                   data: (value) => value.primary == null
                                       ? '未启用音源'
                                       : '已启用 ${value.enabledIds.length} 个 · '
@@ -124,7 +167,7 @@ class SettingsPage extends ConsumerWidget {
                                   error: (_, _) => '音源状态读取失败',
                                 ),
                                 trailing: Symbols.chevron_right,
-                                destination: '/settings/sources',
+                                onTap: () => context.go('/settings/sources'),
                               ),
                               SettingsSwitchAction(
                                 key: const ValueKey(
@@ -132,6 +175,7 @@ class SettingsPage extends ConsumerWidget {
                                 ),
                                 icon: Icons.snippet_folder_outlined,
                                 title: '音源内置文件选择器',
+                                subtitle: '系统无法选择 JS 时开启，支持内部存储和 U 盘',
                                 value: settings.useBuiltInSourceFilePicker,
                                 onChanged: (value) => ref
                                     .read(settingsProvider.notifier)
@@ -141,15 +185,18 @@ class SettingsPage extends ConsumerWidget {
                                 key: const ValueKey('webdav-sync-setting'),
                                 icon: Icons.cloud_sync_outlined,
                                 title: 'WebDAV 同步',
-                                value: _webDavSubtitle(webDavState!),
+                                subtitle: _webDavSubtitle(webDavState!),
                                 trailing: Symbols.chevron_right,
-                                destination: '/settings/webdav',
+                                onTap: () => context.go('/settings/webdav'),
                               ),
                               SettingsMenuAction(
                                 key: const ValueKey('network-adapter-menu'),
                                 menuId: 'network-adapter-menu',
                                 icon: Icons.cable_rounded,
                                 title: '网络适配器',
+                                subtitle:
+                                    '${settings.networkAdapterMode.label} · '
+                                    '${settings.networkAdapterMode.description}',
                                 options: [
                                   for (final mode in NetworkAdapterMode.values)
                                     SettingsMenuOption(
@@ -169,6 +216,9 @@ class SettingsPage extends ConsumerWidget {
                                 key: const ValueKey('discovery-source-order'),
                                 icon: Icons.explore_outlined,
                                 title: '发现页平台顺序',
+                                subtitle: settings.discoverySourceOrder
+                                    .map((source) => source.label)
+                                    .join('、'),
                                 trailing: Icons.chevron_right_rounded,
                                 onTap: () => unawaited(
                                   _showDiscoverySourceOrderSheet(context, ref),
@@ -178,13 +228,15 @@ class SettingsPage extends ConsumerWidget {
                           ),
                         if (section == SettingsSection.playback)
                           SettingsCard(
-                            title: null,
+                            title: '搜索与播放',
                             children: [
                               SettingsMenuAction(
                                 key: const ValueKey('search-source-menu'),
                                 menuId: 'search-source-menu',
                                 icon: Icons.manage_search_rounded,
                                 title: '搜索源管理',
+                                subtitle:
+                                    '已启用 ${settings.enabledSearchSources.map((source) => source.label).join('、')}',
                                 multiSelect: true,
                                 options: [
                                   for (final source in kManageableSearchSources)
@@ -216,6 +268,9 @@ class SettingsPage extends ConsumerWidget {
                                 menuId: 'search-playback-menu',
                                 icon: Icons.playlist_play_rounded,
                                 title: '点击搜索结果内单曲时',
+                                subtitle: settings.replaceQueueOnSearchPlay
+                                    ? '播放歌曲并替换播放列表'
+                                    : '播放歌曲',
                                 options: [
                                   SettingsMenuOption(
                                     id: 'play-song',
@@ -241,6 +296,9 @@ class SettingsPage extends ConsumerWidget {
                                 menuId: 'online-quality-menu',
                                 icon: Icons.high_quality_rounded,
                                 title: '在线播放音质',
+                                subtitle:
+                                    '${settings.onlinePlaybackQuality.label} · '
+                                    '${settings.onlinePlaybackQuality.description}',
                                 options: [
                                   for (final quality
                                       in OnlinePlaybackQuality.values)
@@ -263,9 +321,9 @@ class SettingsPage extends ConsumerWidget {
                                 key: const ValueKey('equalizer-setting'),
                                 icon: Icons.graphic_eq_rounded,
                                 title: '均衡器',
-                                value: equalizer!.summary,
+                                subtitle: equalizer!.summary,
                                 trailing: Symbols.chevron_right,
-                                destination: '/settings/equalizer',
+                                onTap: () => context.go('/settings/equalizer'),
                               ),
                               Consumer(
                                 builder: (context, ref, _) {
@@ -276,9 +334,9 @@ class SettingsPage extends ConsumerWidget {
                                     key: const ValueKey('sleep-timer-setting'),
                                     icon: Icons.timer_outlined,
                                     title: '定时关闭音乐',
-                                    value: remaining == null
-                                        ? '未开启'
-                                        : formatSleepTimerRemaining(remaining),
+                                    subtitle: remaining == null
+                                        ? '未开启 · 到时自动暂停播放'
+                                        : '剩余 ${formatSleepTimerRemaining(remaining)} 后暂停播放',
                                     trailing: Symbols.chevron_right,
                                     onTap: () =>
                                         showPlayerSleepTimerSheet(context, ref),
@@ -291,6 +349,9 @@ class SettingsPage extends ConsumerWidget {
                                 ),
                                 icon: Icons.play_circle_outline_rounded,
                                 title: '启动后自动播放',
+                                subtitle: settings.autoPlayOnStartup
+                                    ? '打开 APP 后自动恢复上次播放并继续播放'
+                                    : '打开 APP 后仅恢复上次播放状态，不自动播放',
                                 value: settings.autoPlayOnStartup,
                                 onChanged: (value) => ref
                                     .read(settingsProvider.notifier)
@@ -301,6 +362,7 @@ class SettingsPage extends ConsumerWidget {
                                 key: const ValueKey('groove-shift-setting'),
                                 icon: Icons.auto_awesome_rounded,
                                 title: '智能过渡',
+                                subtitle: '分析节拍与头尾能量，自动安排接歌；仅本地歌曲生效',
                                 value: settings.grooveShiftEnabled,
                                 onChanged: (value) => ref
                                     .read(settingsProvider.notifier)
@@ -312,6 +374,9 @@ class SettingsPage extends ConsumerWidget {
                                 ),
                                 icon: Icons.multitrack_audio_rounded,
                                 title: '允许与其他 APP 共同播放',
+                                subtitle: settings.allowMixWithOthers
+                                    ? '不会抢占其他 APP 的音频，可同时播放'
+                                    : '播放时保持独占音频',
                                 value: settings.allowMixWithOthers,
                                 onChanged: (value) => ref
                                     .read(settingsProvider.notifier)
@@ -321,6 +386,7 @@ class SettingsPage extends ConsumerWidget {
                                 key: const ValueKey('bluetooth-lyric-setting'),
                                 icon: Icons.bluetooth_audio_rounded,
                                 title: '显示蓝牙歌词',
+                                subtitle: '将当前歌词行作为媒体标题发送到车机或蓝牙设备',
                                 value: settings.bluetoothLyricEnabled,
                                 onChanged: (value) => _setBluetoothLyricEnabled(
                                   context,
@@ -334,6 +400,7 @@ class SettingsPage extends ConsumerWidget {
                                 ),
                                 icon: Icons.lyrics_rounded,
                                 title: '显示完整蓝牙歌词',
+                                subtitle: '写入完整 LRC，需接收设备支持',
                                 value: settings.bluetoothFullLyricEnabled,
                                 onChanged: (value) =>
                                     _setBluetoothFullLyricEnabled(
@@ -359,6 +426,9 @@ class SettingsPage extends ConsumerWidget {
                                 menuId: 'batch-download-quality-menu',
                                 icon: Icons.download_for_offline_rounded,
                                 title: '批量下载音质',
+                                subtitle:
+                                    '${settings.batchDownloadQuality.label} · '
+                                    '${settings.batchDownloadQuality.description}',
                                 options: [
                                   for (final quality
                                       in OnlinePlaybackQuality.values)
@@ -380,17 +450,14 @@ class SettingsPage extends ConsumerWidget {
                               SettingsAction(
                                 icon: Icons.folder_outlined,
                                 title: '下载位置',
-                                value: SafStorage.label(settings.downloadDir),
+                                subtitle: SafStorage.label(
+                                  settings.downloadDir,
+                                ),
                                 trailing: Symbols.chevron_right,
                                 onTap: () => _pickDownloadDir(context, ref),
                               ),
                               Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  16,
-                                  12,
-                                  16,
-                                  16,
-                                ),
+                                padding: const EdgeInsets.fromLTRB(4, 12, 8, 0),
                                 child: Align(
                                   alignment: Alignment.centerLeft,
                                   child: Wrap(
@@ -443,15 +510,15 @@ class SettingsPage extends ConsumerWidget {
                           SettingsCard(
                             title: '音乐扫描',
                             children: [
-                              for (final (_, directory)
+                              for (final (index, directory)
                                   in settings.localMusicDirs.indexed)
                                 Row(
                                   children: [
                                     Expanded(
                                       child: SettingsAction(
                                         icon: Icons.library_music_outlined,
-                                        title: '目录',
-                                        value: SafStorage.label(directory),
+                                        title: '扫描文件夹 ${index + 1}',
+                                        subtitle: SafStorage.label(directory),
                                         trailing: Symbols.chevron_right,
                                         onTap: () => _pickLocalMusicDir(
                                           context,
@@ -478,17 +545,13 @@ class SettingsPage extends ConsumerWidget {
                                 ),
                               SettingsAction(
                                 icon: Icons.create_new_folder_outlined,
-                                title: '添加目录',
+                                title: '添加扫描文件夹',
+                                subtitle: '同时扫描多个文件夹，包含各自的子文件夹',
                                 trailing: Icons.add_rounded,
                                 onTap: () => _pickLocalMusicDir(context, ref),
                               ),
                               Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  16,
-                                  12,
-                                  16,
-                                  16,
-                                ),
+                                padding: const EdgeInsets.fromLTRB(4, 12, 8, 0),
                                 child: Align(
                                   alignment: Alignment.centerLeft,
                                   child: Wrap(
@@ -536,11 +599,9 @@ class SettingsPage extends ConsumerWidget {
                             ],
                           ),
                         ],
-                        if (section == SettingsSection.appearance) ...[
-                          const AppearanceThemeSettings(),
-                          const SizedBox(height: 16),
+                        if (section == SettingsSection.appearance)
                           SettingsCard(
-                            title: null,
+                            title: '外观',
                             children: [
                               SettingsSwitchAction(
                                 key: const ValueKey(
@@ -548,26 +609,53 @@ class SettingsPage extends ConsumerWidget {
                                 ),
                                 icon: Icons.skip_next_rounded,
                                 title: '跳过启动页',
+                                subtitle: '下次启动生效，开启后直接进入主页',
                                 value: settings.skipStartupScreen,
                                 onChanged: (value) => ref
                                     .read(settingsProvider.notifier)
                                     .setSkipStartupScreen(value),
                               ),
+                              const SizedBox(height: 4),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                ),
+                                child: ThemeModeRow(value: settings.themeMode),
+                              ),
+                              const SizedBox(height: 18),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                ),
+                                child: themePresets,
+                              ),
+                              SettingsAction(
+                                icon: Icons.palette_outlined,
+                                title: '自定义主题',
+                                subtitle: settings.customTheme.enabled
+                                    ? '已启用 · 分别设置浅色和深色配色'
+                                    : '独立设置强调色、背景、卡片和文字',
+                                trailing: Icons.chevron_right,
+                                onTap: () => _customizeTheme(context, ref),
+                              ),
                               if (supportsCustomAppIcons)
                                 SettingsAction(
                                   icon: Icons.apps_rounded,
                                   title: '应用图标',
-                                  value: appIcon?.isLoading == true
-                                      ? '读取中'
+                                  subtitle: appIcon?.isLoading == true
+                                      ? '正在读取或更新图标'
                                       : appIcon?.hasError == true
-                                      ? '读取失败'
-                                      : appIcon?.valueOrNull?.label ?? '经典白',
+                                      ? '读取失败 · 点击重试'
+                                      : '${appIcon?.valueOrNull?.label ?? '经典白'} · 6 款桌面图标可选',
                                   trailing: Icons.chevron_right,
                                   onTap: () => _chooseAppIcon(context, ref),
                                 ),
                               SettingsSwitchAction(
                                 icon: Icons.auto_awesome_outlined,
                                 title: '歌单详情动态配色',
+                                subtitle: settings.playlistArtworkColorsEnabled
+                                    ? '根据歌单封面配色，会覆盖全局主题'
+                                    : '使用全局主题，不根据封面改变颜色',
                                 value: settings.playlistArtworkColorsEnabled,
                                 onChanged: (value) => ref
                                     .read(settingsProvider.notifier)
@@ -579,6 +667,9 @@ class SettingsPage extends ConsumerWidget {
                                 menuId: 'navigation-mode-menu',
                                 icon: Icons.view_day_outlined,
                                 title: '导航模式',
+                                subtitle:
+                                    '${settings.navigationMode.label} · '
+                                    '${settings.navigationMode.description}',
                                 options: [
                                   for (final mode in AppNavigationMode.values)
                                     SettingsMenuOption(
@@ -593,33 +684,14 @@ class SettingsPage extends ConsumerWidget {
                                     ),
                                 ],
                               ),
-                              SettingsMenuAction(
-                                key: const ValueKey('platform-button-position'),
-                                menuId: 'platform-button-position',
-                                icon: Icons.swap_horiz_rounded,
-                                title: '平台按钮位置',
-                                options: [
-                                  for (final option in const {
-                                    false: '搜索框右侧',
-                                    true: '搜索框左侧',
-                                  }.entries)
-                                    SettingsMenuOption(
-                                      id: option.key ? 'left' : 'right',
-                                      label: option.value,
-                                      selected:
-                                          settings.platformButtonOnLeft ==
-                                          option.key,
-                                      onSelected: () => ref
-                                          .read(settingsProvider.notifier)
-                                          .setPlatformButtonOnLeft(option.key),
-                                    ),
-                                ],
-                              ),
                               const SizedBox(height: 4),
                               SettingsSwitchAction(
                                 key: const ValueKey('car-pad-mode-setting'),
                                 icon: Icons.directions_car_filled_rounded,
                                 title: '车机/Pad 模式',
+                                subtitle: settings.carPadModeEnabled
+                                    ? '播放页使用左右分栏宽屏布局'
+                                    : '关闭，播放页保持手机布局',
                                 value: settings.carPadModeEnabled,
                                 onChanged: (value) => ref
                                     .read(settingsProvider.notifier)
@@ -630,6 +702,9 @@ class SettingsPage extends ConsumerWidget {
                                 key: const ValueKey('car-display-setting'),
                                 icon: Icons.display_settings_rounded,
                                 title: '车机显示适配',
+                                subtitle: settings.carDisplayEnabled
+                                    ? '已开启：全局放大、内容铺开、横屏分栏，仅此设备生效'
+                                    : '适合车机上文字按钮偏小、页面两侧留白过多的情况',
                                 value: settings.carDisplayEnabled,
                                 onChanged: (value) => ref
                                     .read(settingsProvider.notifier)
@@ -640,6 +715,11 @@ class SettingsPage extends ConsumerWidget {
                                   menuId: 'car-display-size-menu',
                                   icon: Icons.format_size_rounded,
                                   title: '车机界面大小',
+                                  subtitle: switch (settings.carDisplaySize) {
+                                    < 1 => '紧凑 · 显示更多内容',
+                                    > 1.1 => '更大 · 更易看清和点击',
+                                    _ => '标准 · 按当前窗口调整',
+                                  },
                                   options: [
                                     for (final option in {
                                       0.85: '紧凑',
@@ -663,40 +743,40 @@ class SettingsPage extends ConsumerWidget {
                                 key: const ValueKey('flowing-light-setting'),
                                 icon: Icons.blur_on_rounded,
                                 title: '动态流光',
+                                subtitle: settings.flowingLightEnabled
+                                    ? '播放页背景取封面主色缓慢流动'
+                                    : '播放页使用静态封面模糊背景',
                                 value: settings.flowingLightEnabled,
                                 onChanged: (value) => ref
                                     .read(settingsProvider.notifier)
                                     .setFlowingLightEnabled(value),
                               ),
                               const SizedBox(height: 4),
+                              SettingsAction(
+                                key: const ValueKey('player-interface-setting'),
+                                icon: Icons.display_settings_rounded,
+                                title: '播放界面设置',
+                                subtitle: '歌词模糊、专辑封面与歌词字体',
+                                trailing: Icons.chevron_right_rounded,
+                                onTap: () =>
+                                    _configurePlayerInterface(context, ref),
+                              ),
                             ],
                           ),
-                        ],
-                        if (section == SettingsSection.appearance)
-                          const PlayerAppearanceSettings(),
                         if (section == SettingsSection.about)
                           SettingsCard(
-                            title: null,
+                            title: '关于',
                             children: [
-                              SettingsAction(
-                                key: const ValueKey('check-update-setting'),
-                                icon: Icons.system_update_alt_rounded,
-                                title: '检查更新',
-                                value: versionLabel,
-                                trailing: Symbols.chevron_right,
-                                onTap: () => unawaited(
-                                  checkForAppUpdate(
-                                    context,
-                                    ref,
-                                    showFeedback: true,
-                                  ),
-                                ),
+                              ListTile(
+                                leading: const Icon(Icons.info_outline_rounded),
+                                title: const Text('当前版本'),
+                                subtitle: Text(versionLabel),
                               ),
                             ],
                           ),
                         if (section == SettingsSection.debug)
                           SettingsCard(
-                            title: null,
+                            title: '调试',
                             children: [
                               DebugModeRow(
                                 value: settings.debugMode,
@@ -710,8 +790,9 @@ class SettingsPage extends ConsumerWidget {
                                 SettingsAction(
                                   icon: Icons.terminal_rounded,
                                   title: '日志控制台',
+                                  subtitle: '实时查看已开启分类的日志，支持复制与导出',
                                   trailing: Symbols.chevron_right,
-                                  destination: '/debug',
+                                  onTap: () => context.go('/debug'),
                                 ),
                               ],
                             ],
@@ -768,7 +849,7 @@ class SettingsPage extends ConsumerWidget {
     WidgetRef ref,
   ) async {
     if (ref.read(settingsProvider).bluetoothLyricNoticeSeen) return;
-    await showSettingsDialog<void>(
+    await showDialog<void>(
       context: context,
       useRootNavigator: true,
       builder: (dialogContext) => AlertDialog(
@@ -1028,6 +1109,8 @@ class SettingsPage extends ConsumerWidget {
           await ref
               .read(settingsProvider.notifier)
               .setDiscoverySourceOrder(order);
+          ref.read(selectedDiscoverySourceProvider.notifier).state =
+              order.first;
         },
       );
     } finally {
@@ -1181,6 +1264,63 @@ class SettingsPage extends ConsumerWidget {
     } finally {
       if (toolbar.mounted) toolbar.state = wasToolbarVisible;
     }
+  }
+
+  Future<void> _configurePlayerInterface(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final toolbar = ref.read(shellToolbarVisibleProvider.notifier);
+    final wasToolbarVisible = ref.read(shellToolbarVisibleProvider);
+    toolbar.state = false;
+    try {
+      await showPlayerInterfaceSettingsSheet(context);
+    } finally {
+      if (toolbar.mounted) toolbar.state = wasToolbarVisible;
+    }
+  }
+
+  Future<void> _customizeTheme(BuildContext context, WidgetRef ref) async {
+    final settings = ref.read(settingsProvider);
+    final toolbar = ref.read(shellToolbarVisibleProvider.notifier);
+    final wasToolbarVisible = ref.read(shellToolbarVisibleProvider);
+    toolbar.state = false;
+    try {
+      final selected = await showCustomThemeSheet(
+        context,
+        settings.customTheme,
+        seed: settings.themeSeed,
+        style: settings.colorStyle,
+      );
+      if (selected == null) return;
+      await ref.read(settingsProvider.notifier).setCustomTheme(selected);
+      if (!context.mounted) return;
+      showAppToast(context, '自定义主题已更新', type: AppToastType.success);
+    } finally {
+      if (toolbar.mounted) toolbar.state = wasToolbarVisible;
+    }
+  }
+
+  Future<void> _pickThemeSeed(BuildContext context, WidgetRef ref) async {
+    final settings = ref.read(settingsProvider);
+    final current = settings.themeSeed;
+    final toolbar = ref.read(shellToolbarVisibleProvider.notifier);
+    final wasToolbarVisible = ref.read(shellToolbarVisibleProvider);
+    toolbar.state = false;
+    Color? selected;
+    try {
+      selected = await showColorPickerSheet(
+        context,
+        current,
+        style: settings.colorStyle,
+      );
+    } finally {
+      if (toolbar.mounted) toolbar.state = wasToolbarVisible;
+    }
+    if (selected == null) return;
+    await ref.read(settingsProvider.notifier).setThemeSeed(selected);
+    if (!context.mounted) return;
+    showAppToast(context, '主题颜色已更新', type: AppToastType.success);
   }
 }
 

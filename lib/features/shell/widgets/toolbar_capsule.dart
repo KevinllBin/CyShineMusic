@@ -1,4 +1,3 @@
-import 'package:prism_ui/prism_ui.dart' as prism;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -14,15 +13,11 @@ class ToolbarCapsule extends StatelessWidget {
     required this.scheme,
     required this.height,
     required this.child,
-    this.liquidGlass = true,
-    this.padding = const EdgeInsets.symmetric(horizontal: 5),
   });
 
   final ColorScheme scheme;
   final double height;
   final Widget child;
-  final bool liquidGlass;
-  final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context) {
@@ -32,36 +27,27 @@ class ToolbarCapsule extends StatelessWidget {
         alpha: scheme.brightness == Brightness.light ? 0.72 : 0.86,
       ),
       child: RepaintBoundary(
-        child: liquidGlass && prism.LiquidGlassScope.of(context)
-            ? prism.LiquidGlass(
-                style: prism.LiquidGlassStyle.pill(
-                  prism.Theme.of(context).colorScheme,
+        child: AnimatedContainer(
+          duration: AppMotion.long,
+          curve: AppMotion.emphasized,
+          height: height,
+          decoration: BoxDecoration(
+            color: toolbarCapsuleColor(scheme),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: scheme.outlineVariant.withValues(alpha: 0.52),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: scheme.shadow.withValues(
+                  alpha: scheme.brightness == Brightness.light ? 0.08 : 0.18,
                 ),
-                child: SizedBox(height: height),
-              )
-            : AnimatedContainer(
-                duration: AppMotion.long,
-                curve: AppMotion.emphasized,
-                height: height,
-                decoration: BoxDecoration(
-                  color: toolbarCapsuleColor(scheme),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: scheme.outlineVariant.withValues(alpha: 0.32),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: scheme.shadow.withValues(
-                        alpha: scheme.brightness == Brightness.light
-                            ? 0.08
-                            : 0.18,
-                      ),
-                      blurRadius: 20,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
+                blurRadius: 28,
+                offset: const Offset(0, 10),
               ),
+            ],
+          ),
+        ),
       ),
     );
     Widget layers(double p) => Stack(
@@ -69,10 +55,8 @@ class ToolbarCapsule extends StatelessWidget {
       clipBehavior: Clip.none,
       children: [
         Positioned.fill(
-          child: prism.LiquidGlassFade(
-            opacity: AlwaysStoppedAnimation(
-              1 - PlayerMotion.interval(p, 0, 0.12),
-            ),
+          child: Opacity(
+            opacity: 1 - PlayerMotion.interval(p, 0, 0.12),
             child: surface,
           ),
         ),
@@ -80,9 +64,10 @@ class ToolbarCapsule extends StatelessWidget {
           offset: Offset(0, -p * (transition?.travel ?? 0)),
           child: Opacity(
             opacity: 1 - PlayerMotion.interval(p, 0, 0.20),
-            child: padding == EdgeInsets.zero
-                ? child
-                : Padding(padding: padding, child: child),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              child: child,
+            ),
           ),
         ),
       ],
@@ -102,11 +87,12 @@ class ToolbarCapsule extends StatelessWidget {
   }
 }
 
-// Match the solid NavigationDock's floating surface roles.
-Color toolbarCapsuleColor(ColorScheme scheme) =>
-    scheme.brightness == Brightness.light
-    ? scheme.surfaceBright
-    : scheme.surfaceContainerHigh;
+Color toolbarCapsuleColor(ColorScheme scheme) => Color.alphaBlend(
+  scheme.primary.withValues(
+    alpha: scheme.brightness == Brightness.light ? 0.025 : 0.04,
+  ),
+  scheme.surfaceContainerHigh.withValues(alpha: 0.90),
+);
 
 /// Position updates rebuild only the border, retaining the capsule subtree.
 class _ToolbarProgressBorder extends ConsumerWidget {

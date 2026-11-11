@@ -1,8 +1,6 @@
-import 'settings_sheet.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:prism_ui/prism_ui.dart' as prism;
 
 import '../../../core/models/enums.dart';
 
@@ -11,10 +9,10 @@ Future<void> showDiscoverySourceOrderSheet(
   required List<MusicSource> order,
   required Future<void> Function(List<MusicSource>) onChanged,
 }) {
-  return showSettingsSheet<void>(
+  return showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
-
+    isScrollControlled: true,
     builder: (context) =>
         _DiscoverySourceOrderSheet(initialOrder: order, onChanged: onChanged),
   );
@@ -51,35 +49,48 @@ class _DiscoverySourceOrderSheetState
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return SettingsSheetLayout(
-      title: '发现页平台顺序',
-      body: ReorderableListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        itemCount: _order.length,
-        onReorderItem: _reorder,
-        buildDefaultDragHandles: false,
-        itemBuilder: (context, index) {
-          final source = _order[index];
-          return prism.Card(
-            key: ValueKey(source.code),
-            inert: true,
-            radius: 18,
-            child: prism.ListRow(
-              title: Text(source.label),
-              trailing: ReorderableDragStartListener(
-                index: index,
-                child: Icon(Icons.drag_handle_rounded, color: scheme.outline),
+    return SafeArea(
+      top: false,
+      child: SizedBox(
+        height: 400,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '发现页平台顺序',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
               ),
-            ),
-          );
-        },
-      ),
-      actions: [
-        prism.FilledButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('完成'),
+              const SizedBox(height: 12),
+              Expanded(
+                child: ReorderableListView.builder(
+                  itemCount: _order.length,
+                  onReorderItem: _reorder,
+                  buildDefaultDragHandles: false,
+                  itemBuilder: (context, index) {
+                    final source = _order[index];
+                    return ListTile(
+                      key: ValueKey(source.code),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                      title: Text(source.label),
+                      trailing: ReorderableDragStartListener(
+                        index: index,
+                        child: Icon(
+                          Icons.drag_handle_rounded,
+                          color: scheme.outline,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
-      ],
+      ),
     );
   }
 }

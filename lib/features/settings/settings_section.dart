@@ -21,7 +21,7 @@ enum SettingsSection {
     subtitle: '主题、应用图标、导航、车机适配与播放界面',
     icon: Icons.palette_outlined,
   ),
-  about(title: '关于', subtitle: '当前版本与检查更新', icon: Icons.info_outline_rounded),
+  about(title: '关于', subtitle: '当前版本', icon: Icons.info_outline_rounded),
   debug(title: '调试', subtitle: '调试模式与日志控制台', icon: Icons.bug_report_outlined);
 
   const SettingsSection({

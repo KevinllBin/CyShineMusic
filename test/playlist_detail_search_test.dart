@@ -14,9 +14,6 @@ import 'package:cy_shine_music/features/playlists/playlist_models.dart';
 import 'package:cy_shine_music/features/playlists/playlist_store.dart';
 import 'package:cy_shine_music/features/shell/shell_toolbar_visibility.dart';
 import 'package:cy_shine_music/features/songs/widgets/songs_placeholders.dart';
-import 'package:prism_ui/prism_ui.dart' as prism;
-
-import 'helpers/prism_test_environment.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -89,7 +86,7 @@ void main() {
       isTrue,
     );
     expect(find.byKey(const ValueKey('header-search-field')), findsNothing);
-    expect(find.byType(prism.Checkbox), findsNWidgets(2));
+    expect(find.byType(Checkbox), findsNWidgets(2));
 
     container.read(playlistDetailToolbarStateProvider).onToggleSearch!();
     await tester.pumpAndSettle();
@@ -97,7 +94,7 @@ void main() {
       container.read(playlistDetailToolbarStateProvider).batchMode,
       isFalse,
     );
-    expect(find.byType(prism.Checkbox), findsNothing);
+    expect(find.byType(Checkbox), findsNothing);
     expect(find.byKey(const ValueKey('header-search-field')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -156,7 +153,6 @@ Future<ProviderContainer> _pumpDetailPage(WidgetTester tester) async {
     UncontrolledProviderScope(
       container: container,
       child: MaterialApp(
-        builder: buildPrismTestEnvironment,
         theme: ThemeData(
           useMaterial3: true,
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),

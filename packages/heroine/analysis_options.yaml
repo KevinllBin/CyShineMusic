@@ -1,3 +1,0 @@
-# Analyze vendored code without applying the application's style rules.
-linter:
-  rules: {}

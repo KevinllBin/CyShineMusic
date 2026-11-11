@@ -42,7 +42,7 @@ class ThemeSeedRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 5),
                   Text(
-                    '用于图标、按钮与选中状态，背景保持中性',
+                    '用于生成应用的静态 Material 3 配色',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -84,8 +84,8 @@ class _ColorBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      width: 24,
-      height: 24,
+      width: 42,
+      height: 42,
       decoration: BoxDecoration(
         color: color,
         shape: BoxShape.circle,
@@ -96,7 +96,7 @@ class _ColorBubble extends StatelessWidget {
         color: ThemeData.estimateBrightnessForColor(color) == Brightness.dark
             ? Colors.white
             : Colors.black,
-        size: 14,
+        size: 20,
       ),
     );
   }

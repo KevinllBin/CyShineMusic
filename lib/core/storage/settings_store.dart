@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,7 +10,7 @@ import '../services/saf_storage.dart';
 import '../api/dio_factory.dart';
 import '../models/enums.dart';
 import '../../theme/color_style.dart';
-import '../../theme/liquid_glass_mode.dart';
+import '../../theme/custom_theme.dart';
 import '../../theme/seed_palette.dart';
 import 'base_url.dart';
 
@@ -22,10 +23,9 @@ const String _kUseBuiltInSourceFilePickerKey =
     'use_built_in_source_file_picker';
 const String _kThemeModeKey = 'theme_mode';
 const String _kThemeSeedKey = 'theme_seed_argb';
-const String _kThemePaletteKey = 'theme_palette';
 const String _kColorStyleKey = 'theme_color_style';
 const String _kUseDynamicColorKey = 'use_dynamic_color';
-const String _kLiquidGlassModeKey = 'liquid_glass_mode';
+const String _kCustomThemeKey = 'custom_theme';
 const String _kPlaylistArtworkColorsEnabledKey =
     'playlist_artwork_colors_enabled';
 const String _kFlowingLightEnabledKey = 'flowing_light_enabled';
@@ -44,7 +44,6 @@ const String _kNetworkAdapterModeKey = 'network_adapter_mode';
 const String _kEnabledSearchSourcesKey = 'enabled_search_source_codes';
 const String _kReplaceQueueOnSearchPlayKey = 'replace_queue_on_search_play';
 const String _kDiscoverySourceOrderKey = 'discovery_source_order';
-const String _kPlatformButtonOnLeftKey = 'platform_button_on_left';
 const String _kOnlinePlaybackQualityKey = 'online_playback_quality';
 const String _kBatchDownloadQualityKey = 'batch_download_quality';
 const String _kShowMiniLyricsKey = 'show_mini_lyrics';
@@ -58,10 +57,10 @@ const String _kLegacyBaseUrlKey = 'base_url';
 
 const kLyricFontWeightMin = 100.0;
 const kLyricFontWeightMax = 1000.0;
-const kLyricFontWeightDefault = 200.0;
+const kLyricFontWeightDefault = 500.0;
 const kLyricFontSizeMin = 16.0;
 const kLyricFontSizeMax = 56.0;
-const kLyricFontSizeDefault = 28.0;
+const kLyricFontSizeDefault = 32.0;
 
 double normalizeLyricFontWeight(double value) =>
     (value.clamp(kLyricFontWeightMin, kLyricFontWeightMax) / 100)
@@ -72,8 +71,9 @@ double normalizeLyricFontSize(double value) =>
     value.clamp(kLyricFontSizeMin, kLyricFontSizeMax).roundToDouble();
 
 enum AppNavigationMode {
-  native('native', '原生底栏', '系统风格底部导航栏搭配悬浮播放条'),
-  floatingCapsule('floating_capsule', '悬浮胶囊', '液态悬浮底栏，支持拖拽跟随和弹性选中动画');
+  singleCapsule('single_capsule', '单胶囊', '原有悬浮菜单与播放条滑动切换'),
+  dualCapsule('dual_capsule', '双胶囊', '播放条与导航菜单独立为上下双胶囊'),
+  native('native', '原生导航', '底部系统级导航栏搭配悬浮播放条');
 
   const AppNavigationMode(this.code, this.label, this.description);
 
@@ -81,22 +81,11 @@ enum AppNavigationMode {
   final String label;
   final String description;
 
-  // Kept as source-compatible aliases for older integrations and persisted
-  // settings. They are intentionally absent from [values], so the settings
-  // UI only exposes the two supported shell layouts.
-  static const AppNavigationMode singleCapsule =
-      AppNavigationMode.floatingCapsule;
-  static const AppNavigationMode dualCapsule =
-      AppNavigationMode.floatingCapsule;
-
   static AppNavigationMode fromCode(String? code) {
-    if (code == 'single_capsule' || code == 'dual_capsule') {
-      return AppNavigationMode.floatingCapsule;
-    }
     for (final mode in values) {
       if (mode.code == code) return mode;
     }
-    return floatingCapsule;
+    return singleCapsule;
   }
 }
 
@@ -108,10 +97,9 @@ class AppSettings {
     this.useBuiltInSourceFilePicker = false,
     required this.themeMode,
     required this.themeSeed,
-    this.themePalette = SeedPalette.defaultColors,
     required this.colorStyle,
     required this.useDynamicColor,
-    this.liquidGlassMode = LiquidGlassMode.standard,
+    this.customTheme = const CustomTheme(),
     this.playlistArtworkColorsEnabled = true,
     required this.flowingLightEnabled,
     this.lyricViewBlurDisabled = false,
@@ -128,7 +116,6 @@ class AppSettings {
     required this.enabledSearchSources,
     this.replaceQueueOnSearchPlay = true,
     required this.discoverySourceOrder,
-    this.platformButtonOnLeft = false,
     required this.onlinePlaybackQuality,
     required this.batchDownloadQuality,
     required this.showMiniLyrics,
@@ -146,10 +133,9 @@ class AppSettings {
   final bool useBuiltInSourceFilePicker;
   final ThemeMode themeMode;
   final Color themeSeed;
-  final List<int> themePalette;
   final AppColorStyle colorStyle;
   final bool useDynamicColor;
-  final LiquidGlassMode liquidGlassMode;
+  final CustomTheme customTheme;
   final bool playlistArtworkColorsEnabled;
 
   /// Whether the player backdrop animates its extracted colors. Off falls back
@@ -178,7 +164,6 @@ class AppSettings {
   /// Applies to song search results in discovery, libraries and collections.
   final bool replaceQueueOnSearchPlay;
   final List<MusicSource> discoverySourceOrder;
-  final bool platformButtonOnLeft;
   final OnlinePlaybackQuality onlinePlaybackQuality;
   final OnlinePlaybackQuality batchDownloadQuality;
   final bool showMiniLyrics;
@@ -199,10 +184,9 @@ class AppSettings {
     bool? useBuiltInSourceFilePicker,
     ThemeMode? themeMode,
     Color? themeSeed,
-    List<int>? themePalette,
     AppColorStyle? colorStyle,
     bool? useDynamicColor,
-    LiquidGlassMode? liquidGlassMode,
+    CustomTheme? customTheme,
     bool? playlistArtworkColorsEnabled,
     bool? flowingLightEnabled,
     bool? lyricViewBlurDisabled,
@@ -220,7 +204,6 @@ class AppSettings {
     Set<MusicSource>? enabledSearchSources,
     bool? replaceQueueOnSearchPlay,
     List<MusicSource>? discoverySourceOrder,
-    bool? platformButtonOnLeft,
     OnlinePlaybackQuality? onlinePlaybackQuality,
     OnlinePlaybackQuality? batchDownloadQuality,
     bool? showMiniLyrics,
@@ -239,10 +222,9 @@ class AppSettings {
         useBuiltInSourceFilePicker ?? this.useBuiltInSourceFilePicker,
     themeMode: themeMode ?? this.themeMode,
     themeSeed: themeSeed ?? this.themeSeed,
-    themePalette: themePalette ?? this.themePalette,
     colorStyle: colorStyle ?? this.colorStyle,
     useDynamicColor: useDynamicColor ?? this.useDynamicColor,
-    liquidGlassMode: liquidGlassMode ?? this.liquidGlassMode,
+    customTheme: customTheme ?? this.customTheme,
     playlistArtworkColorsEnabled:
         playlistArtworkColorsEnabled ?? this.playlistArtworkColorsEnabled,
     flowingLightEnabled: flowingLightEnabled ?? this.flowingLightEnabled,
@@ -261,14 +243,13 @@ class AppSettings {
         (useNativeNavigation != null
             ? (useNativeNavigation
                   ? AppNavigationMode.native
-                  : AppNavigationMode.floatingCapsule)
+                  : AppNavigationMode.singleCapsule)
             : this.navigationMode),
     networkAdapterMode: networkAdapterMode ?? this.networkAdapterMode,
     enabledSearchSources: enabledSearchSources ?? this.enabledSearchSources,
     replaceQueueOnSearchPlay:
         replaceQueueOnSearchPlay ?? this.replaceQueueOnSearchPlay,
     discoverySourceOrder: discoverySourceOrder ?? this.discoverySourceOrder,
-    platformButtonOnLeft: platformButtonOnLeft ?? this.platformButtonOnLeft,
     onlinePlaybackQuality: onlinePlaybackQuality ?? this.onlinePlaybackQuality,
     batchDownloadQuality: batchDownloadQuality ?? this.batchDownloadQuality,
     showMiniLyrics: showMiniLyrics ?? this.showMiniLyrics,
@@ -293,7 +274,7 @@ class AppSettings {
     carPadModeEnabled: false,
     autoPlayOnStartup: false,
     skipStartupScreen: false,
-    navigationMode: AppNavigationMode.floatingCapsule,
+    navigationMode: AppNavigationMode.singleCapsule,
     networkAdapterMode: NetworkAdapterMode.system,
     enabledSearchSources: kDefaultEnabledSearchSources,
     replaceQueueOnSearchPlay: true,
@@ -339,22 +320,9 @@ class SettingsNotifier extends Notifier<AppSettings> {
       themeSeed: Color(
         _prefs.getInt(_kThemeSeedKey) ?? SeedPalette.defaultSeed.toARGB32(),
       ),
-      themePalette: List<int>.unmodifiable({
-        ...(_prefs
-                    .getStringList(_kThemePaletteKey)
-                    ?.map(int.tryParse)
-                    .whereType<int>() ??
-                SeedPalette.defaultColors)
-            .where((color) => color >= 0 && color <= 0xFFFFFFFF),
-        if (!_prefs.containsKey(_kThemePaletteKey) &&
-            _prefs.containsKey(_kThemeSeedKey))
-          _prefs.getInt(_kThemeSeedKey)!,
-      }),
       colorStyle: AppColorStyle.fromCode(_prefs.getString(_kColorStyleKey)),
       useDynamicColor: _prefs.getBool(_kUseDynamicColorKey) ?? false,
-      liquidGlassMode: LiquidGlassMode.fromCode(
-        _prefs.getString(_kLiquidGlassModeKey),
-      ),
+      customTheme: _readCustomTheme(),
       playlistArtworkColorsEnabled:
           _prefs.getBool(_kPlaylistArtworkColorsEnabledKey) ?? true,
       flowingLightEnabled: _prefs.getBool(_kFlowingLightEnabledKey) ?? true,
@@ -389,7 +357,6 @@ class SettingsNotifier extends Notifier<AppSettings> {
       discoverySourceOrder: decodeDiscoverySourceOrder(
         _prefs.getStringList(_kDiscoverySourceOrderKey),
       ),
-      platformButtonOnLeft: _prefs.getBool(_kPlatformButtonOnLeftKey) ?? false,
       onlinePlaybackQuality: OnlinePlaybackQuality.fromCode(
         _prefs.getString(_kOnlinePlaybackQualityKey),
       ),
@@ -414,7 +381,17 @@ class SettingsNotifier extends Notifier<AppSettings> {
     if (code != null) return AppNavigationMode.fromCode(code);
     return (prefs.getBool(_kUseNativeNavigationKey) ?? false)
         ? AppNavigationMode.native
-        : AppNavigationMode.floatingCapsule;
+        : AppNavigationMode.singleCapsule;
+  }
+
+  CustomTheme _readCustomTheme() {
+    final raw = _prefs.getString(_kCustomThemeKey);
+    if (raw == null) return const CustomTheme();
+    try {
+      return CustomTheme.fromJson(jsonDecode(raw));
+    } on FormatException {
+      return const CustomTheme();
+    }
   }
 
   Future<void> setDownloadDir(String value) async {
@@ -499,49 +476,6 @@ class SettingsNotifier extends Notifier<AppSettings> {
     state = state.copyWith(themeSeed: color);
   }
 
-  Future<void> selectThemeColor(Color? color) async {
-    if (color != null) await _prefs.setInt(_kThemeSeedKey, color.toARGB32());
-    await _prefs.setBool(_kUseDynamicColorKey, color == null);
-    state = state.copyWith(themeSeed: color, useDynamicColor: color == null);
-  }
-
-  Future<void> saveThemeColor(Color color, {int? replacing}) async {
-    final argb = color.toARGB32();
-    final palette = [...state.themePalette];
-    final index = replacing == null ? -1 : palette.indexOf(replacing);
-    if (index >= 0) palette.removeAt(index);
-    if (!palette.contains(argb)) {
-      palette.insert(index < 0 ? palette.length : index, argb);
-    }
-    await _prefs.setStringList(
-      _kThemePaletteKey,
-      palette.map((value) => value.toString()).toList(),
-    );
-    state = state.copyWith(themePalette: List<int>.unmodifiable(palette));
-    if (replacing == null || replacing == state.themeSeed.toARGB32()) {
-      await selectThemeColor(color);
-    }
-  }
-
-  Future<void> deleteThemeColor(int color) async {
-    final palette = state.themePalette
-        .where((value) => value != color)
-        .toList();
-    await _prefs.setStringList(
-      _kThemePaletteKey,
-      palette.map((value) => value.toString()).toList(),
-    );
-    state = state.copyWith(themePalette: List<int>.unmodifiable(palette));
-    if (state.themeSeed.toARGB32() == color) await selectThemeColor(null);
-  }
-
-  Future<void> resetThemeColors() async {
-    await _prefs.remove(_kThemePaletteKey);
-    state = state.copyWith(themePalette: SeedPalette.defaultColors);
-    await selectThemeColor(SeedPalette.defaultSeed);
-    await setColorStyle(AppColorStyle.vivid);
-  }
-
   Future<void> setColorStyle(AppColorStyle style) async {
     await _prefs.setString(_kColorStyleKey, style.code);
     state = state.copyWith(colorStyle: style);
@@ -552,9 +486,18 @@ class SettingsNotifier extends Notifier<AppSettings> {
     state = state.copyWith(useDynamicColor: value);
   }
 
-  Future<void> setLiquidGlassMode(LiquidGlassMode mode) async {
-    await _prefs.setString(_kLiquidGlassModeKey, mode.code);
-    state = state.copyWith(liquidGlassMode: mode);
+  Future<void> setCustomTheme(CustomTheme theme) async {
+    await _prefs.setString(_kCustomThemeKey, jsonEncode(theme.toJson()));
+    final firstEnabled = theme.enabled && !state.customTheme.enabled;
+    if (firstEnabled) {
+      await _prefs.setBool(_kPlaylistArtworkColorsEnabledKey, false);
+    }
+    state = state.copyWith(
+      customTheme: theme,
+      playlistArtworkColorsEnabled: firstEnabled
+          ? false
+          : state.playlistArtworkColorsEnabled,
+    );
   }
 
   Future<void> setPlaylistArtworkColorsEnabled(bool value) async {
@@ -650,17 +593,16 @@ class SettingsNotifier extends Notifier<AppSettings> {
 
   Future<void> setUseNativeNavigation(bool value) async {
     await setNavigationMode(
-      value ? AppNavigationMode.native : AppNavigationMode.floatingCapsule,
+      value ? AppNavigationMode.native : AppNavigationMode.singleCapsule,
     );
   }
 
   Map<String, dynamic> exportAppearanceForSync() => {
     'themeMode': _encodeThemeMode(state.themeMode),
     'themeSeedArgb': state.themeSeed.toARGB32(),
-    'themePalette': state.themePalette,
     'colorStyle': state.colorStyle.code,
     'useDynamicColor': state.useDynamicColor,
-    'liquidGlassMode': state.liquidGlassMode.code,
+    'customTheme': state.customTheme.toJson(),
     'playlistArtworkColorsEnabled': state.playlistArtworkColorsEnabled,
     'flowingLightEnabled': state.flowingLightEnabled,
     'lyricViewBlurDisabled': state.lyricViewBlurDisabled,
@@ -720,31 +662,9 @@ class SettingsNotifier extends Notifier<AppSettings> {
       throw const FormatException('云端专辑封面设置无效');
     }
 
-    final rawGlass = json['liquidGlassMode'];
-    if (rawGlass != null &&
-        (rawGlass is! String ||
-            !LiquidGlassMode.values.any((mode) => mode.code == rawGlass))) {
-      throw const FormatException('云端液态玻璃设置无效');
-    }
-    final syncedGlass = rawGlass == null
-        ? state.liquidGlassMode
-        : LiquidGlassMode.fromCode(rawGlass as String);
-    final rawPalette = json['themePalette'];
-    if (rawPalette != null &&
-        (rawPalette is! List ||
-            rawPalette.any(
-              (color) => color is! int || color < 0 || color > 0xFFFFFFFF,
-            ))) {
-      throw const FormatException('云端主题颜色列表无效');
-    }
-    final syncedPalette = List<int>.unmodifiable({
-      ...(rawPalette == null
-          ? state.themePalette
-          : (rawPalette as List).cast<int>()),
-      if (!rawDynamic) rawSeed,
-    });
-    // Old backups may contain customTheme. Ignore the retired editor settings.
-
+    final syncedTheme = json.containsKey('customTheme')
+        ? CustomTheme.fromJson(json['customTheme'])
+        : null;
     final rawLyricWeight = json['lyricFontWeight'];
     if (json.containsKey('lyricFontWeight') &&
         !_validLyricFontWeight(rawLyricWeight)) {
@@ -767,15 +687,17 @@ class SettingsNotifier extends Notifier<AppSettings> {
       throw const FormatException('云端歌单动态配色设置无效');
     }
     final syncedPlaylistColors =
-        rawPlaylistColors as bool? ?? state.playlistArtworkColorsEnabled;
+        rawPlaylistColors as bool? ??
+        (syncedTheme?.enabled == true && !state.customTheme.enabled
+            ? false
+            : state.playlistArtworkColorsEnabled);
 
     final next = state.copyWith(
       themeMode: _decodeThemeMode(rawMode),
       themeSeed: Color(rawSeed),
-      themePalette: syncedPalette,
       colorStyle: syncedStyle,
       useDynamicColor: rawDynamic,
-      liquidGlassMode: syncedGlass,
+      customTheme: syncedTheme,
       playlistArtworkColorsEnabled: syncedPlaylistColors,
       flowingLightEnabled: syncedFlowingLight,
       lyricViewBlurDisabled: rawLyricBlurDisabled as bool?,
@@ -785,10 +707,6 @@ class SettingsNotifier extends Notifier<AppSettings> {
     );
     await _prefs.setString(_kThemeModeKey, rawMode);
     await _prefs.setInt(_kThemeSeedKey, rawSeed);
-    await _prefs.setStringList(
-      _kThemePaletteKey,
-      syncedPalette.map((color) => color.toString()).toList(),
-    );
     if (syncedStyle != null) {
       await _prefs.setString(_kColorStyleKey, syncedStyle.code);
     }
@@ -808,7 +726,12 @@ class SettingsNotifier extends Notifier<AppSettings> {
       await _prefs.setDouble(_kLyricFontSizeKey, syncedLyricSize);
     }
     await _prefs.setBool(_kUseDynamicColorKey, rawDynamic);
-    await _prefs.setString(_kLiquidGlassModeKey, syncedGlass.code);
+    if (syncedTheme != null) {
+      await _prefs.setString(
+        _kCustomThemeKey,
+        jsonEncode(syncedTheme.toJson()),
+      );
+    }
     await _prefs.setBool(
       _kPlaylistArtworkColorsEnabledKey,
       syncedPlaylistColors,
@@ -854,11 +777,6 @@ class SettingsNotifier extends Notifier<AppSettings> {
   Future<void> setReplaceQueueOnSearchPlay(bool value) async {
     await _prefs.setBool(_kReplaceQueueOnSearchPlayKey, value);
     state = state.copyWith(replaceQueueOnSearchPlay: value);
-  }
-
-  Future<void> setPlatformButtonOnLeft(bool value) async {
-    state = state.copyWith(platformButtonOnLeft: value);
-    await _prefs.setBool(_kPlatformButtonOnLeftKey, value);
   }
 
   Future<void> setOnlinePlaybackQuality(OnlinePlaybackQuality quality) async {

@@ -1,4 +1,3 @@
-import '../settings/widgets/settings_sheet.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -46,9 +45,9 @@ class _MusicSourcePageState extends ConsumerState<MusicSourcePage> {
         const SliverToBoxAdapter(child: ScrollHeaderSpacer()),
         SliverPadding(
           padding: EdgeInsets.fromLTRB(
-            16,
-            0,
-            16,
+            28,
+            2,
+            28,
             ShellBottomArea.contentPadding(context, 126),
           ),
           sliver: SliverToBoxAdapter(
@@ -304,7 +303,7 @@ class _MusicSourcePageState extends ConsumerState<MusicSourcePage> {
   }
 
   Future<void> _delete(MusicSourceRecord record) async {
-    final confirmed = await showSettingsDialog<bool>(
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('删除音源'),

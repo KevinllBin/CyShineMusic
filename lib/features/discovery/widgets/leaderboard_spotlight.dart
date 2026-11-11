@@ -9,12 +9,9 @@ import '../../../core/models/leaderboard_info.dart';
 import '../../../core/models/music_info.dart';
 import '../../../core/models/online_collection_kind.dart';
 import '../../../core/ui/container_transform.dart';
-import '../../../core/ui/widgets/spring_artwork_hero.dart';
 import '../../../core/ui/car_display_layout.dart';
-import '../../shell/shell_bottom_area.dart';
 import '../discovery_controller.dart';
 import 'leaderboard_artwork.dart';
-import 'discovery_prism_surface.dart';
 
 class LeaderboardSpotlight extends ConsumerWidget {
   const LeaderboardSpotlight({super.key, required this.source});
@@ -123,131 +120,124 @@ class _LeaderboardPreviewCard extends ConsumerWidget {
     final tracks = resolved?.previewTracks ?? const <MusicInfo>[];
     final failed = preview.hasError;
     final path = '/discover/leaderboards/${board.source.code}/${board.boardId}';
-    const radius = BorderRadius.all(Radius.circular(20));
-    return DiscoveryReveal(
-      delay: Duration(milliseconds: index * 35),
-      child: DiscoveryPrismSurface(
-        key: ValueKey('leaderboard-preview-${board.key}'),
+    const radius = BorderRadius.all(Radius.circular(14));
+    return Card(
+      key: ValueKey('leaderboard-preview-${board.key}'),
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: scheme.surfaceContainer,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
         borderRadius: radius,
-        shadows: [
-          BoxShadow(
-            color: scheme.shadow.withValues(alpha: 0.10),
-            blurRadius: 22,
-            offset: const Offset(0, 8),
+        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.24)),
+      ),
+      child: InkWell(
+        onTap: () => context.push(
+          path,
+          extra: ContainerTransformExtra(
+            (resolved ?? board).copyWith(coverUrl: coverUrl),
+            // 详情页从整张卡片展开，封面 Hero 沿同一条曲线飞到头图。
+            origin: ContainerTransformOrigin.capture(
+              context,
+              borderRadius: radius,
+              color: scheme.surfaceContainer,
+            ),
           ),
-        ],
-        child: Material(
-          color: Colors.transparent,
-          clipBehavior: Clip.antiAlias,
-          borderRadius: radius,
-          child: InkWell(
-            onTap: () => context.push(
-              path,
-              extra: ContainerTransformExtra(
-                (resolved ?? board).copyWith(coverUrl: coverUrl),
-                // 详情页从整张卡片展开，封面 Hero 沿同一条曲线飞到头图。
-                origin: ContainerTransformOrigin.capture(
-                  context,
-                  borderRadius: radius,
-                  color: scheme.surfaceContainer,
-                  revealPadding: ShellBottomArea.revealPaddingOf(context),
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 118,
+              height: double.infinity,
+              child: Hero(
+                tag: onlinePlaylistArtworkHeroTag(
+                  board.source,
+                  board.boardId,
+                  kind: OnlineCollectionKind.leaderboard,
+                ),
+                transitionOnUserGestures: true,
+                createRectTween: containerTransformHeroRectTween,
+                child: HeroArtworkShape(
+                  // 封面占据卡片左列，只有左侧两角跟随卡片圆角。
+                  borderRadius: const BorderRadius.horizontal(
+                    left: Radius.circular(14),
+                  ),
+                  child: LeaderboardArtwork(
+                    name: board.name,
+                    index: index,
+                    coverUrl: coverUrl,
+                  ),
                 ),
               ),
             ),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 118,
-                  height: double.infinity,
-                  child: SpringArtworkHero(
-                    tag: onlinePlaylistArtworkHeroTag(
-                      board.source,
-                      board.boardId,
-                      kind: OnlineCollectionKind.leaderboard,
-                    ),
-                    child: HeroArtworkShape(
-                      // 封面占据卡片左列，只有左侧两角跟随卡片圆角。
-                      borderRadius: const BorderRadius.horizontal(
-                        left: Radius.circular(20),
-                      ),
-                      child: LeaderboardArtwork(
-                        name: board.name,
-                        index: index,
-                        coverUrl: coverUrl,
-                      ),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(13, 11, 11, 10),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(13, 11, 11, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                board.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: scheme.onSurface,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
+                        Expanded(
+                          child: Text(
+                            board.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: scheme.onSurface,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
                             ),
-                            Icon(
-                              Icons.chevron_right_rounded,
-                              size: 19,
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 7),
-                        if (tracks.isNotEmpty)
-                          for (var rank = 0; rank < 3; rank++)
-                            _PreviewTrackRow(
-                              rank: rank,
-                              track: rank < tracks.length ? tracks[rank] : null,
-                            )
-                        else if (failed)
-                          Expanded(
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                '预览加载失败，轻触查看榜单',
-                                maxLines: 2,
-                                style: TextStyle(
-                                  color: scheme.onSurfaceVariant,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                          )
-                        else
-                          for (var rank = 0; rank < 3; rank++)
-                            const _PreviewTrackSkeleton(),
-                        const Spacer(),
-                        Text(
-                          resolved?.updateFrequency ??
-                              '${board.source.label} · 实时更新',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: scheme.onSurfaceVariant,
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w500,
                           ),
+                        ),
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          size: 19,
+                          color: scheme.onSurfaceVariant,
                         ),
                       ],
                     ),
-                  ),
+                    const SizedBox(height: 7),
+                    if (tracks.isNotEmpty)
+                      for (var rank = 0; rank < 3; rank++)
+                        _PreviewTrackRow(
+                          rank: rank,
+                          track: rank < tracks.length ? tracks[rank] : null,
+                        )
+                    else if (failed)
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            '预览加载失败，轻触查看榜单',
+                            maxLines: 2,
+                            style: TextStyle(
+                              color: scheme.onSurfaceVariant,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      for (var rank = 0; rank < 3; rank++)
+                        const _PreviewTrackSkeleton(),
+                    const Spacer(),
+                    Text(
+                      resolved?.updateFrequency ??
+                          '${board.source.label} · 实时更新',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );

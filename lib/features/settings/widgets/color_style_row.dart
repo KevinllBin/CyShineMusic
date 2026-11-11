@@ -23,10 +23,7 @@ ColorScheme _previewScheme(
   if (_previewSchemes.length >= _previewCacheLimit) {
     _previewSchemes.remove(_previewSchemes.keys.first);
   }
-  final scheme = AppTheme.surfaceSchemeFor(
-    AppTheme.schemeFor(seed, brightness, style),
-    style,
-  );
+  final scheme = AppTheme.schemeFor(seed, brightness, style);
   _previewSchemes[key] = scheme;
   return scheme;
 }
@@ -96,18 +93,15 @@ class ColorStyleRow extends StatelessWidget {
             ignoring: !enabled,
             child: Row(
               children: [
-                for (
-                  var index = 0;
-                  index < AppColorStyle.choices.length;
-                  index++
-                ) ...[
-                  if (index > 0) const SizedBox(width: 8),
+                for (final style in AppColorStyle.values) ...[
+                  if (style != AppColorStyle.values.first)
+                    const SizedBox(width: 8),
                   Expanded(
                     child: _StyleCard(
-                      style: AppColorStyle.choices[index],
+                      style: style,
                       seed: seed,
-                      selected: AppColorStyle.choices[index] == value,
-                      onTap: () => onPick(AppColorStyle.choices[index]),
+                      selected: style == value,
+                      onTap: () => onPick(style),
                     ),
                   ),
                 ],

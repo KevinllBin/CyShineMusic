@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 const appDisplayName = '栖弦';
-const fallbackAppVersion = '1.0.0';
+const fallbackAppVersion = '1.0.9';
 
 final packageInfoProvider = FutureProvider<PackageInfo>((ref) {
   return PackageInfo.fromPlatform();

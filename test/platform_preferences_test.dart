@@ -44,7 +44,6 @@ void main() {
       await settings.setDiscoverySourceOrder([MusicSource.kg, MusicSource.mg]);
       expect(container.read(discoverySourcesProvider).first, MusicSource.kg);
       expect(container.read(selectedDiscoverySourceProvider), MusicSource.tx);
-      await settings.setPlatformButtonOnLeft(true);
       await settings.setSkipStartupScreen(true);
       expect(container.read(selectedDiscoverySourceProvider), MusicSource.tx);
       final restored = createContainer(prefs);
@@ -67,28 +66,4 @@ void main() {
       },
     );
   }
-
-  test(
-    'button defaults right and saves both positions across restarts',
-    () async {
-      final prefs = await SharedPreferences.getInstance();
-      final container = createContainer(prefs);
-      expect(container.read(settingsProvider).platformButtonOnLeft, isFalse);
-      final write = container
-          .read(settingsProvider.notifier)
-          .setPlatformButtonOnLeft(true);
-      expect(container.read(settingsProvider).platformButtonOnLeft, isTrue);
-      await write;
-
-      final restored = createContainer(prefs);
-      expect(restored.read(settingsProvider).platformButtonOnLeft, isTrue);
-      await restored
-          .read(settingsProvider.notifier)
-          .setPlatformButtonOnLeft(false);
-      expect(
-        createContainer(prefs).read(settingsProvider).platformButtonOnLeft,
-        isFalse,
-      );
-    },
-  );
 }

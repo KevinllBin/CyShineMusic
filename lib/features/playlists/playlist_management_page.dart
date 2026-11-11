@@ -1,17 +1,14 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:prism_ui/prism_ui.dart' as prism;
-import 'package:prism_ui/icons/prism_glyphs.dart' as prism_glyphs;
-import 'package:prism_ui/icons/icons.dart' as glyph;
 
 import '../../core/models/enums.dart';
 import '../../core/ui/app_scrollbar.dart';
 import '../../core/ui/app_toast.dart';
 import '../../core/ui/car_display_layout.dart';
-import '../../core/ui/music_action_glyphs.dart';
+import '../../theme/app_motion.dart';
 import '../shell/shell_bottom_area.dart';
+import '../../core/ui/widgets/morphing_menu_button.dart';
 import '../shell/widgets/scrolling_page_header.dart';
 import 'lx_playlist_import.dart';
 import 'online_playlist_updater.dart';
@@ -20,7 +17,6 @@ import 'playlist_name_dialog.dart';
 import 'playlist_models.dart';
 import 'playlist_store.dart';
 import 'widgets/playlist_artwork.dart';
-import 'widgets/playlist_management_menu.dart';
 
 class PlaylistManagementPage extends ConsumerStatefulWidget {
   const PlaylistManagementPage({super.key});
@@ -33,33 +29,12 @@ class PlaylistManagementPage extends ConsumerStatefulWidget {
 class _PlaylistManagementPageState
     extends ConsumerState<PlaylistManagementPage> {
   final ScrollController _scrollController = ScrollController();
-  final Object _menuOwner = Object();
-  late final _menuState = ref.read(playlistManagementMenuProvider.notifier);
-
-  void _syncMenu() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _menuState.state = PlaylistManagementMenuState(
-        owner: _menuOwner,
-        onCreate: () => unawaited(_createPlaylist(context, ref)),
-        onImportLx: _importingLx ? null : () => unawaited(_importLxPlaylist()),
-        importLabel: _importingLx ? _lxImportProgress ?? '正在导入' : '洛雪导入',
-      );
-    });
-  }
-
   bool _importingLx = false;
   String? _lxImportProgress;
   final Set<String> _updatingPlaylistIds = <String>{};
 
   @override
   void dispose() {
-    final menuState = _menuState;
-    scheduleMicrotask(() {
-      if (menuState.mounted && identical(menuState.state.owner, _menuOwner)) {
-        menuState.state = const PlaylistManagementMenuState();
-      }
-    });
     _scrollController.dispose();
     super.dispose();
   }
@@ -67,7 +42,6 @@ class _PlaylistManagementPageState
   @override
   Widget build(BuildContext context) {
     final playlists = ref.watch(localPlaylistsProvider);
-    _syncMenu();
     return Scaffold(
       body: AppScrollbar(
         controller: _scrollController,
@@ -79,6 +53,27 @@ class _PlaylistManagementPageState
           ),
           slivers: [
             const SliverToBoxAdapter(child: ScrollHeaderSpacer()),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 2, 16, 0),
+              sliver: SliverToBoxAdapter(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: CarDisplayLayout.contentConstraints(
+                      context,
+                      maxWidth: 760,
+                    ),
+                    child: _ManagementActions(
+                      count: playlists.length,
+                      onCreate: () => _createPlaylist(context, ref),
+                      onImport: () => context.go('/playlists/import'),
+                      onImportLx: _importLxPlaylist,
+                      importingLx: _importingLx,
+                      lxImportProgress: _lxImportProgress,
+                    ),
+                  ),
+                ),
+              ),
+            ),
             if (playlists.isEmpty)
               const SliverFillRemaining(
                 hasScrollBody: false,
@@ -295,6 +290,149 @@ class _PlaylistManagementPageState
   }
 }
 
+class _ManagementActions extends StatelessWidget {
+  const _ManagementActions({
+    required this.count,
+    required this.onCreate,
+    required this.onImport,
+    required this.onImportLx,
+    required this.importingLx,
+    required this.lxImportProgress,
+  });
+
+  final int count;
+  final VoidCallback onCreate;
+  final VoidCallback onImport;
+  final VoidCallback onImportLx;
+  final bool importingLx;
+  final String? lxImportProgress;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.22),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: scheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  Icons.queue_music_rounded,
+                  color: scheme.onPrimaryContainer,
+                ),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '整理你的音乐收藏',
+                      style: TextStyle(
+                        color: scheme.onSurface,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '$count 个本地歌单',
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 15),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final useVerticalLayout =
+                  constraints.maxWidth < 340 ||
+                  MediaQuery.textScalerOf(context).scale(1) > 1.3;
+              final createButton = FilledButton.icon(
+                style: const ButtonStyle(
+                  minimumSize: WidgetStatePropertyAll(Size(72, 48)),
+                ),
+                onPressed: onCreate,
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('新建歌单'),
+              );
+              final importButton = FilledButton.tonalIcon(
+                style: const ButtonStyle(
+                  minimumSize: WidgetStatePropertyAll(Size(72, 48)),
+                ),
+                onPressed: onImport,
+                icon: const Icon(Icons.cloud_download_outlined),
+                label: const Text('在线导入'),
+              );
+              final lxImportButton = FilledButton.tonalIcon(
+                style: const ButtonStyle(
+                  minimumSize: WidgetStatePropertyAll(Size(72, 48)),
+                ),
+                onPressed: importingLx ? null : onImportLx,
+                icon: importingLx
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.upload_file_rounded),
+                label: Text(importingLx ? lxImportProgress ?? '正在导入' : '洛雪导入'),
+              );
+              if (useVerticalLayout) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    createButton,
+                    const SizedBox(height: 8),
+                    importButton,
+                    const SizedBox(height: 8),
+                    lxImportButton,
+                  ],
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(child: createButton),
+                      const SizedBox(width: 10),
+                      Expanded(child: importButton),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  lxImportButton,
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 String _managementDetailLocation(String playlistId) {
   return Uri(
     path: '/playlists/$playlistId',
@@ -321,76 +459,95 @@ class _PlaylistManagementTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final importedSource = MusicSource.fromCode(
       playlist.originSourceCode ?? '',
     );
-    return prism.Card(
-      radius: prism.AppCorner.xl,
-      padding: const EdgeInsets.fromLTRB(10, 10, 4, 10),
-      onPressed: onOpen,
-      child: Padding(
-        padding: EdgeInsets.zero,
-        child: Row(
-          children: [
-            _PlaylistCover(playlist: playlist),
-            const SizedBox(width: 13),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    playlist.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: prism.AppTextStyle.subheadline.of(
-                      context,
-                      emphasized: true,
+    return AnimatedContainer(
+      duration: AppMotion.short,
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.22),
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(20),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onOpen,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 10, 4, 10),
+            child: Row(
+              children: [
+                _PlaylistCover(playlist: playlist),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        playlist.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: scheme.onSurface,
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        playlist.isOnlineImport
+                            ? '${importedSource.label}导入 · ${playlist.tracks.length} 首'
+                            : '${playlist.tracks.length} 首歌曲',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: scheme.onSurfaceVariant,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                MorphingMenuButton(
+                  tooltip: '歌单选项',
+                  icon: Icons.more_horiz_rounded,
+                  motionStyle: MorphingMenuMotionStyle.list,
+                  actions: [
+                    if (onUpdate != null)
+                      MorphingMenuAction(
+                        label: updating ? '正在更新' : '更新歌单',
+                        leading: updating
+                            ? const SizedBox.square(
+                                dimension: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.2,
+                                ),
+                              )
+                            : const Icon(Icons.refresh_rounded),
+                        onSelected: updating ? null : onUpdate,
+                      ),
+                    MorphingMenuAction(
+                      label: '重命名',
+                      leading: const Icon(Icons.edit_outlined),
+                      onSelected: onRename,
                     ),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    playlist.isOnlineImport
-                        ? '${importedSource.label}导入 · ${playlist.tracks.length} 首'
-                        : '${playlist.tracks.length} 首歌曲',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: prism.AppTextStyle.caption1.of(context),
-                  ),
-                ],
-              ),
-            ),
-            prism.PopupAnchor(
-              targetBuilder: (open) => prism.IconButton(
-                tooltip: '歌单选项',
-                onPressed: open,
-                icon: const glyph.GlyphIcon(prism_glyphs.AppGlyphs.more),
-              ),
-              popupBuilder: (_) => prism.PopupMenu(
-                items: [
-                  if (onUpdate != null)
-                    prism.PopupMenuItem(
-                      label: updating ? '正在更新' : '更新歌单',
-                      glyph: prism_glyphs.AppGlyphs.refresh,
-                      executeImmediately: true,
-                      onPressed: updating ? null : onUpdate,
+                    MorphingMenuAction(
+                      label: '删除',
+                      leading: const Icon(Icons.delete_outline_rounded),
+                      onSelected: onDelete,
+                      danger: true,
                     ),
-                  prism.PopupMenuItem(
-                    label: '重命名',
-                    glyph: prism_glyphs.AppGlyphs.edit,
-                    executeImmediately: true,
-                    onPressed: onRename,
-                  ),
-                  prism.PopupMenuItem(
-                    label: '删除',
-                    glyph: MusicActionGlyphs.trash,
-                    executeImmediately: true,
-                    onPressed: onDelete,
-                    danger: true,
-                  ),
-                ],
-              ),
+                  ],
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

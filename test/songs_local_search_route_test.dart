@@ -11,9 +11,6 @@ import 'package:cy_shine_music/features/shell/shell_toolbar_visibility.dart';
 import 'package:cy_shine_music/features/songs/songs_page.dart';
 import 'package:cy_shine_music/features/songs/songs_toolbar_state.dart';
 import 'package:cy_shine_music/router.dart';
-import 'package:prism_ui/prism_ui.dart' as prism;
-
-import 'helpers/prism_test_environment.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -37,7 +34,6 @@ void main() {
           playerAudioHandlerProvider.overrideWithValue(audioHandler),
         ],
         child: MaterialApp.router(
-          builder: buildPrismTestEnvironment,
           theme: ThemeData(
             useMaterial3: true,
             colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
@@ -61,15 +57,13 @@ void main() {
       isTrue,
     );
     expect(find.byTooltip('返回歌曲列表'), findsNothing);
-    expect(find.byTooltip('返回上一页'), findsNothing);
+    expect(find.byIcon(Icons.arrow_back_ios_new_rounded), findsNothing);
     final container = ProviderScope.containerOf(
       tester.element(find.byType(SongsPage)),
     );
     expect(
       tester
-          .widget<prism.SearchField>(
-            find.byKey(const ValueKey('header-search-field')),
-          )
+          .widget<TextField>(find.byKey(const ValueKey('header-search-field')))
           .focusNode
           ?.hasFocus,
       isTrue,
@@ -114,7 +108,6 @@ void main() {
           playerAudioHandlerProvider.overrideWithValue(audioHandler),
         ],
         child: MaterialApp.router(
-          builder: buildPrismTestEnvironment,
           theme: ThemeData(
             useMaterial3: true,
             colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
@@ -126,7 +119,7 @@ void main() {
     await _pumpUi(tester);
 
     expect(find.byTooltip('返回歌曲列表'), findsNothing);
-    expect(find.byTooltip('返回上一页'), findsOneWidget);
+    expect(find.byIcon(Icons.arrow_back_ios_new_rounded), findsOneWidget);
     expect(await tester.binding.handlePopRoute(), isTrue);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 120));
@@ -157,10 +150,7 @@ void main() {
             playerAudioHandlerProvider.overrideWithValue(audioHandler),
             songsSearchAutoFocusProvider.overrideWith((ref) => false),
           ],
-          child: MaterialApp.router(
-            builder: buildPrismTestEnvironment,
-            routerConfig: router,
-          ),
+          child: MaterialApp.router(routerConfig: router),
         ),
       );
       await _pumpUi(tester);
@@ -171,7 +161,7 @@ void main() {
       expect(router.routeInformationProvider.value.uri.path, '/songs/search');
       expect(
         tester
-            .widget<prism.SearchField>(
+            .widget<TextField>(
               find.byKey(const ValueKey('header-search-field')),
             )
             .focusNode

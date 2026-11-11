@@ -12,9 +12,6 @@ import '../../../core/ui/artwork_colors.dart';
 import '../../../core/ui/container_transform.dart';
 import '../../../core/ui/cover_image_source.dart';
 import '../../../core/ui/cover_placeholder.dart';
-import '../../../core/ui/route_settle.dart';
-import '../../../core/ui/widgets/app_navigation_button.dart';
-import '../../../core/ui/widgets/spring_artwork_hero.dart';
 import '../../../theme/app_motion.dart';
 import '../../../theme/app_theme.dart';
 import '../../shell/widgets/scrolling_page_header.dart';
@@ -68,8 +65,6 @@ class _PlaylistArtworkThemeState extends ConsumerState<PlaylistArtworkTheme> {
   ColorScheme? _scheme;
   _ArtworkSchemeCacheKey? _activeRequestKey;
 
-  /// 由 [_scheme] 生成的主题。构建完整 ThemeData 不便宜，页面每次重建
-  /// （搜索输入、收藏状态）都重新生成会白白多花一截构建时间。
   ({ColorScheme scheme, TextTheme textTheme, ThemeData theme})? _artworkTheme;
 
   ThemeData _themeFor(ColorScheme scheme, TextTheme textTheme) {
@@ -141,14 +136,8 @@ class _PlaylistArtworkThemeState extends ConsumerState<PlaylistArtworkTheme> {
           _pendingSchemes.remove(requestKey);
           if (scheme != null) _resolvedSchemes[requestKey] = scheme;
         }
-        void apply() {
-          if (!mounted || _activeRequestKey != requestKey) return;
-          setState(() => _scheme = scheme);
-        }
-
         if (!mounted || _activeRequestKey != requestKey) return;
-        // 主题插值会逐帧重建整页，不与进入动画叠在一起。
-        if (!deferUntilRouteSettled(context, apply)) apply();
+        setState(() => _scheme = scheme);
       },
       onError: (_) {
         if (identical(_pendingSchemes[requestKey], future)) {
@@ -263,7 +252,6 @@ class ImmersivePlaylistHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final height = _immersivePlaylistHeaderHeight(context);
-    final springHero = ContainerTransformTransition.usesSpringHeroOf(context);
     final artwork = PlaylistArtworkImage(
       provider: artworkProvider,
       loading: artworkLoading,
@@ -305,38 +293,29 @@ class ImmersivePlaylistHeader extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           if (artworkHeroTag case final tag?)
-            if (springHero)
-              SpringArtworkHero(
-                tag: tag,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [artwork, ...overlays],
-                ),
-              )
-            else
-              Hero(
-                tag: tag,
-                transitionOnUserGestures: true,
-                createRectTween: containerTransformHeroRectTween,
-                // 使用 Hero 默认占位保留布局，避免大头图与移动封面同时绘制。
-                flightShuttleBuilder:
-                    (flightContext, animation, direction, fromHero, toHero) =>
-                        buildArtworkHeroFlightShuttle(
-                          flightContext,
-                          animation,
-                          direction,
-                          fromHero,
-                          toHero,
-                          overlay: Stack(
-                            fit: StackFit.expand,
-                            children: [...overlays, topBarOverlay],
-                          ),
+            Hero(
+              tag: tag,
+              transitionOnUserGestures: true,
+              createRectTween: containerTransformHeroRectTween,
+              // 使用 Hero 默认占位保留布局，避免大头图与移动封面同时绘制。
+              flightShuttleBuilder:
+                  (flightContext, animation, direction, fromHero, toHero) =>
+                      buildArtworkHeroFlightShuttle(
+                        flightContext,
+                        animation,
+                        direction,
+                        fromHero,
+                        toHero,
+                        overlay: Stack(
+                          fit: StackFit.expand,
+                          children: [...overlays, topBarOverlay],
                         ),
-                child: artwork,
-              )
+                      ),
+              child: artwork,
+            )
           else
             artwork,
-          if (!springHero || artworkHeroTag == null) ...overlays,
+          ...overlays,
           if (showTopBar) topBarOverlay,
         ],
       ),
@@ -629,9 +608,10 @@ class ImmersivePlaylistTopBar extends StatelessWidget {
     final back =
         leading ??
         (showBack
-            ? AppNavigationButton.back(
-                // The button owns a themed surface, even over artwork.
-                // Its arrow must follow that surface rather than the title.
+            ? ImmersiveTopIconButton(
+                tooltip: '返回上一页',
+                icon: Icons.arrow_back_ios_new_rounded,
+                onImage: onImage,
                 onPressed:
                     onBack ??
                     () {
@@ -694,7 +674,12 @@ class ImmersivePlaylistTopBar extends StatelessWidget {
                         width: 44,
                         child: Align(
                           alignment: Alignment.centerLeft,
-                          child: back,
+                          child: back == null
+                              ? null
+                              : FloatingHeaderSurface(
+                                  onImage: onImage,
+                                  child: back,
+                                ),
                         ),
                       ),
                       const SizedBox(width: 12),

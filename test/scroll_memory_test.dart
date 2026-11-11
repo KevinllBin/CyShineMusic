@@ -15,8 +15,6 @@ import 'package:cy_shine_music/features/playlists/playlist_store.dart';
 import 'package:cy_shine_music/features/settings/settings_page.dart';
 import 'package:cy_shine_music/router.dart';
 
-import 'helpers/prism_test_environment.dart';
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -112,7 +110,6 @@ Future<GoRouter> _pumpApp(
         playerAudioHandlerProvider.overrideWithValue(audioHandler),
       ],
       child: MaterialApp.router(
-        builder: buildPrismTestEnvironment,
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           useMaterial3: true,

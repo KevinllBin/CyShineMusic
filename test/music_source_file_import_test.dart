@@ -14,8 +14,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'helpers/prism_test_environment.dart';
-
 const _browserChannel = MethodChannel('test/source_file_browser');
 const _runtimeChannel = MethodChannel('cy_shine_music/music_source_runtime');
 final _systemPickerChannel = MethodChannel(
@@ -123,10 +121,7 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(
-          builder: buildPrismTestEnvironment,
-          home: Scaffold(body: MusicSourcePage()),
-        ),
+        child: const MaterialApp(home: Scaffold(body: MusicSourcePage())),
       ),
     );
     await tester.pumpAndSettle();
