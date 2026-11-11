@@ -5,6 +5,7 @@ import 'package:prism_ui/prism_ui.dart' as prism;
 import '../../../core/models/enums.dart';
 import '../../../core/models/search_category.dart';
 import '../../../core/storage/settings_store.dart';
+import '../../../core/ui/widgets/header_control_style.dart';
 import '../../../theme/app_motion.dart';
 import '../../discovery/discovery_controller.dart';
 import '../search_controller.dart';
@@ -51,13 +52,13 @@ class SearchPlatformMenu extends ConsumerWidget {
               child: prism.IconButton(
                 tooltip: '平台：$selectedLabel',
                 onPressed: open,
-                style: prism.ButtonStyle.from(
-                  fixedSize: const Size(double.infinity, 52),
-                  minimumSize: const Size(88, 52),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                style: const prism.ButtonStyle(
+                  fixedSize: Size(double.infinity, 52),
+                  minimumSize: Size(88, 52),
+                  padding: EdgeInsets.symmetric(horizontal: 12),
                   tapTargetSize: prism.TapTargetSize.shrinkWrap,
                   pressLook: prism.PressLook.none,
-                ),
+                ).merge(headerControlButtonStyle(context)),
                 icon: ExcludeSemantics(
                   child: Row(
                     mainAxisSize: MainAxisSize.min,

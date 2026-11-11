@@ -78,6 +78,7 @@ class _DiscoveryCategoryFabLayerState
       elevation: 3,
       highlightElevation: 4,
       backgroundColor: scheme.secondaryContainer,
+      foregroundColor: scheme.onSecondaryContainer,
       icon: AnimatedSwitcher(
         duration: AppMotion.short,
         child: Icon(
