@@ -7,10 +7,12 @@ class CollectionSearchStatus extends StatelessWidget {
     required this.caption,
     this.onSearchAll,
     this.loading = false,
+    this.actionLabel = '搜索全部',
   });
   final String caption;
   final VoidCallback? onSearchAll;
   final bool loading;
+  final String actionLabel;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -32,7 +34,7 @@ class CollectionSearchStatus extends StatelessWidget {
             if (onSearchAll != null)
               TextButton(
                 onPressed: loading ? null : onSearchAll,
-                child: Text(loading ? '正在加载' : '搜索全部'),
+                child: Text(loading ? '正在加载' : actionLabel),
               ),
           ],
         ),

@@ -389,13 +389,13 @@ class _AppShellState extends ConsumerState<AppShell>
     }
     if (isPlaylistDetailLocation(widget.location)) {
       final playlistToolbar = ref.read(playlistDetailToolbarStateProvider);
+      if (playlistToolbar.batchMode && playlistToolbar.onToggleBatch != null) {
+        playlistToolbar.onToggleBatch!();
+        return true;
+      }
       if (playlistToolbar.searchMode &&
           playlistToolbar.onToggleSearch != null) {
         playlistToolbar.onToggleSearch!();
-        return true;
-      }
-      if (playlistToolbar.batchMode && playlistToolbar.onToggleBatch != null) {
-        playlistToolbar.onToggleBatch!();
         return true;
       }
     }

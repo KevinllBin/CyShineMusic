@@ -7,6 +7,7 @@ import 'package:prism_ui/prism_ui.dart' as prism;
 
 import '../../core/api/music_api.dart';
 import '../shell/shell_bottom_area.dart';
+import '../shell/shell_toolbar_visibility.dart';
 import '../../core/models/enums.dart';
 import '../../core/models/music_info.dart';
 import '../../core/models/music_query.dart';
@@ -24,6 +25,7 @@ import '../../core/ui/cover_placeholder.dart';
 import '../../core/ui/car_display_layout.dart';
 import '../../core/ui/container_transform.dart';
 import '../../core/ui/route_settle.dart';
+import '../../core/ui/widgets/batch_selection_button.dart';
 import '../downloads/download_history_store.dart';
 import '../downloads/download_progress.dart';
 import '../music_sources/music_source_action_guard.dart';
@@ -37,6 +39,7 @@ import '../playlists/widgets/playlist_wide_layout.dart';
 import '../search/widgets/quality_picker_sheet.dart';
 import '../search/widgets/search_result_tile.dart';
 import 'discovery_controller.dart';
+import 'widgets/online_collection_batch_bar.dart';
 
 class OnlinePlaylistDetailPage extends ConsumerStatefulWidget {
   const OnlinePlaylistDetailPage({
@@ -75,6 +78,13 @@ class _OnlinePlaylistDetailPageState
   );
   bool _searchMode = false;
   LocalHistoryEntry? _searchHistory;
+  bool _batchMode = false;
+  bool _batchSubmitting = false;
+  final Set<String> _selectedTrackIds = {};
+  List<MusicInfo> _visibleTracks = const [];
+  LocalHistoryEntry? _batchHistory;
+  late final StateController<bool> _shellToolbarController;
+  bool? _toolbarVisibilityBeforeBatch;
 
   /// 进入动画途中拿到数据时先保持骨架，过渡结束再整页换成歌单：整页重建会
   /// 和容器变换抢帧，还会卸载正在飞行的封面 Hero。
@@ -98,6 +108,7 @@ class _OnlinePlaylistDetailPageState
   @override
   void initState() {
     super.initState();
+    _shellToolbarController = ref.read(shellToolbarVisibleProvider.notifier);
     _trackLimit = _savedTrackLimit;
     _summary =
         widget.summary ??
@@ -125,6 +136,8 @@ class _OnlinePlaylistDetailPageState
         oldWidget.playlistId != widget.playlistId ||
         oldWidget.kind != widget.kind;
     if (identityChanged) {
+      _batchSubmitting = false;
+      _closeBatch();
       _trackLimit = _savedTrackLimit;
       _lastPlaylist = null;
       _closeSearch();
@@ -150,6 +163,9 @@ class _OnlinePlaylistDetailPageState
 
   @override
   void dispose() {
+    _restoreToolbarAfterBatch(defer: true);
+    _batchMode = false;
+    _batchHistory?.remove();
     _searchMode = false;
     _searchHistory?.remove();
     _searchFocusNode.dispose();
@@ -159,7 +175,7 @@ class _OnlinePlaylistDetailPageState
   }
 
   void _openSearch() {
-    if (_searchMode) return;
+    if (_searchMode || _batchMode) return;
     setState(() => _searchMode = true);
     _searchHistory = LocalHistoryEntry(
       onRemove: () {
@@ -177,7 +193,96 @@ class _OnlinePlaylistDetailPageState
     }
     _searchFocusNode.unfocus();
     _searchController.clear();
-    if (mounted) setState(() => _searchMode = false);
+    if (mounted) {
+      setState(() {
+        _searchMode = false;
+        _selectedTrackIds.clear();
+      });
+    }
+  }
+
+  String _trackKey(MusicInfo music) => '${music.source.code}:${music.id}';
+
+  void _openBatch() {
+    if (_batchMode || _visibleTracks.isEmpty) return;
+    _searchFocusNode.unfocus();
+    _toolbarVisibilityBeforeBatch ??= _shellToolbarController.state;
+    _shellToolbarController.state = false;
+    setState(() {
+      _batchMode = true;
+      _selectedTrackIds.clear();
+    });
+    _batchHistory = LocalHistoryEntry(
+      onRemove: () {
+        _batchHistory = null;
+        if (mounted && _batchMode) _closeBatch();
+      },
+    );
+    ModalRoute.of(context)?.addLocalHistoryEntry(_batchHistory!);
+  }
+
+  void _closeBatch() {
+    if (_batchSubmitting) return;
+    if (_batchHistory != null) {
+      _batchHistory!.remove();
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _batchMode = false;
+      _selectedTrackIds.clear();
+    });
+    _restoreToolbarAfterBatch();
+  }
+
+  void _restoreToolbarAfterBatch({bool defer = false}) {
+    final previous = _toolbarVisibilityBeforeBatch;
+    if (previous == null) return;
+    _toolbarVisibilityBeforeBatch = null;
+    final controller = _shellToolbarController;
+    void restore() {
+      if (controller.mounted) controller.state = previous;
+    }
+
+    if (defer) {
+      scheduleMicrotask(restore);
+    } else {
+      restore();
+    }
+  }
+
+  void _toggleSelection(MusicInfo music) {
+    if (_batchSubmitting) return;
+    final id = _trackKey(music);
+    setState(() {
+      if (!_selectedTrackIds.add(id)) _selectedTrackIds.remove(id);
+    });
+  }
+
+  void _toggleSelectAll() {
+    if (_batchSubmitting) return;
+    final ids = _visibleTracks.map(_trackKey).toSet();
+    final allSelected = ids.isNotEmpty && ids.every(_selectedTrackIds.contains);
+    setState(() {
+      _selectedTrackIds.clear();
+      if (!allSelected) _selectedTrackIds.addAll(ids);
+    });
+  }
+
+  Future<bool> _playSelected(
+    PlaylistInfo playlist,
+    List<MusicInfo> selected,
+  ) async {
+    final selection = PlaylistInfo(
+      id: playlist.id,
+      name: playlist.name,
+      source: playlist.source,
+      tracks: selected,
+      trackCount: selected.length,
+    );
+    final queue = _onlinePlaylistQueue(selection, kind: widget.kind);
+    if (queue.isEmpty) return false;
+    return _playQueue(selection, queue.first);
   }
 
   Widget _buildSearchTopBar(
@@ -188,6 +293,22 @@ class _OnlinePlaylistDetailPageState
     double progress = 1,
     bool forHero = false,
   }) {
+    if (_batchMode && !forHero) {
+      final ids = _visibleTracks.map(_trackKey).toSet();
+      final selectedCount = ids.where(_selectedTrackIds.contains).length;
+      return ImmersivePlaylistTopBar(
+        title: '已选中 $selectedCount 项',
+        onImage: onImage,
+        statusBarOnImage: statusBarOnImage,
+        onBack: _batchSubmitting ? () {} : _closeBatch,
+        actions: [
+          BatchSelectionButton(
+            allSelected: ids.isNotEmpty && selectedCount == ids.length,
+            onPressed: _batchSubmitting ? null : _toggleSelectAll,
+          ),
+        ],
+      );
+    }
     return ImmersivePlaylistTopBar(
       title: playlist.name,
       onImage: onImage,
@@ -208,7 +329,7 @@ class _OnlinePlaylistDetailPageState
         autoFocus: !forHero,
         onOpen: _openSearch,
         onClose: _closeSearch,
-        onChanged: (_) => setState(() {}),
+        onChanged: (_) => setState(() => _selectedTrackIds.clear()),
         hint: widget.kind == OnlineCollectionKind.artist
             ? '搜索这位艺人的热门歌曲'
             : '搜索${widget.kind.label}中的歌曲',
@@ -338,6 +459,11 @@ class _OnlinePlaylistDetailPageState
       playlist.tracks,
       _searchController.text,
     );
+    _visibleTracks = visibleTracks;
+    final selectedTracks = [
+      for (final music in visibleTracks)
+        if (_selectedTrackIds.contains(_trackKey(music))) music,
+    ];
     final playbackPlaylist = searching
         ? PlaylistInfo(
             id: playlist.id,
@@ -448,14 +574,19 @@ class _OnlinePlaylistDetailPageState
                   ),
                 ]
               : <Widget>[
-                  if (searching)
+                  if (searching ||
+                      (_batchMode &&
+                          playlist.tracks.length < playlist.totalTracks))
                     SliverToBoxAdapter(
                       child: CollectionSearchStatus(
-                        caption:
-                            '找到 ${visibleTracks.length} 首${playlist.tracks.length < playlist.totalTracks ? ' · 已搜索 ${playlist.tracks.length} / ${playlist.totalTracks} 首' : ''}',
+                        caption: searching
+                            ? '找到 ${visibleTracks.length} 首${playlist.tracks.length < playlist.totalTracks ? ' · 已搜索 ${playlist.tracks.length} / ${playlist.totalTracks} 首' : ''}'
+                            : '当前可选 ${playlist.tracks.length} / ${playlist.totalTracks} 首',
+                        actionLabel: searching ? '搜索全部' : '加载全部',
                         loading: loadingMore,
                         onSearchAll:
-                            playlist.tracks.length < playlist.totalTracks
+                            !_batchSubmitting &&
+                                playlist.tracks.length < playlist.totalTracks
                             ? () {
                                 if (_trackLimit == playlist.totalTracks) {
                                   ref.invalidate(
@@ -479,6 +610,9 @@ class _OnlinePlaylistDetailPageState
                       title: widget.kind == OnlineCollectionKind.artist
                           ? '热门歌曲'
                           : '歌曲',
+                      onBatch: _batchMode || visibleTracks.isEmpty
+                          ? null
+                          : _openBatch,
                     ),
                   ),
                   if (visibleTracks.isEmpty)
@@ -498,14 +632,18 @@ class _OnlinePlaylistDetailPageState
                         12,
                         0,
                         12,
-                        hasTrackFooter ? 0 : 156,
+                        hasTrackFooter
+                            ? 0
+                            : _batchMode
+                            ? 12
+                            : 156,
                       ),
                       sliver: prism.SliverPrismList(
                         itemCount: visibleTracks.length,
                         estimatedItemExtent: 76,
                         gap: 1,
                         itemBuilder: (context, index) {
-                          if (!searching) {
+                          if (!searching && !_batchMode) {
                             _requestMoreTracksIfNeeded(playlist, index);
                           }
                           final music = visibleTracks[index];
@@ -520,7 +658,15 @@ class _OnlinePlaylistDetailPageState
                                 maxWidth: 900,
                               ),
                               child: _OnlinePlaylistTrackTile(
+                                key: ValueKey(_trackKey(music)),
                                 music: music,
+                                batchMode: _batchMode,
+                                selected: _selectedTrackIds.contains(
+                                  _trackKey(music),
+                                ),
+                                onToggleSelected: _batchSubmitting
+                                    ? null
+                                    : () => _toggleSelection(music),
                                 onPlay: entry == null
                                     ? null
                                     : () => _playQueue(
@@ -561,6 +707,17 @@ class _OnlinePlaylistDetailPageState
 
           return Scaffold(
             backgroundColor: scheme.surface,
+            bottomNavigationBar: _batchMode
+                ? OnlineCollectionBatchBar(
+                    title: playlist.name,
+                    selected: selectedTracks,
+                    onPlay: (selected) => _playSelected(playlist, selected),
+                    onFinished: _closeBatch,
+                    onSubmittingChanged: (value) {
+                      if (mounted) setState(() => _batchSubmitting = value);
+                    },
+                  )
+                : null,
             body: wide
                 ? PlaylistWideBody(
                     topBar: placeholder
@@ -681,7 +838,7 @@ class _OnlinePlaylistDetailPageState
     await player.playFromPlaylistQueue(entry, queue, playlistId: playlist.id);
   }
 
-  Future<void> _playQueue(
+  Future<bool> _playQueue(
     PlaylistInfo playlist,
     DownloadHistoryEntry selectedEntry, {
     bool replaceQueue = true,
@@ -690,15 +847,15 @@ class _OnlinePlaylistDetailPageState
       context,
       selectedEntry,
     );
-    if (!available || !mounted) return;
+    if (!available || !mounted) return false;
 
     final queue = _onlinePlaylistQueue(playlist, kind: widget.kind);
     final entry = _matchingQueueEntry(queue, selectedEntry);
-    if (entry == null) return;
+    if (entry == null) return false;
     final player = ref.read(playerControllerProvider.notifier);
     if (!replaceQueue) {
       await player.playSingleQueueEntry(entry);
-      return;
+      return true;
     }
     final api = ref.read(musicApiProvider);
 
@@ -715,6 +872,7 @@ class _OnlinePlaylistDetailPageState
       );
     }
     await playback;
+    return true;
   }
 
   Future<void> _toggleFavorite(
@@ -793,6 +951,7 @@ class _OnlinePlaylistDetailPageState
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted ||
           _identity != identity ||
+          _batchMode ||
           !TickerMode.valuesOf(context).enabled ||
           _trackLimit >= target) {
         return;
@@ -803,10 +962,20 @@ class _OnlinePlaylistDetailPageState
 }
 
 class _OnlinePlaylistTrackTile extends ConsumerStatefulWidget {
-  const _OnlinePlaylistTrackTile({required this.music, required this.onPlay});
+  const _OnlinePlaylistTrackTile({
+    super.key,
+    required this.music,
+    required this.onPlay,
+    required this.batchMode,
+    required this.selected,
+    required this.onToggleSelected,
+  });
 
   final MusicInfo music;
   final VoidCallback? onPlay;
+  final bool batchMode;
+  final bool selected;
+  final VoidCallback? onToggleSelected;
 
   @override
   ConsumerState<_OnlinePlaylistTrackTile> createState() =>
@@ -850,6 +1019,9 @@ class _OnlinePlaylistTrackTileState
       coverLoading: fallback?.isLoading ?? false,
       onCoverError: _requestFallbackCover,
       downloadTask: task,
+      batchMode: widget.batchMode,
+      selected: widget.selected,
+      onToggleSelected: widget.onToggleSelected,
       onDownload: () => showQualityPickerSheet(context, widget.music),
       onAddToPlaylist: () => showAddMusicToPlaylist(context, ref, widget.music),
       onPlay: widget.onPlay ?? () {},
@@ -1000,11 +1172,17 @@ class _DetailError extends StatelessWidget {
 }
 
 class _PlaylistTracksHeading extends StatelessWidget {
-  const _PlaylistTracksHeading({this.count, this.total, this.title = '歌曲'});
+  const _PlaylistTracksHeading({
+    this.count,
+    this.total,
+    this.title = '歌曲',
+    this.onBatch,
+  });
 
   final String title;
   final int? count;
   final int? total;
+  final VoidCallback? onBatch;
 
   String get _label {
     final loaded = count;
@@ -1025,16 +1203,30 @@ class _PlaylistTracksHeading extends StatelessWidget {
             maxWidth: 900,
           ),
           child: SizedBox(
-            height: 24,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                _label,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0,
+            height: 44,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _label,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0,
+                    ),
+                  ),
                 ),
-              ),
+                if (onBatch != null)
+                  IconButton(
+                    tooltip: '批量操作',
+                    onPressed: onBatch,
+                    style: IconButton.styleFrom(
+                      foregroundColor: Theme.of(
+                        context,
+                      ).colorScheme.onSurfaceVariant,
+                    ),
+                    icon: const Icon(Icons.checklist_rounded, size: 21),
+                  ),
+              ],
             ),
           ),
         ),

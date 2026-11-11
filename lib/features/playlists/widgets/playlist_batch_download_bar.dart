@@ -14,6 +14,8 @@ class PlaylistBatchDownloadBar extends StatelessWidget {
     required this.onRemove,
     required this.onDownload,
     required this.onPlaySelected,
+    this.showRemove = true,
+    this.onAddToPlaylist,
   });
 
   final int selectedCount;
@@ -22,6 +24,8 @@ class PlaylistBatchDownloadBar extends StatelessWidget {
   final VoidCallback? onRemove;
   final VoidCallback? onDownload;
   final VoidCallback? onPlaySelected;
+  final bool showRemove;
+  final VoidCallback? onAddToPlaylist;
 
   @override
   Widget build(BuildContext context) {
@@ -41,21 +45,30 @@ class PlaylistBatchDownloadBar extends StatelessWidget {
               height: 64,
               child: Row(
                 children: [
-                  Expanded(
-                    child: _PlaylistBatchAction(
-                      icon: MusicActionGlyphs.playlistRemove,
-                      label: selectedCount == 0
-                          ? '移出歌单'
-                          : '移出 $selectedCount 首',
-                      onPressed: submitting ? null : onRemove,
-                      enabledColor: scheme.error,
+                  if (showRemove)
+                    Expanded(
+                      child: _PlaylistBatchAction(
+                        icon: MusicActionGlyphs.playlistRemove,
+                        label: selectedCount == 0
+                            ? '移出歌单'
+                            : '移出 $selectedCount 首',
+                        onPressed: submitting ? null : onRemove,
+                        enabledColor: scheme.error,
+                      ),
                     ),
-                  ),
+                  if (!showRemove)
+                    Expanded(
+                      child: _PlaylistBatchAction(
+                        icon: MusicActionGlyphs.playlistAdd,
+                        label: '加入歌单',
+                        onPressed: submitting ? null : onAddToPlaylist,
+                      ),
+                    ),
                   Expanded(
                     child: _PlaylistBatchAction(
                       icon: MusicActionGlyphs.download,
                       label: submitting
-                          ? '下载中...'
+                          ? '处理中...'
                           : downloadableCount == 0
                           ? '下载选中'
                           : '下载 $downloadableCount 首',

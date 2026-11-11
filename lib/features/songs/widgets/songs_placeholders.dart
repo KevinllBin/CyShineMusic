@@ -62,7 +62,6 @@ class SongsListSummary extends StatelessWidget {
               key: const ValueKey('songs-batch-button'),
               tooltip: '批量操作',
               onPressed: onToggleBatch,
-              active: false,
               icon: const Icon(Icons.checklist_rounded, size: 21),
             ),
         ],
@@ -77,13 +76,11 @@ class _SummaryIconButton extends StatelessWidget {
     required this.tooltip,
     required this.icon,
     required this.onPressed,
-    this.active = false,
   });
 
   final String tooltip;
   final Widget icon;
   final VoidCallback? onPressed;
-  final bool active;
 
   @override
   Widget build(BuildContext context) {
@@ -95,10 +92,7 @@ class _SummaryIconButton extends StatelessWidget {
         onPressed: onPressed,
         style: IconButton.styleFrom(
           minimumSize: const Size.square(48),
-          foregroundColor: active
-              ? scheme.onSecondaryContainer
-              : scheme.onSurfaceVariant,
-          backgroundColor: active ? scheme.secondaryContainer : null,
+          foregroundColor: scheme.onSurfaceVariant,
           disabledForegroundColor: scheme.onSurface.withValues(alpha: 0.34),
         ),
         icon: icon,

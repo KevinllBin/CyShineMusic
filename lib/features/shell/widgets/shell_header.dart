@@ -1,12 +1,12 @@
 import 'package:prism_ui/prism_ui.dart' as prism;
 import 'package:prism_ui/icons/prism_glyphs.dart' as prism_glyphs;
 import 'package:prism_ui/icons/icons.dart' as glyph;
-import 'package:prism_ui/icons/icons.dart' as prism_glyph;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/ui/widgets/app_navigation_button.dart';
+import '../../../core/ui/widgets/batch_selection_button.dart';
 import '../../../core/ui/widgets/header_control_style.dart';
 import '../../../theme/app_motion.dart';
 import '../../settings/settings_section.dart';
@@ -359,11 +359,8 @@ class SongsHeader extends StatelessWidget {
               ),
             ),
             if (state.hasSongs)
-              _SongsHeaderGlyphButton(
-                tooltip: state.allSelected ? '取消全选' : '全选',
-                glyph: state.allSelected
-                    ? prism_glyphs.AppGlyphs.deselect
-                    : prism_glyphs.AppGlyphs.selectAll,
+              BatchSelectionButton(
+                allSelected: state.allSelected,
                 onPressed: state.onToggleSelectAll,
               ),
           ],
@@ -492,36 +489,6 @@ class _SongsHeaderIconButton extends StatelessWidget {
           onPressed: onPressed,
           style: headerControlButtonStyle(context),
           icon: Icon(icon, size: prism.TonalButtonSize.bar.icon),
-        ),
-      ),
-    );
-  }
-}
-
-class _SongsHeaderGlyphButton extends StatelessWidget {
-  const _SongsHeaderGlyphButton({
-    required this.tooltip,
-    required this.glyph,
-    required this.onPressed,
-  });
-
-  final String tooltip;
-  final prism_glyph.Glyph glyph;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return prism.TonalButtonTheme(
-      size: prism.TonalButtonSize.bar,
-      glass: prism.LiquidGlassScope.of(context),
-      child: prism.ElasticPress(
-        child: prism.IconButton(
-          tooltip: tooltip,
-          onPressed: onPressed,
-          icon: prism_glyph.GlyphIcon(
-            glyph,
-            size: prism.TonalButtonSize.bar.icon,
-          ),
         ),
       ),
     );

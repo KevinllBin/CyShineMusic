@@ -907,6 +907,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
 
   void _setBatchMode(bool enabled) {
     if (_batchMode == enabled) return;
+    _searchFocusNode.unfocus();
     setState(() {
       _batchMode = enabled;
       if (!enabled) _selectedIds.clear();

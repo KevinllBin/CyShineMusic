@@ -147,13 +147,6 @@ class _NativeSearchFieldState extends State<NativeSearchField> {
                 style: prism.LiquidGlassStyle.regular(
                   prism.Theme.of(context).colorScheme,
                 ).copyWith(hazeBlur: 10),
-                shadows: [
-                  BoxShadow(
-                    color: scheme.shadow.withValues(alpha: 0.12),
-                    blurRadius: 22,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: scheme.surfaceContainerHigh.withValues(alpha: 0.16),
@@ -172,13 +165,6 @@ class _NativeSearchFieldState extends State<NativeSearchField> {
                   border: Border.all(
                     color: scheme.outlineVariant.withValues(alpha: 0.34),
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: scheme.shadow.withValues(alpha: 0.08),
-                      blurRadius: 14,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
                 ),
                 child: bar,
               );

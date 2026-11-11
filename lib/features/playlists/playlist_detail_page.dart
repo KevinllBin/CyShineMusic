@@ -13,6 +13,7 @@ import '../../core/storage/settings_store.dart';
 import '../../core/ui/app_scrollbar.dart';
 import '../../core/ui/app_toast.dart';
 import '../../core/ui/car_display_layout.dart';
+import '../../core/ui/widgets/batch_selection_button.dart';
 import '../downloads/download_history_store.dart';
 import '../downloads/download_progress.dart';
 import '../music_sources/music_source_action_guard.dart';
@@ -478,22 +479,11 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
         showGradient: !onImage,
         onBack: _toggleBatchMode,
         actions: [
-          ImmersiveTopIconButton(
-            tooltip: allSelected ? '取消全选' : '全选',
-            icon: allSelected
-                ? Icons.deselect_rounded
-                : Icons.select_all_rounded,
+          BatchSelectionButton(
+            allSelected: allSelected,
             onPressed: visibleCount == 0 || _batchSubmitting
                 ? null
                 : _toggleSelectAllVisible,
-            onImage: onImage,
-          ),
-          const SizedBox(width: 4),
-          ImmersiveTopIconButton(
-            tooltip: '退出批量管理',
-            icon: Icons.close_rounded,
-            onPressed: _batchSubmitting ? null : _toggleBatchMode,
-            onImage: onImage,
           ),
         ],
       );
@@ -723,7 +713,8 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
 
   void _toggleBatchMode() {
     if (_batchSubmitting) return;
-    if (_searchMode) _closeSearch();
+    // Keep the query and filtered list when entering selection mode.
+    _searchFocusNode.unfocus();
     final next = !_batchMode;
     setState(() {
       _batchMode = next;
@@ -770,7 +761,7 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
   void _handleSearchFocusChanged() {
     if (!mounted || !_searchMode) return;
     if (!_searchFocusNode.hasFocus) {
-      _restoreToolbarAfterSearchFocus();
+      if (!_batchMode) _restoreToolbarAfterSearchFocus();
       return;
     }
 
@@ -794,7 +785,10 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
 
   void _updateSearchQuery(String query) {
     if (_searchQuery == query) return;
-    setState(() => _searchQuery = query);
+    setState(() {
+      _searchQuery = query;
+      _selectedTrackIds.clear();
+    });
   }
 
   void _toggleSelection(ResolvedPlaylistTrack item) {
@@ -814,9 +808,11 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
           .where(selectableIds.contains)
           .length;
       if (selectedCount == selectableIds.length) {
-        _selectedTrackIds.removeAll(selectableIds);
+        _selectedTrackIds.clear();
       } else {
-        _selectedTrackIds.addAll(selectableIds);
+        _selectedTrackIds
+          ..clear()
+          ..addAll(selectableIds);
       }
     });
   }
@@ -1150,13 +1146,13 @@ class _PlaylistTracksSummary extends StatelessWidget {
             icon: Icons.sort_rounded,
             onPressed: onOpenSort,
           ),
-          _PlaylistSummaryIconButton(
-            key: const ValueKey('playlist-batch-button'),
-            tooltip: batchMode ? '退出批量操作' : '批量操作',
-            icon: Icons.checklist_rounded,
-            onPressed: onToggleBatch,
-            active: batchMode,
-          ),
+          if (!batchMode)
+            _PlaylistSummaryIconButton(
+              key: const ValueKey('playlist-batch-button'),
+              tooltip: '批量操作',
+              onPressed: onToggleBatch,
+              icon: Icons.checklist_rounded,
+            ),
         ],
       ),
     );
@@ -1169,13 +1165,11 @@ class _PlaylistSummaryIconButton extends StatelessWidget {
     required this.tooltip,
     required this.icon,
     required this.onPressed,
-    this.active = false,
   });
 
   final String tooltip;
   final IconData icon;
   final VoidCallback? onPressed;
-  final bool active;
 
   @override
   Widget build(BuildContext context) {
@@ -1186,10 +1180,7 @@ class _PlaylistSummaryIconButton extends StatelessWidget {
         tooltip: tooltip,
         onPressed: onPressed,
         style: IconButton.styleFrom(
-          foregroundColor: active
-              ? scheme.onSecondaryContainer
-              : scheme.onSurfaceVariant,
-          backgroundColor: active ? scheme.secondaryContainer : null,
+          foregroundColor: scheme.onSurfaceVariant,
           disabledForegroundColor: scheme.onSurface.withValues(alpha: 0.34),
         ),
         icon: Icon(icon, size: 21),

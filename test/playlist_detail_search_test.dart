@@ -70,37 +70,52 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('batch and search modes are mutually exclusive', (tester) async {
-    await _useCompactViewport(tester);
-    final container = await _pumpDetailPage(tester);
+  testWidgets(
+    'batch mode preserves the active search when entering and leaving',
+    (tester) async {
+      await _useCompactViewport(tester);
+      final container = await _pumpDetailPage(tester);
 
-    container.read(playlistDetailToolbarStateProvider).onToggleSearch!();
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('header-search-field')), findsOneWidget);
+      container.read(playlistDetailToolbarStateProvider).onToggleSearch!();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('header-search-field')), findsOneWidget);
 
-    container.read(playlistDetailToolbarStateProvider).onToggleBatch!();
-    await tester.pumpAndSettle();
-    expect(
-      container.read(playlistDetailToolbarStateProvider).searchMode,
-      isFalse,
-    );
-    expect(
-      container.read(playlistDetailToolbarStateProvider).batchMode,
-      isTrue,
-    );
-    expect(find.byKey(const ValueKey('header-search-field')), findsNothing);
-    expect(find.byType(prism.Checkbox), findsNWidgets(2));
+      await tester.enterText(
+        find.byKey(const ValueKey('header-search-field')),
+        'First song',
+      );
+      await tester.pump();
 
-    container.read(playlistDetailToolbarStateProvider).onToggleSearch!();
-    await tester.pumpAndSettle();
-    expect(
-      container.read(playlistDetailToolbarStateProvider).batchMode,
-      isFalse,
-    );
-    expect(find.byType(prism.Checkbox), findsNothing);
-    expect(find.byKey(const ValueKey('header-search-field')), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
+      container.read(playlistDetailToolbarStateProvider).onToggleBatch!();
+      await tester.pumpAndSettle();
+      expect(
+        container.read(playlistDetailToolbarStateProvider).searchMode,
+        isTrue,
+      );
+      expect(
+        container.read(playlistDetailToolbarStateProvider).batchMode,
+        isTrue,
+      );
+      expect(find.byKey(const ValueKey('header-search-field')), findsNothing);
+      expect(find.byType(prism.Checkbox), findsOneWidget);
+      expect(find.text('Second song'), findsNothing);
+
+      container.read(playlistDetailToolbarStateProvider).onToggleBatch!();
+      await tester.pumpAndSettle();
+      expect(
+        container.read(playlistDetailToolbarStateProvider).batchMode,
+        isFalse,
+      );
+      expect(find.byType(prism.Checkbox), findsNothing);
+      expect(find.byKey(const ValueKey('header-search-field')), findsOneWidget);
+      expect(find.text('Second song'), findsNothing);
+      expect(
+        container.read(playlistDetailToolbarStateProvider).searchMode,
+        isTrue,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('search focus hides the bottom toolbar and restores on unfocus', (
     tester,

@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:prism_ui/prism_ui.dart' as prism;
 
 import '../../../core/models/enums.dart';
 import '../../../core/models/music_info.dart';
@@ -25,6 +26,9 @@ class SearchResultTile extends StatelessWidget {
     this.coverUrl,
     this.coverLoading = false,
     this.onCoverError,
+    this.batchMode = false,
+    this.selected = false,
+    this.onToggleSelected,
   });
 
   final MusicInfo music;
@@ -35,6 +39,9 @@ class SearchResultTile extends StatelessWidget {
   final String? coverUrl;
   final bool coverLoading;
   final VoidCallback? onCoverError;
+  final bool batchMode;
+  final bool selected;
+  final VoidCallback? onToggleSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -47,7 +54,9 @@ class SearchResultTile extends StatelessWidget {
       artist,
       if (music.albumName.trim().isNotEmpty) music.albumName.trim(),
     ].join(' · ');
-    final backgroundColor = done
+    final backgroundColor = batchMode && selected
+        ? scheme.primaryContainer.withValues(alpha: 0.56)
+        : done
         ? scheme.primaryContainer.withValues(alpha: 0.22)
         : failed
         ? scheme.errorContainer.withValues(alpha: 0.18)
@@ -62,9 +71,10 @@ class SearchResultTile extends StatelessWidget {
         color: Colors.transparent,
         child: Semantics(
           button: true,
-          hint: '轻触播放',
+          selected: batchMode && selected,
+          hint: batchMode ? '轻触选择歌曲' : '轻触播放',
           child: InkWell(
-            onTap: onPlay,
+            onTap: batchMode ? onToggleSelected : onPlay,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(4, 2, 2, 2),
               child: Row(
@@ -86,7 +96,9 @@ class SearchResultTile extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: scheme.onSurface,
+                            color: batchMode && selected
+                                ? scheme.onPrimaryContainer
+                                : scheme.onSurface,
                             fontWeight: FontWeight.w600,
                             fontSize: 14,
                             height: 1.1,
@@ -104,7 +116,11 @@ class SearchResultTile extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  color: scheme.onSurfaceVariant,
+                                  color: batchMode && selected
+                                      ? scheme.onPrimaryContainer.withValues(
+                                          alpha: 0.8,
+                                        )
+                                      : scheme.onSurfaceVariant,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w500,
                                   height: 1.08,
@@ -145,12 +161,21 @@ class SearchResultTile extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 4),
-                  SongActionsMenu.online(
-                    key: ValueKey('search-result-menu-${music.id}'),
-                    onDownload: onDownload,
-                    onAddToPlaylist: onAddToPlaylist,
-                    downloadTask: task,
-                  ),
+                  if (batchMode)
+                    prism.Checkbox(
+                      value: selected,
+                      isCircle: true,
+                      onChanged: onToggleSelected == null
+                          ? null
+                          : (_) => onToggleSelected!(),
+                    )
+                  else
+                    SongActionsMenu.online(
+                      key: ValueKey('search-result-menu-${music.id}'),
+                      onDownload: onDownload,
+                      onAddToPlaylist: onAddToPlaylist,
+                      downloadTask: task,
+                    ),
                 ],
               ),
             ),
