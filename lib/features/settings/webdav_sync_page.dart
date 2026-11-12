@@ -1,17 +1,19 @@
-import '../../theme/app_theme.dart';
-import 'widgets/settings_sheet.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:prism_ui/prism_ui.dart' as prism;
 
 import '../../core/sync/webdav_config_store.dart';
 import '../../core/sync/webdav_sync_controller.dart';
 import '../../core/ui/app_toast.dart';
 import '../../core/ui/car_display_layout.dart';
+import '../../theme/app_theme.dart';
 import '../shell/shell_bottom_area.dart';
 import '../shell/widgets/scrolling_page_header.dart';
 import 'widgets/settings_action.dart';
+import 'widgets/settings_sheet.dart';
+import 'widgets/webdav_connection_fields.dart';
 
 class WebDavSyncPage extends ConsumerStatefulWidget {
   const WebDavSyncPage({super.key});
@@ -25,7 +27,6 @@ class _WebDavSyncPageState extends ConsumerState<WebDavSyncPage> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _autoSync = true;
-  bool _passwordVisible = false;
   bool _initialized = false;
 
   @override
@@ -76,7 +77,7 @@ class _WebDavSyncPageState extends ConsumerState<WebDavSyncPage> {
               16,
               0,
               16,
-              ShellBottomArea.contentPadding(context, 126),
+              ShellBottomArea.contentPadding(context, 118),
             ),
             sliver: SliverToBoxAdapter(
               child: Center(
@@ -89,66 +90,18 @@ class _WebDavSyncPageState extends ConsumerState<WebDavSyncPage> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       SettingsCard(
-                        insetContent: true,
                         title: '连接',
                         children: [
-                          TextField(
-                            key: const ValueKey('webdav-url-field'),
-                            controller: _urlController,
-                            enabled: _initialized && !busy,
-                            keyboardType: TextInputType.url,
-                            textInputAction: TextInputAction.next,
-                            autofillHints: const [AutofillHints.url],
-                            decoration: const InputDecoration(
-                              labelText: 'WebDAV 地址',
-                              hintText:
-                                  'https://dav.example.com/remote.php/dav/files/name',
-                              prefixIcon: Icon(Icons.cloud_outlined),
-                              border: OutlineInputBorder(),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                            child: WebDavConnectionFields(
+                              urlController: _urlController,
+                              usernameController: _usernameController,
+                              passwordController: _passwordController,
+                              enabled: _initialized && !busy,
+                              onSubmitted: _connect,
                             ),
                           ),
-                          const SizedBox(height: 14),
-                          TextField(
-                            key: const ValueKey('webdav-username-field'),
-                            controller: _usernameController,
-                            enabled: _initialized && !busy,
-                            textInputAction: TextInputAction.next,
-                            autofillHints: const [AutofillHints.username],
-                            decoration: const InputDecoration(
-                              labelText: '用户名',
-                              prefixIcon: Icon(Icons.person_outline_rounded),
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          TextField(
-                            key: const ValueKey('webdav-password-field'),
-                            controller: _passwordController,
-                            enabled: _initialized && !busy,
-                            obscureText: !_passwordVisible,
-                            textInputAction: TextInputAction.done,
-                            autofillHints: const [AutofillHints.password],
-                            onSubmitted: (_) => unawaited(_connect()),
-                            decoration: InputDecoration(
-                              labelText: '密码或应用密码',
-                              prefixIcon: const Icon(
-                                Icons.lock_outline_rounded,
-                              ),
-                              suffixIcon: IconButton(
-                                tooltip: _passwordVisible ? '隐藏密码' : '显示密码',
-                                onPressed: () => setState(
-                                  () => _passwordVisible = !_passwordVisible,
-                                ),
-                                icon: Icon(
-                                  _passwordVisible
-                                      ? Icons.visibility_off_outlined
-                                      : Icons.visibility_outlined,
-                                ),
-                              ),
-                              border: const OutlineInputBorder(),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
                           SettingsSwitchAction(
                             icon: Icons.sync_rounded,
                             title: '自动同步',
@@ -169,20 +122,25 @@ class _WebDavSyncPageState extends ConsumerState<WebDavSyncPage> {
                                     }
                                   },
                           ),
-                          const SizedBox(height: 10),
-                          FilledButton.icon(
-                            key: const ValueKey('webdav-connect-button'),
-                            onPressed: _initialized && !busy ? _connect : null,
-                            icon: Icon(
-                              configured
-                                  ? Icons.settings_ethernet_rounded
-                                  : Icons.link_rounded,
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                            child: FilledButton.icon(
+                              key: const ValueKey('webdav-connect-button'),
+                              onPressed: _initialized && !busy
+                                  ? _connect
+                                  : null,
+                              icon: Icon(
+                                configured
+                                    ? Icons.settings_ethernet_rounded
+                                    : Icons.link_rounded,
+                                size: 20,
+                              ),
+                              label: Text(configured ? '重新连接' : '连接'),
                             ),
-                            label: Text(configured ? '重新连接' : '连接'),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 30),
+                      const SizedBox(height: 12),
                       SettingsCard(
                         insetContent: true,
                         title: '同步状态',
@@ -194,13 +152,13 @@ class _WebDavSyncPageState extends ConsumerState<WebDavSyncPage> {
                               spacing: 12,
                               runSpacing: 10,
                               children: [
-                                FilledButton.icon(
+                                prism.FilledButton.icon(
                                   key: const ValueKey('webdav-sync-now-button'),
                                   onPressed: busy ? null : _syncNow,
                                   icon: const Icon(Icons.sync_rounded),
                                   label: const Text('立即同步'),
                                 ),
-                                OutlinedButton.icon(
+                                prism.OutlinedButton.icon(
                                   key: const ValueKey('webdav-unlink-button'),
                                   onPressed: busy ? null : _unlink,
                                   icon: const Icon(Icons.link_off_rounded),
@@ -278,20 +236,19 @@ class _WebDavSyncPageState extends ConsumerState<WebDavSyncPage> {
     final confirmed =
         await showSettingsDialog<bool>(
           context: context,
-          builder: (dialogContext) => AlertDialog(
-            icon: const Icon(Icons.link_off_rounded),
-            title: const Text('解除 WebDAV 连接？'),
-            content: const Text('只会删除本机连接信息，云端同步文件会保留。'),
+          builder: (dialogContext) => prism.AlertDialog(
+            title: '解除 WebDAV 连接？',
             actions: [
-              TextButton(
+              prism.TextButton(
                 onPressed: () => Navigator.of(dialogContext).pop(false),
                 child: const Text('取消'),
               ),
-              FilledButton(
+              prism.TextButton(
                 onPressed: () => Navigator.of(dialogContext).pop(true),
                 child: const Text('解除连接'),
               ),
             ],
+            child: const Text('只会删除本机连接信息，云端同步文件会保留。'),
           ),
         ) ??
         false;
@@ -308,20 +265,19 @@ class _WebDavSyncPageState extends ConsumerState<WebDavSyncPage> {
   Future<bool> _confirmInsecureConnection() async {
     return await showSettingsDialog<bool>(
           context: context,
-          builder: (dialogContext) => AlertDialog(
-            icon: const Icon(Icons.warning_amber_rounded),
-            title: const Text('连接未加密'),
-            content: const Text('HTTP 会明文传输账号和同步数据，仅应在可信局域网中使用。'),
+          builder: (dialogContext) => prism.AlertDialog(
+            title: '连接未加密',
             actions: [
-              TextButton(
+              prism.TextButton(
                 onPressed: () => Navigator.of(dialogContext).pop(false),
                 child: const Text('取消'),
               ),
-              FilledButton(
+              prism.TextButton(
                 onPressed: () => Navigator.of(dialogContext).pop(true),
                 child: const Text('继续连接'),
               ),
             ],
+            child: const Text('HTTP 会明文传输账号和同步数据，仅应在可信局域网中使用。'),
           ),
         ) ??
         false;
@@ -333,23 +289,22 @@ class _WebDavSyncPageState extends ConsumerState<WebDavSyncPage> {
       barrierDismissible: false,
       builder: (dialogContext) => PopScope(
         canPop: false,
-        child: AlertDialog(
-          icon: const Icon(Icons.cloud_sync_outlined),
-          title: const Text('发现云端数据'),
-          content: Text(
-            '云端更新时间：${_formatDateTime(preview.generatedAt.toLocal())}\n'
-            '歌单：${preview.playlistCount} 个 · 音源：${preview.musicSourceCount} 个',
-          ),
+        child: prism.AlertDialog(
+          title: '发现云端数据',
           actions: [
-            TextButton(
+            prism.TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
               child: const Text('用本机覆盖云端'),
             ),
-            FilledButton(
+            prism.TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(true),
               child: const Text('使用云端'),
             ),
           ],
+          child: Text(
+            '云端更新时间：${_formatDateTime(preview.generatedAt.toLocal())}\n'
+            '歌单：${preview.playlistCount} 个 · 音源：${preview.musicSourceCount} 个',
+          ),
         ),
       ),
     );
@@ -365,13 +320,13 @@ class _SyncStatusRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return state.when(
-      loading: () => const ListTile(
-        contentPadding: EdgeInsets.zero,
-        leading: CircularProgressIndicator(),
+      loading: () => const prism.ListRow(
+        padding: EdgeInsets.zero,
+        leading: prism.ActivityIndicator(size: 24, semanticLabel: '正在读取配置'),
         title: Text('正在读取配置'),
       ),
-      error: (error, _) => ListTile(
-        contentPadding: EdgeInsets.zero,
+      error: (error, _) => prism.ListRow(
+        padding: EdgeInsets.zero,
         leading: Icon(Icons.error_outline_rounded, color: scheme.error),
         title: const Text('配置读取失败'),
         subtitle: Text(error.toString()),
@@ -406,8 +361,8 @@ class _SyncStatusRow extends StatelessWidget {
                 : '上次同步 ${_formatDateTime(value.lastSyncedAt!.toLocal())}',
           ),
         };
-        return ListTile(
-          contentPadding: EdgeInsets.zero,
+        return prism.ListRow(
+          padding: EdgeInsets.zero,
           leading: Icon(
             icon,
             color: value.phase == WebDavSyncPhase.failure
@@ -415,9 +370,11 @@ class _SyncStatusRow extends StatelessWidget {
                 : scheme.primary,
           ),
           title: Text(title),
-          subtitle: value.phase == WebDavSyncPhase.failure
-              ? Text(subtitle, maxLines: 3, overflow: TextOverflow.ellipsis)
-              : null,
+          subtitle: Text(
+            subtitle,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+          ),
         );
       },
     );

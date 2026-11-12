@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/ui/animated_empty_state.dart';
 import '../../../core/ui/expressive_loading_status.dart';
 import 'package:prism_ui/prism_ui.dart' as prism;
 import '../../shell/shell_bottom_area.dart';
@@ -172,112 +173,25 @@ class EmptySongs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final normalizedError = error?.trim();
     final hasError = normalizedError != null && normalizedError.isNotEmpty;
-    final containerColor = hasError
-        ? scheme.errorContainer
-        : scheme.secondaryContainer;
-    final contentColor = hasError
-        ? scheme.onErrorContainer
-        : scheme.onSecondaryContainer;
-
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          28,
-          24,
-          28,
-          ShellBottomArea.contentPadding(context, 108),
-        ),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 330),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 88,
-                height: 88,
-                decoration: BoxDecoration(
-                  color: containerColor,
-                  borderRadius: BorderRadius.circular(30),
-                ),
-                child: Icon(
-                  hasError
-                      ? Icons.sync_problem_rounded
-                      : playlistMode
-                      ? Icons.queue_music_rounded
-                      : Icons.library_music_outlined,
-                  size: 40,
-                  color: contentColor,
-                ),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                hasError
-                    ? '暂时无法读取歌曲'
-                    : playlistMode
-                    ? '歌单还是空的'
-                    : '还没有本地歌曲',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: scheme.onSurface,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 18,
-                  letterSpacing: -0.15,
-                ),
-              ),
-              const SizedBox(height: 7),
-              Text(
-                hasError
-                    ? normalizedError
-                    : playlistMode
-                    ? '添加歌曲后，会按歌单中的顺序显示在这里。'
-                    : '本地音乐文件夹里的歌曲会自动出现在这里，也可以下拉重新扫描。',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: scheme.onSurfaceVariant,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  height: 1.5,
-                ),
-              ),
-              if (!playlistMode) ...[
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 13,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: scheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.swipe_down_alt_rounded,
-                        size: 17,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: 7),
-                      Text(
-                        hasError ? '下拉重试' : '下拉重新扫描',
-                        style: TextStyle(
-                          color: scheme.onSurfaceVariant,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
+    return AnimatedEmptyState(
+      kind: hasError
+          ? EmptyStateKind.cloud
+          : playlistMode
+          ? EmptyStateKind.playlist
+          : EmptyStateKind.library,
+      title: hasError
+          ? '暂时无法读取歌曲'
+          : playlistMode
+          ? '歌单还是空的'
+          : '还没有本地歌曲',
+      message: hasError
+          ? normalizedError
+          : playlistMode
+          ? '把喜欢的歌收进来'
+          : '音乐文件夹中的歌曲会显示在这里\n下拉即可重新扫描',
+      bottomPadding: ShellBottomArea.contentPadding(context, 108),
     );
   }
 }
@@ -287,45 +201,11 @@ class EmptySongSearch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          28,
-          20,
-          28,
-          ShellBottomArea.contentPadding(context, 108),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.search_off_rounded,
-              size: 46,
-              color: scheme.onSurfaceVariant,
-            ),
-            const SizedBox(height: 14),
-            Text(
-              '没有匹配的歌曲',
-              style: TextStyle(
-                color: scheme.onSurface,
-                fontSize: 17,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              '换一个歌曲名、歌手或专辑试试',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: scheme.onSurfaceVariant,
-                fontSize: 13,
-                height: 1.45,
-              ),
-            ),
-          ],
-        ),
-      ),
+    return AnimatedEmptyState(
+      kind: EmptyStateKind.search,
+      title: '没有匹配的歌曲',
+      message: '换一个歌曲名、歌手或专辑试试',
+      bottomPadding: ShellBottomArea.contentPadding(context, 108),
     );
   }
 }

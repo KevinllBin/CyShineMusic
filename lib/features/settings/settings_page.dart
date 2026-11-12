@@ -212,6 +212,33 @@ class SettingsPage extends ConsumerWidget {
                                 ],
                               ),
                               SettingsMenuAction(
+                                key: const ValueKey(
+                                  'default-search-source-menu',
+                                ),
+                                menuId: 'default-search-source-menu',
+                                icon: Icons.search_rounded,
+                                title: '默认搜索平台',
+                                options: [
+                                  for (final source in kSearchSources)
+                                    SettingsMenuOption(
+                                      id: source.code,
+                                      label: source == MusicSource.all
+                                          ? '全平台'
+                                          : source.label,
+                                      selected:
+                                          source ==
+                                          settings.defaultSearchSource,
+                                      enabled:
+                                          source == MusicSource.all ||
+                                          settings.enabledSearchSources
+                                              .contains(source),
+                                      onSelected: () => ref
+                                          .read(settingsProvider.notifier)
+                                          .setDefaultSearchSource(source),
+                                    ),
+                                ],
+                              ),
+                              SettingsMenuAction(
                                 key: const ValueKey('search-playback-menu'),
                                 menuId: 'search-playback-menu',
                                 icon: Icons.playlist_play_rounded,
@@ -374,6 +401,26 @@ class SettingsPage extends ConsumerWidget {
                                             ref,
                                             quality,
                                           ),
+                                    ),
+                                ],
+                              ),
+                              SettingsMenuAction(
+                                key: const ValueKey('download-file-name-menu'),
+                                menuId: 'download-file-name-menu',
+                                icon: Icons.drive_file_rename_outline_rounded,
+                                title: '文件命名方式',
+                                options: [
+                                  for (final format
+                                      in DownloadFileNameFormat.values)
+                                    SettingsMenuOption(
+                                      id: format.code,
+                                      label: format.label,
+                                      selected:
+                                          format ==
+                                          settings.downloadFileNameFormat,
+                                      onSelected: () => ref
+                                          .read(settingsProvider.notifier)
+                                          .setDownloadFileNameFormat(format),
                                     ),
                                 ],
                               ),
@@ -1047,7 +1094,7 @@ class SettingsPage extends ConsumerWidget {
         context,
         isContentLocation(path)
             ? '文件夹不可写或授权已失效，请通过系统选择器重新选择'
-            : '所选文件夹不可写，请重新选择，或在「权限与目录」中授予存储权限',
+            : '所选文件夹不可写，请重新选择，或在「权限、下载与目录」中授予存储权限',
         type: AppToastType.error,
       );
       return false;
@@ -1072,7 +1119,7 @@ class SettingsPage extends ConsumerWidget {
         context,
         isContentLocation(path)
             ? '文件夹不可读取或授权已失效，请通过系统选择器重新选择'
-            : '所选文件夹不可读取，请重新选择，或在「权限与目录」中授予存储权限',
+            : '所选文件夹不可读取，请重新选择，或在「权限、下载与目录」中授予存储权限',
         type: AppToastType.error,
       );
       return false;

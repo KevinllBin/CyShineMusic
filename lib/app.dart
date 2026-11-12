@@ -259,7 +259,7 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
     if (root == null || !root.mounted) return false;
     showAppToast(
       root,
-      ok ? '已允许读取本地音乐' : '未授权，可在「设置→权限与目录」中开启音乐和音频权限',
+      ok ? '已允许读取本地音乐' : '未授权，可在「设置→权限、下载与目录」中开启音乐和音频权限',
       type: ok ? AppToastType.success : AppToastType.warning,
     );
     // Let the user return to the library after handling the permission prompt.
@@ -275,7 +275,7 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
             title: const Text('读取本地音乐'),
             content: const Text(
               '允许读取设备上的音乐和音频，在选定文件夹中查找歌曲及封面。\n\n'
-              '暂不授权也可以继续使用，之后可在「设置→权限与目录」中开启。',
+              '暂不授权也可以继续使用，之后可在「设置→权限、下载与目录」中开启。',
             ),
             actions: [
               TextButton(

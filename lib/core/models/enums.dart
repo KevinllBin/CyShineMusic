@@ -36,6 +36,23 @@ const Set<MusicSource> kDefaultEnabledSearchSources = {
   MusicSource.wy,
 };
 
+enum DownloadFileNameFormat {
+  artistTitle('artist_title', '歌手 - 歌名'),
+  titleArtist('title_artist', '歌名 - 歌手');
+
+  const DownloadFileNameFormat(this.code, this.label);
+
+  final String code;
+  final String label;
+
+  static DownloadFileNameFormat fromCode(String? code) {
+    for (final format in values) {
+      if (format.code == code) return format;
+    }
+    return artistTitle;
+  }
+}
+
 enum Quality {
   master('master'),
   atmosPlus('atmos_plus'),

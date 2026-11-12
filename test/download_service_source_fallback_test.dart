@@ -82,7 +82,7 @@ void main() {
     expect(resolver.attemptedIds, ['broken', 'working']);
     expect(resolver.resolveCalled, isFalse);
     expect(File(result.path).readAsBytesSync(), _DownloadAdapter.audioBytes);
-    expect(result.path, endsWith('working.mp3'));
+    expect(result.path, endsWith('Tester - Fallback Song.mp3'));
     expect(cache.listSync(), isEmpty);
     expect(
       container.read(downloadProgressProvider).tasks.single.stage,

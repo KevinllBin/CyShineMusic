@@ -10,7 +10,6 @@ import '../../core/models/search_response.dart';
 import '../../core/models/search_category.dart';
 import '../../core/services/app_logger.dart';
 import '../../core/storage/settings_store.dart';
-import '../discovery/discovery_controller.dart';
 
 class SearchQuery {
   const SearchQuery({
@@ -145,12 +144,15 @@ class SearchController extends Notifier<SearchState> {
         }
       },
     );
-    ref.listen<MusicSource>(selectedDiscoverySourceProvider, (previous, next) {
-      if (state.isSearchActive) return;
-      final source = _defaultSearchSource();
-      if (state.source == source) return;
-      state = state.copyWith(source: source);
-    });
+    ref.listen<MusicSource>(
+      settingsProvider.select((settings) => settings.defaultSearchSource),
+      (previous, next) {
+        if (state.isSearchActive) return;
+        final source = _defaultSearchSource();
+        if (state.source == source) return;
+        state = state.copyWith(source: source);
+      },
+    );
     ref.listen<List<MusicSource>>(
       settingsProvider.select((settings) => settings.discoverySourceOrder),
       (previous, next) {
@@ -339,11 +341,10 @@ class SearchController extends Notifier<SearchState> {
       source == MusicSource.all || enabled.contains(source);
 
   MusicSource _defaultSearchSource([Set<MusicSource>? enabledSources]) {
-    final enabled =
-        enabledSources ?? ref.read(settingsProvider).enabledSearchSources;
-    final discoverySource = ref.read(selectedDiscoverySourceProvider);
-    return enabled.contains(discoverySource)
-        ? discoverySource
+    final settings = ref.read(settingsProvider);
+    final enabled = enabledSources ?? settings.enabledSearchSources;
+    return _sourceEnabled(settings.defaultSearchSource, enabled)
+        ? settings.defaultSearchSource
         : MusicSource.all;
   }
 }

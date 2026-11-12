@@ -48,6 +48,7 @@ class MainActivity : AudioServiceActivity() {
     private var incomingAudioChannel: MethodChannel? = null
     private var pendingAudioUri: Uri? = null
     private var displayListener: DisplayManager.DisplayListener? = null
+    private var screenCorners: ScreenCornersBridge? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -77,6 +78,7 @@ class MainActivity : AudioServiceActivity() {
         super.onResume()
         applyEdgeToEdgeSystemBars()
         applyHighestRefreshRate()
+        window.decorView.post { screenCorners?.refresh() }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -88,12 +90,15 @@ class MainActivity : AudioServiceActivity() {
     }
 
     override fun onDestroy() {
+        screenCorners?.dispose()
+        screenCorners = null
         unregisterDisplayListener()
         super.onDestroy()
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        screenCorners = ScreenCornersBridge(this, flutterEngine.dartExecutor.binaryMessenger)
         if (!flutterEngine.plugins.has(ArtworkColorsPlugin::class.java)) {
             flutterEngine.plugins.add(ArtworkColorsPlugin())
         }
@@ -805,6 +810,7 @@ class MainActivity : AudioServiceActivity() {
             override fun onDisplayChanged(displayId: Int) {
                 if (displayId == currentDisplay()?.displayId) {
                     applyHighestRefreshRate()
+                    window.decorView.post { screenCorners?.refresh() }
                 }
             }
         }

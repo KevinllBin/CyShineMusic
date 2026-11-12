@@ -154,7 +154,7 @@ class _MusicSourcePageState extends ConsumerState<MusicSourcePage> {
           if (!mounted) return;
           showAppToast(
             context,
-            '无法打开内置目录，请在「设置→权限与目录」中授予存储权限',
+            '无法打开内置目录，请在「设置→权限、下载与目录」中授予存储权限',
             type: AppToastType.warning,
           );
           return;

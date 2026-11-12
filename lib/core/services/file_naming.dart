@@ -4,13 +4,20 @@ import '../models/music_info.dart';
 class FileNaming {
   const FileNaming._();
 
-  // Mirrors filterFileName / buildFileName in lx-music-server.
-  // Strips characters that would break common Android filesystems and joins
-  // "{artist - title}.{ext}".
-  static String build(MusicInfo info, String extension) {
+  // Strips characters that would break common Android filesystems.
+  static String build(
+    MusicInfo info,
+    String extension, {
+    DownloadFileNameFormat format = DownloadFileNameFormat.artistTitle,
+  }) {
     final base = info.singer.isEmpty
         ? info.name
-        : '${info.singer} - ${info.name}';
+        : switch (format) {
+            DownloadFileNameFormat.artistTitle =>
+              '${info.singer} - ${info.name}',
+            DownloadFileNameFormat.titleArtist =>
+              '${info.name} - ${info.singer}',
+          };
     final safe = sanitize(base);
     final trimmed = safe.length > 200 ? safe.substring(0, 200) : safe;
     return '$trimmed.$extension';

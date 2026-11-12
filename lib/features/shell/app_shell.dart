@@ -27,6 +27,7 @@ import 'tab_location_memory.dart';
 import 'widgets/discovery_category_fab.dart';
 import 'widgets/dual_capsule_bottom_navigation.dart';
 import 'widgets/native_bottom_navigation.dart';
+import 'widgets/player_surface_clipper.dart';
 import 'widgets/search_paging_fab.dart';
 import 'widgets/toolbar_capsule.dart';
 import 'widgets/toolbar_metrics.dart';
@@ -519,6 +520,7 @@ class _AppShellState extends ConsumerState<AppShell>
         ? _playerReturnLocation
         : widget.routeLocation;
     final viewport = MediaQuery.sizeOf(context);
+    _transition.devicePixelRatio = View.of(context).devicePixelRatio;
     if (_transition.viewport != viewport) {
       _transition.viewport = viewport;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -749,9 +751,14 @@ class _AppShellState extends ConsumerState<AppShell>
                         fit: StackFit.expand,
                         clipBehavior: Clip.none,
                         children: [
-                          ClipRRect(
+                          ClipPath(
                             key: const ValueKey('player-surface-clip'),
-                            clipper: _PlayerSurfaceClipper(_transition.surface),
+                            clipBehavior: p == 1 ? Clip.none : Clip.antiAlias,
+                            clipper: PlayerSurfaceClipper(
+                              _transition.surface,
+                              _transition.screenCorners.curve,
+                              _transition.cornerBlend,
+                            ),
                             child: Stack(
                               fit: StackFit.expand,
                               children: [
@@ -875,14 +882,4 @@ Future<void> _moveAppTaskToBack() async {
     // If the native channel is unavailable, still consume back so Android does
     // not destroy the Flutter route stack.
   }
-}
-
-class _PlayerSurfaceClipper extends CustomClipper<RRect> {
-  const _PlayerSurfaceClipper(this.surface);
-  final RRect surface;
-  @override
-  RRect getClip(Size size) => surface;
-  @override
-  bool shouldReclip(_PlayerSurfaceClipper oldClipper) =>
-      surface != oldClipper.surface;
 }

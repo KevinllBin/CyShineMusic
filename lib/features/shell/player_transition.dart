@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../core/platform/screen_corners.dart';
+
 abstract final class PlayerMotion {
   static const stiffness = 438.64905;
   static const dampingRatio = 1.1;
@@ -13,23 +15,47 @@ abstract final class PlayerMotion {
     return t * t * (3 - 2 * t);
   }
 
-  static RRect surface(Rect start, Size viewport, double progress) {
+  static RRect surface(
+    Rect start,
+    Size viewport,
+    double progress, {
+    List<double> screenRadii = const [0, 0, 0, 0],
+  }) {
     final p = progress.clamp(0.0, 1.0);
-    final rect = Rect.lerp(start, Offset.zero & viewport, p)!;
-    final startDiagonal = math.sqrt(
-      start.width * start.width + start.height * start.height,
-    );
-    final radius = startDiagonal == 0
-        ? 0.0
-        : start.shortestSide /
-              2 /
-              startDiagonal *
-              (1 - p) *
-              math.sqrt(rect.width * rect.width + rect.height * rect.height);
-    return RRect.fromRectAndRadius(
+    final end = Offset.zero & viewport;
+    final rect = Rect.lerp(start, end, p)!;
+    // The physical display owns the fully expanded edge, avoiding double clipping.
+    if (p == 1 || start.isEmpty || viewport.isEmpty) {
+      return RRect.fromRectAndRadius(rect, Radius.zero);
+    }
+    double diagonal(Rect r) => r.size.bottomRight(Offset.zero).distance;
+    final startRadius = start.shortestSide / 2 / diagonal(start);
+    final endDiagonal = diagonal(end);
+    double radiusAt(double radius, double t) =>
+        (startRadius * (1 - t) + radius / endDiagonal * t) *
+        diagonal(Rect.lerp(start, end, t)!);
+    final q = (p / 0.9).clamp(0.0, 1.0);
+    final gaps = [
+      rect.topLeft - end.topLeft,
+      rect.topRight - end.topRight,
+      rect.bottomRight - end.bottomRight,
+      rect.bottomLeft - end.bottomLeft,
+    ];
+    final radii = List.generate(4, (i) {
+      final target = screenRadii[i];
+      final ahead = radiusAt(target, q);
+      final radius = target <= 0
+          ? radiusAt(0, p)
+          : ahead + (target - ahead) * q * target / (gaps[i].distance + target);
+      return Radius.circular(radius);
+    });
+    return RRect.fromRectAndCorners(
       rect,
-      Radius.circular(math.min(radius, rect.shortestSide / 2)),
-    );
+      topLeft: radii[0],
+      topRight: radii[1],
+      bottomRight: radii[2],
+      bottomLeft: radii[3],
+    ).scaleRadii();
   }
 
   static Rect cover(Rect start, Rect end, double progress) {
@@ -140,10 +166,12 @@ class PlayerSpringSimulation extends Simulation {
 class PlayerTransition extends ChangeNotifier {
   PlayerTransition({required this.progress, required this.rotation}) {
     progress.addListener(notifyListeners);
+    screenCorners.addListener(notifyListeners);
   }
 
   final Animation<double> progress;
   final Animation<double> rotation;
+  final screenCorners = ScreenCorners();
   final rootKey = GlobalKey(debugLabel: 'player-transition-root');
   final surfaceKey = GlobalKey(debugLabel: 'player-capsule-anchor');
   final miniCoverKey = GlobalKey(debugLabel: 'player-mini-cover-anchor');
@@ -152,6 +180,7 @@ class PlayerTransition extends ChangeNotifier {
   Rect? collapsedSurface, miniCover, fullCover;
   Size viewport = Size.zero;
   double bottomInset = 0;
+  double devicePixelRatio = 1;
 
   Rect get sourceSurface =>
       collapsedSurface ??
@@ -167,8 +196,16 @@ class PlayerTransition extends ChangeNotifier {
       progress.value < 1 &&
       miniCover != null &&
       fullCover != null;
-  RRect get surface =>
-      PlayerMotion.surface(sourceSurface, viewport, progress.value);
+  RRect get surface => PlayerMotion.surface(
+    sourceSurface,
+    viewport,
+    progress.value,
+    screenRadii: screenCorners.radiiFor(viewport, devicePixelRatio),
+  );
+  double get cornerBlend =>
+      screenCorners.radiiFor(viewport, devicePixelRatio).any((r) => r > 0)
+      ? PlayerMotion.interval(progress.value, 0.12, 0.5)
+      : 0;
   Rect? get coverRect => flying
       ? PlayerMotion.cover(miniCover!, fullCover!, progress.value)
       : null;
@@ -221,6 +258,8 @@ class PlayerTransition extends ChangeNotifier {
 
   @override
   void dispose() {
+    screenCorners.removeListener(notifyListeners);
+    screenCorners.dispose();
     progress.removeListener(notifyListeners);
     super.dispose();
   }

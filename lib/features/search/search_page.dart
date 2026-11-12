@@ -12,7 +12,6 @@ import '../../core/models/music_info.dart';
 import '../../core/storage/settings_store.dart';
 import '../../core/ui/app_toast.dart';
 import '../discovery/discovery_content.dart';
-import '../discovery/discovery_controller.dart';
 import '../music_sources/music_source_action_guard.dart';
 import '../player/player_controller.dart';
 import '../playlists/playlist_models.dart';
@@ -394,10 +393,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   }
 
   MusicSource _sourceForSearchRequest(SearchState state) {
-    if (state.isSearchActive) return state.source;
-    final discoverySource = ref.read(selectedDiscoverySourceProvider);
     final enabled = ref.read(settingsProvider).enabledSearchSources;
-    if (enabled.contains(discoverySource)) return discoverySource;
     return state.source == MusicSource.all || !enabled.contains(state.source)
         ? MusicSource.all
         : state.source;

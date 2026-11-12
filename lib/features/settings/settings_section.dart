@@ -8,12 +8,12 @@ enum SettingsSection {
   ),
   playback(
     title: '搜索与播放',
-    subtitle: '搜索源、播放音质、均衡器、定时关闭与蓝牙歌词',
+    subtitle: '搜索源、默认搜索平台、播放音质、均衡器与蓝牙歌词',
     icon: Icons.play_circle_outline_rounded,
   ),
   downloads(
-    title: '权限与目录',
-    subtitle: '存储授权、下载音质、下载位置与音乐扫描文件夹',
+    title: '权限、下载与目录',
+    subtitle: '存储授权、下载音质、文件命名、下载位置与音乐扫描文件夹',
     icon: Icons.folder_shared_outlined,
   ),
   appearance(

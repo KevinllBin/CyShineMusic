@@ -2,6 +2,7 @@ import 'package:bass_player/bass_player.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:prism_ui/prism_ui.dart' as prism;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:cy_shine_music/core/storage/settings_store.dart';
@@ -138,11 +139,17 @@ void main() {
       ),
     );
 
-    expect(find.text('均衡器已关闭'), findsOneWidget);
-    expect(find.byType(Switch), findsOneWidget);
-    await tester.tap(find.byType(Switch));
+    expect(find.text('启用均衡器'), findsOneWidget);
+    expect(
+      tester.widget<prism.Switch>(find.byType(prism.Switch)).value,
+      isFalse,
+    );
+    await tester.tap(find.byType(prism.Switch));
     await tester.pump();
-    expect(find.text('均衡器已开启'), findsOneWidget);
+    expect(
+      tester.widget<prism.Switch>(find.byType(prism.Switch)).value,
+      isTrue,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -191,8 +198,10 @@ void main() {
       await tester.drag(find.byType(CustomScrollView), const Offset(0, -500));
       await tester.pumpAndSettle();
 
-      final editButton = find.byTooltip('编辑频段').first;
+      final editButton = find.byTooltip(RegExp(r'^编辑 .+ 频段$')).first;
       expect(editButton, findsOneWidget);
+      await tester.ensureVisible(editButton);
+      await tester.pumpAndSettle();
       await tester.tap(editButton);
       await tester.pumpAndSettle();
 

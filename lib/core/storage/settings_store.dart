@@ -16,6 +16,7 @@ import 'base_url.dart';
 export 'base_url.dart';
 
 const String _kDownloadDirKey = 'download_dir';
+const String _kDownloadFileNameFormatKey = 'download_file_name_format';
 const String _kLocalMusicDirKey = 'local_music_dir';
 const String _kLocalMusicDirsKey = 'local_music_dirs';
 const String _kUseBuiltInSourceFilePickerKey =
@@ -43,6 +44,7 @@ const String _kUseNativeNavigationKey = 'use_native_navigation';
 const String _kNavigationModeKey = 'navigation_mode';
 const String _kNetworkAdapterModeKey = 'network_adapter_mode';
 const String _kEnabledSearchSourcesKey = 'enabled_search_source_codes';
+const String _kDefaultSearchSourceKey = 'default_search_source';
 const String _kReplaceQueueOnSearchPlayKey = 'replace_queue_on_search_play';
 const String _kDiscoverySourceOrderKey = 'discovery_source_order';
 const String _kPlatformButtonOnLeftKey = 'platform_button_on_left';
@@ -105,6 +107,7 @@ enum AppNavigationMode {
 class AppSettings {
   const AppSettings({
     required this.downloadDir,
+    this.downloadFileNameFormat = DownloadFileNameFormat.artistTitle,
     required this.localMusicDirs,
     this.useBuiltInSourceFilePicker = false,
     required this.themeMode,
@@ -128,6 +131,7 @@ class AppSettings {
     required this.navigationMode,
     required this.networkAdapterMode,
     required this.enabledSearchSources,
+    this.defaultSearchSource = MusicSource.all,
     this.replaceQueueOnSearchPlay = true,
     required this.discoverySourceOrder,
     this.platformButtonOnLeft = false,
@@ -143,6 +147,7 @@ class AppSettings {
   });
 
   final String downloadDir;
+  final DownloadFileNameFormat downloadFileNameFormat;
   final List<String> localMusicDirs;
   String get localMusicDir => localMusicDirs.first;
   final bool useBuiltInSourceFilePicker;
@@ -177,6 +182,7 @@ class AppSettings {
   bool get useNativeNavigation => navigationMode == AppNavigationMode.native;
   final NetworkAdapterMode networkAdapterMode;
   final Set<MusicSource> enabledSearchSources;
+  final MusicSource defaultSearchSource;
 
   /// Applies to song search results in discovery, libraries and collections.
   final bool replaceQueueOnSearchPlay;
@@ -197,6 +203,7 @@ class AppSettings {
 
   AppSettings copyWith({
     String? downloadDir,
+    DownloadFileNameFormat? downloadFileNameFormat,
     String? localMusicDir,
     List<String>? localMusicDirs,
     bool? useBuiltInSourceFilePicker,
@@ -222,6 +229,7 @@ class AppSettings {
     bool? useNativeNavigation,
     NetworkAdapterMode? networkAdapterMode,
     Set<MusicSource>? enabledSearchSources,
+    MusicSource? defaultSearchSource,
     bool? replaceQueueOnSearchPlay,
     List<MusicSource>? discoverySourceOrder,
     bool? platformButtonOnLeft,
@@ -236,6 +244,8 @@ class AppSettings {
     bool? debugMode,
   }) => AppSettings(
     downloadDir: downloadDir ?? this.downloadDir,
+    downloadFileNameFormat:
+        downloadFileNameFormat ?? this.downloadFileNameFormat,
     localMusicDirs:
         localMusicDirs ??
         (localMusicDir != null ? [localMusicDir] : this.localMusicDirs),
@@ -271,6 +281,7 @@ class AppSettings {
             : this.navigationMode),
     networkAdapterMode: networkAdapterMode ?? this.networkAdapterMode,
     enabledSearchSources: enabledSearchSources ?? this.enabledSearchSources,
+    defaultSearchSource: defaultSearchSource ?? this.defaultSearchSource,
     replaceQueueOnSearchPlay:
         replaceQueueOnSearchPlay ?? this.replaceQueueOnSearchPlay,
     discoverySourceOrder: discoverySourceOrder ?? this.discoverySourceOrder,
@@ -332,8 +343,17 @@ class SettingsNotifier extends Notifier<AppSettings> {
     }
     final downloadDir =
         _prefs.getString(_kDownloadDirKey) ?? kDefaultDownloadDir;
+    final enabledSearchSources = decodeEnabledSearchSources(
+      _prefs.getStringList(_kEnabledSearchSourcesKey),
+    );
+    final defaultSearchSource = MusicSource.fromCode(
+      _prefs.getString(_kDefaultSearchSourceKey) ?? 'all',
+    );
     return AppSettings(
       downloadDir: downloadDir,
+      downloadFileNameFormat: DownloadFileNameFormat.fromCode(
+        _prefs.getString(_kDownloadFileNameFormatKey),
+      ),
       localMusicDirs: _normalizeLocalMusicDirs(
         _prefs.getStringList(_kLocalMusicDirsKey) ??
             [_prefs.getString(_kLocalMusicDirKey) ?? downloadDir],
@@ -389,9 +409,10 @@ class SettingsNotifier extends Notifier<AppSettings> {
           _prefs.getBool(_kCheckForUpdatesOnStartupKey) ?? true,
       navigationMode: _decodeNavigationMode(_prefs),
       networkAdapterMode: NetworkAdapterPreference.current,
-      enabledSearchSources: decodeEnabledSearchSources(
-        _prefs.getStringList(_kEnabledSearchSourcesKey),
-      ),
+      enabledSearchSources: enabledSearchSources,
+      defaultSearchSource: enabledSearchSources.contains(defaultSearchSource)
+          ? defaultSearchSource
+          : MusicSource.all,
       replaceQueueOnSearchPlay:
           _prefs.getBool(_kReplaceQueueOnSearchPlayKey) ?? true,
       discoverySourceOrder: decodeDiscoverySourceOrder(
@@ -451,6 +472,11 @@ class SettingsNotifier extends Notifier<AppSettings> {
     } else {
       state = state.copyWith(downloadDir: value);
     }
+  }
+
+  Future<void> setDownloadFileNameFormat(DownloadFileNameFormat format) async {
+    await _prefs.setString(_kDownloadFileNameFormatKey, format.code);
+    state = state.copyWith(downloadFileNameFormat: format);
   }
 
   Future<void> setLocalMusicDir(String value) => setLocalMusicDirs([value]);
@@ -849,10 +875,26 @@ class SettingsNotifier extends Notifier<AppSettings> {
       _kEnabledSearchSourcesKey,
       ordered.map((candidate) => candidate.code).toList(growable: false),
     );
+    final defaultSource = ordered.contains(state.defaultSearchSource)
+        ? state.defaultSearchSource
+        : MusicSource.all;
+    if (defaultSource != state.defaultSearchSource) {
+      await _prefs.setString(_kDefaultSearchSourceKey, defaultSource.code);
+    }
     state = state.copyWith(
       enabledSearchSources: Set<MusicSource>.unmodifiable(ordered),
+      defaultSearchSource: defaultSource,
     );
     return true;
+  }
+
+  Future<void> setDefaultSearchSource(MusicSource source) async {
+    if (source != MusicSource.all &&
+        !state.enabledSearchSources.contains(source)) {
+      return;
+    }
+    await _prefs.setString(_kDefaultSearchSourceKey, source.code);
+    state = state.copyWith(defaultSearchSource: source);
   }
 
   Future<void> setDiscoverySourceOrder(Iterable<MusicSource> sources) async {

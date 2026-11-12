@@ -279,7 +279,7 @@ void main() {
     controller.fail('TX 搜索暂时受限');
     expect(container.read(searchControllerProvider).error, 'TX 搜索暂时受限');
     await tester.pump();
-    await tester.pumpAndSettle();
+    await _pumpUi(tester);
     expect(container.read(searchControllerProvider).error, 'TX 搜索暂时受限');
     expect(find.text('TX 搜索暂时受限'), findsOneWidget);
     expect(find.byKey(const ValueKey('app-toast-capsule')), findsOneWidget);

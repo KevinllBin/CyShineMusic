@@ -830,7 +830,9 @@ void main() {
     expect(find.byKey(const ValueKey('discovery-category-fab')), findsNothing);
   });
 
-  testWidgets('discovery source seeds the next search source', (tester) async {
+  testWidgets('discovery platform keeps the default search source', (
+    tester,
+  ) async {
     await _useViewport(tester, const Size(390, 844));
     final prefs = await _freshPreferences();
     final fake = _FakeDiscoveryApi();
@@ -845,7 +847,7 @@ void main() {
 
     await tester.pumpWidget(_appWithContainer(container, const SearchPage()));
     await tester.pumpAndSettle();
-    expect(container.read(searchControllerProvider).source, MusicSource.kw);
+    expect(container.read(searchControllerProvider).source, MusicSource.all);
 
     await tester.tap(find.byKey(const ValueKey('search-platform-menu-anchor')));
     await tester.pumpAndSettle();
@@ -853,7 +855,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(container.read(selectedDiscoverySourceProvider), MusicSource.tx);
-    expect(container.read(searchControllerProvider).source, MusicSource.tx);
+    expect(container.read(searchControllerProvider).source, MusicSource.all);
     expect(find.byKey(const ValueKey('discovery-card-tx:1')), findsOneWidget);
 
     await tester.tap(find.byType(SearchBar));
@@ -863,9 +865,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(fake.searchRequests, [
-      const SearchQuery(keyword: '周杰伦', source: MusicSource.tx, page: 1),
+      const SearchQuery(keyword: '周杰伦', source: MusicSource.all, page: 1),
     ]);
-    expect(container.read(searchControllerProvider).source, MusicSource.tx);
+    expect(container.read(searchControllerProvider).source, MusicSource.all);
   });
 
   testWidgets('long press preview lists only the first eight tracks', (

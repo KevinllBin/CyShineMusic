@@ -6,6 +6,7 @@ import 'package:flutter_slidable/flutter_slidable.dart';
 import '../../core/services/saf_storage.dart';
 import '../../core/services/local_audio_source.dart';
 import '../../core/ui/app_toast.dart';
+import '../../core/ui/animated_empty_state.dart';
 import '../../core/ui/configurable_m3e_progress.dart';
 import '../../core/ui/cover_image_source.dart';
 import '../../theme/app_motion.dart';
@@ -641,73 +642,24 @@ class _EmptyDownloads extends StatelessWidget {
   const _EmptyDownloads();
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.6)),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.download_done_rounded, color: scheme.onSurfaceVariant),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              '暂无进行中的下载',
-              style: TextStyle(
-                color: scheme.onSurfaceVariant,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const AnimatedEmptyState(
+    kind: EmptyStateKind.downloads,
+    title: '暂无进行中的下载',
+    message: '歌曲开始下载后，可在这里查看进度',
+    compact: true,
+  );
 }
 
 class _EmptyHistory extends StatelessWidget {
   const _EmptyHistory();
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    const label = '暂无下载历史';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 28),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.6)),
-      ),
-      child: Column(
-        children: [
-          Icon(
-            Icons.history_toggle_off_rounded,
-            size: 42,
-            color: scheme.onSurfaceVariant,
-          ),
-          const SizedBox(height: 10),
-          Text(
-            label,
-            style: TextStyle(
-              color: scheme.onSurface,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '下载完成后会自动出现在这里',
-            style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const AnimatedEmptyState(
+    kind: EmptyStateKind.history,
+    title: '暂无下载历史',
+    message: '下载完成的歌曲会留在这里',
+    compact: true,
+  );
 }
 
 class _AnimatedListItem extends StatefulWidget {

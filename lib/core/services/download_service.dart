@@ -232,10 +232,10 @@ class DownloadService {
               requestedQuality,
               resolvedQuality,
             );
-            final fileName = FileNaming.resolvedOrBuild(
+            final fileName = FileNaming.build(
               music,
               extension,
-              musicUrl.fileName,
+              format: settings.downloadFileNameFormat,
             );
             final candidateTmpPath = p.join(taskCacheDir!.path, fileName);
 

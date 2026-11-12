@@ -8,6 +8,7 @@ import '../../../core/models/music_info.dart';
 import '../../../core/models/online_collection_kind.dart';
 import '../../../core/models/search_category.dart';
 import '../../../core/ui/expressive_loading_status.dart';
+import '../../../core/ui/animated_empty_state.dart';
 import '../../../core/ui/container_transform.dart';
 import '../../../core/ui/widgets/spring_artwork_hero.dart';
 import '../../../core/ui/cover_image_source.dart';
@@ -350,35 +351,12 @@ class _SearchEmpty extends StatelessWidget {
   final String title, message;
   final VoidCallback onRetry;
   @override
-  Widget build(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(28),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.manage_search_rounded,
-            size: 56,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-          const SizedBox(height: 16),
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextButton.icon(
-            onPressed: onRetry,
-            icon: const Icon(Icons.refresh_rounded),
-            label: const Text('重新搜索'),
-          ),
-        ],
-      ),
-    ),
+  Widget build(BuildContext context) => AnimatedEmptyState(
+    kind: title == '没有找到结果' ? EmptyStateKind.search : EmptyStateKind.cloud,
+    title: title,
+    message: message,
+    actionLabel: '重新搜索',
+    onAction: onRetry,
+    bottomPadding: ShellBottomArea.contentPadding(context, 108),
   );
 }
