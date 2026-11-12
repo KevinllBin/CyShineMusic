@@ -149,6 +149,9 @@ class _CyShineMusicAppState extends ConsumerState<CyShineMusicApp>
       if (!mounted || _openedExternalAudio) return;
       final canCheckForUpdate = await _checkPermission();
       if (!canCheckForUpdate) return;
+      if (!mounted || !ref.read(settingsProvider).checkForUpdatesOnStartup) {
+        return;
+      }
       final context = rootNavigatorKey.currentContext;
       if (context == null || !context.mounted) return;
       await checkForAppUpdate(context, ref);

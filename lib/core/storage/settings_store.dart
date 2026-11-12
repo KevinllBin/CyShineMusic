@@ -38,6 +38,7 @@ const String _kCarDisplayEnabledKey = 'car_display_enabled';
 const String _kCarDisplaySizeKey = 'car_display_size';
 const String _kAutoPlayOnStartupKey = 'auto_play_on_startup';
 const String _kSkipStartupScreenKey = 'skip_startup_screen';
+const String _kCheckForUpdatesOnStartupKey = 'check_for_updates_on_startup';
 const String _kUseNativeNavigationKey = 'use_native_navigation';
 const String _kNavigationModeKey = 'navigation_mode';
 const String _kNetworkAdapterModeKey = 'network_adapter_mode';
@@ -123,6 +124,7 @@ class AppSettings {
     this.carDisplaySize = 1.0,
     this.autoPlayOnStartup = false,
     this.skipStartupScreen = false,
+    this.checkForUpdatesOnStartup = true,
     required this.navigationMode,
     required this.networkAdapterMode,
     required this.enabledSearchSources,
@@ -170,6 +172,7 @@ class AppSettings {
   final double carDisplaySize;
   final bool autoPlayOnStartup;
   final bool skipStartupScreen;
+  final bool checkForUpdatesOnStartup;
   final AppNavigationMode navigationMode;
   bool get useNativeNavigation => navigationMode == AppNavigationMode.native;
   final NetworkAdapterMode networkAdapterMode;
@@ -214,6 +217,7 @@ class AppSettings {
     double? carDisplaySize,
     bool? autoPlayOnStartup,
     bool? skipStartupScreen,
+    bool? checkForUpdatesOnStartup,
     AppNavigationMode? navigationMode,
     bool? useNativeNavigation,
     NetworkAdapterMode? networkAdapterMode,
@@ -256,6 +260,8 @@ class AppSettings {
     carDisplaySize: carDisplaySize ?? this.carDisplaySize,
     autoPlayOnStartup: autoPlayOnStartup ?? this.autoPlayOnStartup,
     skipStartupScreen: skipStartupScreen ?? this.skipStartupScreen,
+    checkForUpdatesOnStartup:
+        checkForUpdatesOnStartup ?? this.checkForUpdatesOnStartup,
     navigationMode:
         navigationMode ??
         (useNativeNavigation != null
@@ -379,6 +385,8 @@ class SettingsNotifier extends Notifier<AppSettings> {
       ),
       autoPlayOnStartup: _prefs.getBool(_kAutoPlayOnStartupKey) ?? false,
       skipStartupScreen: _prefs.getBool(_kSkipStartupScreenKey) ?? false,
+      checkForUpdatesOnStartup:
+          _prefs.getBool(_kCheckForUpdatesOnStartupKey) ?? true,
       navigationMode: _decodeNavigationMode(_prefs),
       networkAdapterMode: NetworkAdapterPreference.current,
       enabledSearchSources: decodeEnabledSearchSources(
@@ -637,6 +645,11 @@ class SettingsNotifier extends Notifier<AppSettings> {
   Future<void> setSkipStartupScreen(bool value) async {
     await _prefs.setBool(_kSkipStartupScreenKey, value);
     state = state.copyWith(skipStartupScreen: value);
+  }
+
+  Future<void> setCheckForUpdatesOnStartup(bool value) async {
+    await _prefs.setBool(_kCheckForUpdatesOnStartupKey, value);
+    state = state.copyWith(checkForUpdatesOnStartup: value);
   }
 
   Future<void> setNavigationMode(AppNavigationMode mode) async {
