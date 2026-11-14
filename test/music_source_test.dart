@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:cy_shine_music/core/models/enums.dart';
+import 'package:cy_shine_music/core/sdk/internal/builders.dart';
+import 'package:cy_shine_music/core/sdk/qs_sdk.dart';
 import 'package:cy_shine_music/core/music_sources/music_source_metadata_parser.dart';
 import 'package:cy_shine_music/core/music_sources/music_source_models.dart';
 import 'package:cy_shine_music/core/music_sources/music_source_runtime.dart';
@@ -61,6 +63,36 @@ void main() {
     expect(capabilities.keys, [MusicSource.kw]);
     expect(capabilities[MusicSource.kw], [Quality.k128, Quality.k320]);
   });
+
+  test(
+    'Qishui catalogue IDs and source capabilities reach the runtime adapter',
+    () {
+      final music = QsSdk.parseTrack({
+        'id': '6778775242320906241',
+        'name': '测试歌曲',
+        'artists': [
+          {'name': '测试歌手'},
+        ],
+      })!;
+      final legacy = toOldMusicInfoJson(music, quality: Quality.k320);
+      expect(legacy['source'], 'qs');
+      expect(legacy['songmid'], '6778775242320906241');
+      final capabilities = MusicSourceRecord.parseRuntimeCapabilities({
+        'sources': {
+          'qs': {
+            'type': 'music',
+            'actions': ['musicUrl'],
+            'qualitys': ['128k', '320k', 'flac'],
+          },
+        },
+      });
+      expect(capabilities[MusicSource.qs], [
+        Quality.k128,
+        Quality.k320,
+        Quality.flac,
+      ]);
+    },
+  );
 
   test('quality selection falls back downward within the intersection', () {
     expect(

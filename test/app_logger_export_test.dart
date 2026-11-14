@@ -156,7 +156,14 @@ void main() {
         // A later user stop must not hide the preceding fatal crash.
         'recentProcessExits': [
           {'timestamp': 2000, 'reasonName': 'USER_REQUESTED'},
-          {'timestamp': 1000, 'reasonName': 'CRASH_NATIVE'},
+          {
+            'timestamp': 1000,
+            'reasonName': 'CRASH_NATIVE',
+            'nativeTrace':
+                'signal: SIGSEGV SEGV_MAPERR fault=0x0 tid=7\n'
+                '${'#00 pc 0x1f2c libflutter.so (frame-filler)\n' * 120}'
+                '#120 pc 0x2a libapp.so (trace-tail-marker)',
+          },
         ],
       };
       await Future.wait([
@@ -177,6 +184,7 @@ void main() {
       final exported = await File(await AppLogger.exportFile()).readAsString();
       expect(exported, contains('java-marker'));
       expect(exported, contains('CRASH_NATIVE'));
+      expect(exported, contains('trace-tail-marker'));
       expect(exported, contains('USER_REQUESTED'));
       expect(exported, isNot(contains('secret')));
       expect(exported, isNot(contains('"javaCrash":')));

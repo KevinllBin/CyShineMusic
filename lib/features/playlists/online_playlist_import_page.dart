@@ -357,6 +357,15 @@ class _ImportForm extends StatelessWidget {
                     icon: Icon(Icons.library_music_rounded, size: 18),
                     label: Text('咪咕'),
                   ),
+                  ButtonSegment(
+                    value: MusicSource.qs,
+                    icon: Image(
+                      image: AssetImage('assets/platform_icons/qs.png'),
+                      width: 18,
+                      height: 18,
+                    ),
+                    label: Text('汽水'),
+                  ),
                 ],
                 selected: {source},
                 showSelectedIcon: false,
@@ -385,7 +394,9 @@ class _ImportForm extends StatelessWidget {
             minLines: 1,
             decoration: InputDecoration(
               labelText: '歌单链接或 ID',
-              hintText: 'https://music.163.com/playlist?id=...',
+              hintText: source == MusicSource.qs
+                  ? '粘贴汽水歌单分享文字、链接或 ID'
+                  : '粘贴歌单链接或完整分享文字',
               prefixIcon: const Icon(Icons.link_rounded),
               suffixIcon: IconButton(
                 tooltip: '清空',

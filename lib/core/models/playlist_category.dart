@@ -42,6 +42,9 @@ List<PlaylistCatalogCategory> playlistCatalogCategoriesFor(
   MusicSource.tx => _qqPlaylistCategories,
   MusicSource.wy => _neteasePlaylistCategories,
   MusicSource.mg => _miguPlaylistCategories,
+  MusicSource.qs => const [
+    PlaylistCatalogCategory(id: 'recommend', label: '推荐'),
+  ],
   MusicSource.all => const <PlaylistCatalogCategory>[],
 };
 

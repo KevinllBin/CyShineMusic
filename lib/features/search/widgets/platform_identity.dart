@@ -21,6 +21,7 @@ extension MusicSourceBrand on MusicSource {
     MusicSource.kg => const Color(0xFF0066FF),
     MusicSource.kw => const Color(0xFFFFC900),
     MusicSource.mg => const Color(0xFFF52879),
+    MusicSource.qs => const Color(0xFF2BFF6A),
     MusicSource.all => null,
   };
 }

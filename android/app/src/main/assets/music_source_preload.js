@@ -178,7 +178,7 @@ globalThis.music_source_setup = metadataJson => {
     }).finally(finishResolve)
   }
 
-  const supportedSources = new Set(['kw', 'kg', 'tx', 'wy', 'mg'])
+  const supportedSources = new Set(['kw', 'kg', 'tx', 'wy', 'mg', 'qs'])
   const supportedQualities = new Set([
     '128k', '192k', '320k', 'ape', 'wav', 'flac', 'flac24bit',
     'hires', 'atmos', 'atmos_plus', 'master',

@@ -5,6 +5,7 @@ import '../models/playlist_category.dart';
 import '../models/playlist_summary.dart';
 import 'internal/format.dart';
 import 'internal/sdk_http.dart';
+import 'qs_sdk.dart';
 
 class PlaylistCatalogSdk {
   const PlaylistCatalogSdk._();
@@ -66,6 +67,10 @@ class PlaylistCatalogSdk {
         limit,
         requestedCategory,
         load,
+      ),
+      MusicSource.qs => await qishuiSdk.featured(
+        page: requestedPage,
+        limit: limit,
       ),
       MusicSource.all => const <PlaylistSummary>[],
     };

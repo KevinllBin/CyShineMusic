@@ -26,7 +26,35 @@ void main() {
   });
 
   test(
-    'settings default to four search sources and highest quality preferences',
+    'Qishui search is added once on upgrade and stays disabled after an explicit choice',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        'enabled_search_source_codes': ['kw'],
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final first = _settingsContainer(prefs);
+      expect(first.read(settingsProvider).enabledSearchSources, {
+        MusicSource.kw,
+        MusicSource.qs,
+      });
+      await first
+          .read(settingsProvider.notifier)
+          .setSearchSourceEnabled(MusicSource.qs, false);
+      first.dispose();
+      final restored = _settingsContainer(prefs);
+      addTearDown(restored.dispose);
+      expect(restored.read(settingsProvider).enabledSearchSources, {
+        MusicSource.kw,
+      });
+      expect(
+        restored.read(settingsProvider).enabledSearchSources,
+        isNot(contains(MusicSource.mg)),
+      );
+    },
+  );
+
+  test(
+    'settings default to five search sources and highest quality preferences',
     () async {
       final prefs = await SharedPreferences.getInstance();
       final container = _settingsContainer(prefs);
@@ -487,7 +515,12 @@ void main() {
       );
       await notifier.setOnlinePlaybackQuality(OnlinePlaybackQuality.lossless);
       await notifier.setBatchDownloadQuality(OnlinePlaybackQuality.high);
-      for (final source in [MusicSource.kg, MusicSource.tx, MusicSource.wy]) {
+      for (final source in [
+        MusicSource.kg,
+        MusicSource.tx,
+        MusicSource.wy,
+        MusicSource.qs,
+      ]) {
         expect(await notifier.setSearchSourceEnabled(source, false), isTrue);
       }
       expect(

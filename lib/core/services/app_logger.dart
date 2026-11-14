@@ -333,9 +333,11 @@ class AppLogger {
       final timestamp = (entry['timestamp'] as num).toInt();
       if (timestamp <= _lastProcessExitTimestamp) continue;
       _lastProcessExitTimestamp = timestamp;
+      // A native crash carries its tombstone backtrace, which needs more room.
+      final maxLength = entry['nativeTrace'] == null ? 5000 : 16000;
       await _queueCrashLine(
         'previous_process_exit '
-        'details=${compactLogMessage(jsonEncode(entry), maxLength: 5000)}',
+        'details=${compactLogMessage(jsonEncode(entry), maxLength: maxLength)}',
       );
     }
     await _preferences?.setInt(

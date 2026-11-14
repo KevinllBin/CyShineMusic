@@ -33,6 +33,83 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
+  group('online quality preference', () {
+    test(
+      'highest uses source capabilities without catalogue qualities',
+      () async {
+        final harness = await _Harness.create(loadFailures: 0);
+        addTearDown(harness.dispose);
+        harness.resolver.highestQuality = Quality.flac;
+
+        await harness.controller.playFromMusic(_qishuiMusic());
+
+        expect(harness.resolver.requestedQualities, [Quality.flac]);
+        expect(
+          harness.container.read(playerControllerProvider).track?.qualityLabel,
+          'flac',
+        );
+      },
+    );
+
+    test('highest also overrides incomplete catalogue qualities', () async {
+      final harness = await _Harness.create(loadFailures: 0);
+      addTearDown(harness.dispose);
+      harness.resolver.highestQuality = Quality.flac;
+
+      await harness.controller.playFromMusic(_music());
+
+      expect(harness.resolver.requestedQualities, [Quality.flac]);
+    });
+
+    test('explicit quality bypasses automatic highest selection', () async {
+      final harness = await _Harness.create(loadFailures: 0);
+      addTearDown(harness.dispose);
+      harness.resolver.highestQuality = Quality.flac;
+
+      await harness.controller.playFromMusic(
+        _qishuiMusic(),
+        quality: Quality.k320,
+      );
+
+      expect(harness.resolver.requestedQualities, [Quality.k320]);
+      expect(harness.resolver.highestQualityRequests, isEmpty);
+    });
+
+    test('fixed preference survives missing catalogue qualities', () async {
+      final harness = await _Harness.create(loadFailures: 0);
+      addTearDown(harness.dispose);
+      await harness.container
+          .read(settingsProvider.notifier)
+          .setOnlinePlaybackQuality(OnlinePlaybackQuality.high);
+
+      await harness.controller.playFromMusic(_qishuiMusic());
+
+      expect(harness.resolver.requestedQualities, [Quality.k320]);
+      expect(harness.resolver.highestQualityRequests, isEmpty);
+    });
+
+    test('late quality selection cannot replace a newer song', () async {
+      final harness = await _Harness.create(loadFailures: 0);
+      addTearDown(harness.dispose);
+      final pendingQuality = Completer<Quality>();
+      harness.resolver.highestQualityResponses['qs-test'] = pendingQuality;
+
+      final first = harness.controller.playFromMusic(_qishuiMusic());
+      await _waitUntil(
+        () => harness.resolver.highestQualityRequests.contains('qs-test'),
+      );
+      await harness.controller.playFromMusic(_music(), quality: Quality.k320);
+      pendingQuality.complete(Quality.flac);
+      await first;
+
+      expect(harness.resolver.requestedQualities, [Quality.k320]);
+      expect(
+        harness.container.read(playerControllerProvider).track?.id,
+        'kw:song-1:remote',
+      );
+    });
+  });
+
   test(
     'Vivo list selection preserves the full playlist and current song ID',
     () async {
@@ -671,7 +748,10 @@ void main() {
     }
 
     for (final error in <Object>[
-      const bass.BassPlayerException(code: 9, message: 'audio output could not start'),
+      const bass.BassPlayerException(
+        code: 9,
+        message: 'audio output could not start',
+      ),
       const bass.BassPlayerException(code: 23, message: 'illegal device'),
       const bass.BassPlayerException(code: 3, message: 'driver error'),
       const bass.BassPlayerException(code: 11, message: 'device reinit'),
@@ -1443,9 +1523,15 @@ class _ScriptedResolver implements MusicUrlResolver {
   final List<Quality> requestedQualities = [];
   final Set<Quality> failingQualities = {};
   Object? resolveError;
+  Quality highestQuality = Quality.k128;
+  final List<String> highestQualityRequests = [];
+  final Map<String, Completer<Quality>> highestQualityResponses = {};
 
   @override
-  Future<Quality> highestQualityFor(MusicInfo music) async => Quality.k128;
+  Future<Quality> highestQualityFor(MusicInfo music) async {
+    highestQualityRequests.add(music.id);
+    return await highestQualityResponses[music.id]?.future ?? highestQuality;
+  }
 
   @override
   Future<MusicUrl> resolve({
@@ -1734,6 +1820,16 @@ MusicSourceRecord _record(String id) {
     },
   );
 }
+
+MusicInfo _qishuiMusic() => const MusicInfo(
+  id: 'qs-test',
+  name: 'Qishui Song',
+  singer: 'Singer',
+  source: MusicSource.qs,
+  interval: '03:00',
+  meta: MusicMeta(songId: '123456', albumName: '', qualitys: [], raw: {}),
+  raw: {},
+);
 
 MusicInfo _music() {
   return MusicInfo(

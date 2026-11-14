@@ -1,6 +1,7 @@
 package com.cyshine.music
 
 import android.app.ActivityManager
+import android.app.ApplicationExitInfo
 import android.content.Intent
 import android.graphics.Color
 import android.hardware.display.DisplayManager
@@ -329,9 +330,22 @@ class MainActivity : AudioServiceActivity() {
                     "pssKb" to info.pss,
                     "rssKb" to info.rss,
                     "description" to info.description,
+                    "nativeTrace" to nativeTrace(info),
                 )
             }
         }.getOrDefault(emptyList())
+    }
+
+    // Diagnostics run on every lifecycle change; parse each tombstone once.
+    private val nativeTraces = HashMap<Long, String?>()
+
+    /** The crashing thread's backtrace from the tombstone of a native crash. */
+    private fun nativeTrace(info: ApplicationExitInfo): String? {
+        if (info.reason != ApplicationExitInfo.REASON_CRASH_NATIVE) return null
+        return nativeTraces.getOrPut(info.timestamp) {
+            runCatching { info.traceInputStream?.let(TombstoneSummary::read) }
+                .getOrElse { "tombstone unavailable: ${it.javaClass.simpleName}" }
+        }
     }
 
     private fun memoryDiagnostics(): Map<String, Any> {

@@ -44,6 +44,7 @@ const String _kUseNativeNavigationKey = 'use_native_navigation';
 const String _kNavigationModeKey = 'navigation_mode';
 const String _kNetworkAdapterModeKey = 'network_adapter_mode';
 const String _kEnabledSearchSourcesKey = 'enabled_search_source_codes';
+const String _kQishuiSearchAddedKey = 'qishui_search_added_v1';
 const String _kDefaultSearchSourceKey = 'default_search_source';
 const String _kReplaceQueueOnSearchPlayKey = 'replace_queue_on_search_play';
 const String _kDiscoverySourceOrderKey = 'discovery_source_order';
@@ -343,9 +344,18 @@ class SettingsNotifier extends Notifier<AppSettings> {
     }
     final downloadDir =
         _prefs.getString(_kDownloadDirKey) ?? kDefaultDownloadDir;
-    final enabledSearchSources = decodeEnabledSearchSources(
+    var enabledSearchSources = decodeEnabledSearchSources(
       _prefs.getStringList(_kEnabledSearchSourcesKey),
     );
+    // Add the newly supported search platform once, retaining the user's other
+    // choices. Later explicit disabling and backup restores remain respected.
+    if (_prefs.getBool(_kQishuiSearchAddedKey) != true) {
+      enabledSearchSources = Set.unmodifiable({...enabledSearchSources, MusicSource.qs});
+      unawaited(_prefs.setStringList(_kEnabledSearchSourcesKey, [
+        for (final source in enabledSearchSources) source.code,
+      ]));
+      unawaited(_prefs.setBool(_kQishuiSearchAddedKey, true));
+    }
     final defaultSearchSource = MusicSource.fromCode(
       _prefs.getString(_kDefaultSearchSourceKey) ?? 'all',
     );
@@ -693,6 +703,546 @@ class SettingsNotifier extends Notifier<AppSettings> {
     );
   }
 
+  /// Exports user-facing application settings as a versioned, portable map.
+  ///
+  /// SettingsBackupService combines this section with music source scripts.
+  /// Runtime state, logs, playlists and WebDAV secrets stay outside it.
+  /// Paths are kept as part of the download and scan configuration.
+  Map<String, dynamic> exportForBackup() => {
+    'format': 'cyshine_music_settings',
+    'version': 1,
+    'settings': {
+      'downloadDir': state.downloadDir,
+      'downloadFileNameFormat': state.downloadFileNameFormat.code,
+      'localMusicDirs': state.localMusicDirs,
+      'useBuiltInSourceFilePicker': state.useBuiltInSourceFilePicker,
+      'themeMode': _encodeThemeMode(state.themeMode),
+      'themeSeedArgb': state.themeSeed.toARGB32(),
+      'themePalette': state.themePalette,
+      'colorStyle': state.colorStyle.code,
+      'useDynamicColor': state.useDynamicColor,
+      'liquidGlassMode': state.liquidGlassMode.code,
+      'playlistArtworkColorsEnabled': state.playlistArtworkColorsEnabled,
+      'flowingLightEnabled': state.flowingLightEnabled,
+      'lyricViewBlurDisabled': state.lyricViewBlurDisabled,
+      'squareAlbumCoverEnabled': state.squareAlbumCoverEnabled,
+      'lyricFontWeight': state.lyricFontWeight,
+      'lyricFontSize': state.lyricFontSize,
+      'carPadModeEnabled': state.carPadModeEnabled,
+      'carDisplayEnabled': state.carDisplayEnabled,
+      'carDisplaySize': state.carDisplaySize,
+      'autoPlayOnStartup': state.autoPlayOnStartup,
+      'skipStartupScreen': state.skipStartupScreen,
+      'checkForUpdatesOnStartup': state.checkForUpdatesOnStartup,
+      'navigationMode': state.navigationMode.code,
+      'networkAdapterMode': state.networkAdapterMode.code,
+      'enabledSearchSources': [
+        for (final source in state.enabledSearchSources) source.code,
+      ],
+      'defaultSearchSource': state.defaultSearchSource.code,
+      'replaceQueueOnSearchPlay': state.replaceQueueOnSearchPlay,
+      'discoverySourceOrder': [
+        for (final source in state.discoverySourceOrder) source.code,
+      ],
+      'platformButtonOnLeft': state.platformButtonOnLeft,
+      'onlinePlaybackQuality': state.onlinePlaybackQuality.code,
+      'batchDownloadQuality': state.batchDownloadQuality.code,
+      'showMiniLyrics': state.showMiniLyrics,
+      'grooveShiftEnabled': state.grooveShiftEnabled,
+      'allowMixWithOthers': state.allowMixWithOthers,
+      'bluetoothLyricEnabled': state.bluetoothLyricEnabled,
+      'bluetoothFullLyricEnabled': state.bluetoothFullLyricEnabled,
+      'bluetoothLyricNoticeSeen': state.bluetoothLyricNoticeSeen,
+      'debugMode': state.debugMode,
+    },
+  };
+
+  /// Parses a versioned settings backup without modifying persisted state.
+  /// Missing fields are retained from the current version, which keeps older
+  /// backups usable when new settings are added.
+  AppSettings parseBackup(Object? value) {
+    if (value is! Map) throw const FormatException('配置文件格式无效');
+    final root = Map<String, dynamic>.from(value);
+    if (root['format'] != 'cyshine_music_settings' ||
+        (root['version'] != 1 && root['version'] != 2)) {
+      throw const FormatException('不支持的配置文件版本');
+    }
+    final rawSettings = root['settings'];
+    if (rawSettings is! Map) throw const FormatException('配置内容缺失');
+
+    final current = state;
+    final json = Map<String, dynamic>.from(rawSettings);
+    final downloadDir = _backupString(json, 'downloadDir', current.downloadDir);
+    final localMusicDirs = json.containsKey('localMusicDirs')
+        ? _backupDirectories(json['localMusicDirs'], fallback: downloadDir)
+        : current.localMusicDirs;
+    final enabledSearchSources = json.containsKey('enabledSearchSources')
+        ? _backupSearchSources(json['enabledSearchSources'])
+        : current.enabledSearchSources;
+    final defaultSearchSource = json.containsKey('defaultSearchSource')
+        ? _backupMusicSource(json['defaultSearchSource'], 'defaultSearchSource')
+        : current.defaultSearchSource;
+    if (defaultSearchSource != MusicSource.all &&
+        !enabledSearchSources.contains(defaultSearchSource)) {
+      throw const FormatException('默认搜索平台未启用');
+    }
+    final discoverySourceOrder = json.containsKey('discoverySourceOrder')
+        ? _backupDiscoverySourceOrder(json['discoverySourceOrder'])
+        : current.discoverySourceOrder;
+
+    return current.copyWith(
+      downloadDir: downloadDir,
+      downloadFileNameFormat: json.containsKey('downloadFileNameFormat')
+          ? _backupDownloadFileNameFormat(json['downloadFileNameFormat'])
+          : current.downloadFileNameFormat,
+      localMusicDirs: localMusicDirs,
+      useBuiltInSourceFilePicker: _backupBool(
+        json,
+        'useBuiltInSourceFilePicker',
+        current.useBuiltInSourceFilePicker,
+      ),
+      themeMode: _backupThemeMode(json, current.themeMode),
+      themeSeed: Color(
+        _backupColor(json, 'themeSeedArgb', current.themeSeed.toARGB32()),
+      ),
+      themePalette: _backupPalette(json, current.themePalette),
+      colorStyle: _backupColorStyle(json, current.colorStyle),
+      useDynamicColor: _backupBool(
+        json,
+        'useDynamicColor',
+        current.useDynamicColor,
+      ),
+      liquidGlassMode: _backupLiquidGlassMode(json, current.liquidGlassMode),
+      playlistArtworkColorsEnabled: _backupBool(
+        json,
+        'playlistArtworkColorsEnabled',
+        current.playlistArtworkColorsEnabled,
+      ),
+      flowingLightEnabled: _backupBool(
+        json,
+        'flowingLightEnabled',
+        current.flowingLightEnabled,
+      ),
+      lyricViewBlurDisabled: _backupBool(
+        json,
+        'lyricViewBlurDisabled',
+        current.lyricViewBlurDisabled,
+      ),
+      squareAlbumCoverEnabled: _backupBool(
+        json,
+        'squareAlbumCoverEnabled',
+        current.squareAlbumCoverEnabled,
+      ),
+      lyricFontWeight: _backupLyricFontWeight(json, current.lyricFontWeight),
+      lyricFontSize: _backupLyricFontSize(json, current.lyricFontSize),
+      carPadModeEnabled: _backupBool(
+        json,
+        'carPadModeEnabled',
+        current.carPadModeEnabled,
+      ),
+      carDisplayEnabled: _backupBool(
+        json,
+        'carDisplayEnabled',
+        current.carDisplayEnabled,
+      ),
+      carDisplaySize: _backupCarDisplaySize(json, current.carDisplaySize),
+      autoPlayOnStartup: _backupBool(
+        json,
+        'autoPlayOnStartup',
+        current.autoPlayOnStartup,
+      ),
+      skipStartupScreen: _backupBool(
+        json,
+        'skipStartupScreen',
+        current.skipStartupScreen,
+      ),
+      checkForUpdatesOnStartup: _backupBool(
+        json,
+        'checkForUpdatesOnStartup',
+        current.checkForUpdatesOnStartup,
+      ),
+      navigationMode: _backupNavigationMode(json, current.navigationMode),
+      networkAdapterMode: _backupNetworkAdapterMode(
+        json,
+        current.networkAdapterMode,
+      ),
+      enabledSearchSources: enabledSearchSources,
+      defaultSearchSource: defaultSearchSource,
+      replaceQueueOnSearchPlay: _backupBool(
+        json,
+        'replaceQueueOnSearchPlay',
+        current.replaceQueueOnSearchPlay,
+      ),
+      discoverySourceOrder: discoverySourceOrder,
+      platformButtonOnLeft: _backupBool(
+        json,
+        'platformButtonOnLeft',
+        current.platformButtonOnLeft,
+      ),
+      onlinePlaybackQuality: _backupOnlineQuality(
+        json,
+        'onlinePlaybackQuality',
+        current.onlinePlaybackQuality,
+      ),
+      batchDownloadQuality: _backupOnlineQuality(
+        json,
+        'batchDownloadQuality',
+        current.batchDownloadQuality,
+      ),
+      showMiniLyrics: _backupBool(
+        json,
+        'showMiniLyrics',
+        current.showMiniLyrics,
+      ),
+      grooveShiftEnabled: _backupBool(
+        json,
+        'grooveShiftEnabled',
+        current.grooveShiftEnabled,
+      ),
+      allowMixWithOthers: _backupBool(
+        json,
+        'allowMixWithOthers',
+        current.allowMixWithOthers,
+      ),
+      bluetoothLyricEnabled: _backupBool(
+        json,
+        'bluetoothLyricEnabled',
+        current.bluetoothLyricEnabled,
+      ),
+      bluetoothFullLyricEnabled: _backupBool(
+        json,
+        'bluetoothFullLyricEnabled',
+        current.bluetoothFullLyricEnabled,
+      ),
+      bluetoothLyricNoticeSeen: _backupBool(
+        json,
+        'bluetoothLyricNoticeSeen',
+        current.bluetoothLyricNoticeSeen,
+      ),
+      debugMode: _backupBool(json, 'debugMode', current.debugMode),
+    );
+  }
+
+  Future<void> applyFromBackup(Object? value) async {
+    final next = parseBackup(value);
+    await Future.wait([
+      _prefs.setString(_kDownloadDirKey, next.downloadDir),
+      _prefs.setString(
+        _kDownloadFileNameFormatKey,
+        next.downloadFileNameFormat.code,
+      ),
+      _prefs.setStringList(_kLocalMusicDirsKey, next.localMusicDirs),
+      _prefs.setString(_kLocalMusicDirKey, next.localMusicDir),
+      _prefs.setBool(
+        _kUseBuiltInSourceFilePickerKey,
+        next.useBuiltInSourceFilePicker,
+      ),
+      _prefs.setString(_kThemeModeKey, _encodeThemeMode(next.themeMode)),
+      _prefs.setInt(_kThemeSeedKey, next.themeSeed.toARGB32()),
+      _prefs.setStringList(
+        _kThemePaletteKey,
+        next.themePalette.map((value) => value.toString()).toList(),
+      ),
+      _prefs.setString(_kColorStyleKey, next.colorStyle.code),
+      _prefs.setBool(_kUseDynamicColorKey, next.useDynamicColor),
+      _prefs.setString(_kLiquidGlassModeKey, next.liquidGlassMode.code),
+      _prefs.setBool(
+        _kPlaylistArtworkColorsEnabledKey,
+        next.playlistArtworkColorsEnabled,
+      ),
+      _prefs.setBool(_kFlowingLightEnabledKey, next.flowingLightEnabled),
+      _prefs.setBool(_kLyricViewBlurDisabledKey, next.lyricViewBlurDisabled),
+      _prefs.setBool(
+        _kSquareAlbumCoverEnabledKey,
+        next.squareAlbumCoverEnabled,
+      ),
+      _prefs.setDouble(_kLyricFontWeightKey, next.lyricFontWeight),
+      _prefs.setDouble(_kLyricFontSizeKey, next.lyricFontSize),
+      _prefs.setBool(_kCarPadModeEnabledKey, next.carPadModeEnabled),
+      _prefs.setBool(_kCarDisplayEnabledKey, next.carDisplayEnabled),
+      _prefs.setDouble(_kCarDisplaySizeKey, next.carDisplaySize),
+      _prefs.setBool(_kAutoPlayOnStartupKey, next.autoPlayOnStartup),
+      _prefs.setBool(_kSkipStartupScreenKey, next.skipStartupScreen),
+      _prefs.setBool(
+        _kCheckForUpdatesOnStartupKey,
+        next.checkForUpdatesOnStartup,
+      ),
+      _prefs.setString(_kNavigationModeKey, next.navigationMode.code),
+      _prefs.setBool(_kUseNativeNavigationKey, next.useNativeNavigation),
+      _prefs.setString(_kNetworkAdapterModeKey, next.networkAdapterMode.code),
+      _prefs.setStringList(_kEnabledSearchSourcesKey, [
+        for (final source in next.enabledSearchSources) source.code,
+      ]),
+      _prefs.setString(_kDefaultSearchSourceKey, next.defaultSearchSource.code),
+      _prefs.setBool(
+        _kReplaceQueueOnSearchPlayKey,
+        next.replaceQueueOnSearchPlay,
+      ),
+      _prefs.setStringList(_kDiscoverySourceOrderKey, [
+        for (final source in next.discoverySourceOrder) source.code,
+      ]),
+      _prefs.setBool(_kPlatformButtonOnLeftKey, next.platformButtonOnLeft),
+      _prefs.setString(
+        _kOnlinePlaybackQualityKey,
+        next.onlinePlaybackQuality.code,
+      ),
+      _prefs.setString(
+        _kBatchDownloadQualityKey,
+        next.batchDownloadQuality.code,
+      ),
+      _prefs.setBool(_kShowMiniLyricsKey, next.showMiniLyrics),
+      _prefs.setBool(_kGrooveShiftEnabledKey, next.grooveShiftEnabled),
+      _prefs.setBool(_kAllowMixWithOthersKey, next.allowMixWithOthers),
+      _prefs.setBool(_kBluetoothLyricEnabledKey, next.bluetoothLyricEnabled),
+      _prefs.setBool(
+        _kBluetoothFullLyricEnabledKey,
+        next.bluetoothFullLyricEnabled,
+      ),
+      _prefs.setBool(
+        _kBluetoothLyricNoticeSeenKey,
+        next.bluetoothLyricNoticeSeen,
+      ),
+      _prefs.setBool(_kDebugModeKey, next.debugMode),
+    ]);
+    NetworkAdapterPreference.current = next.networkAdapterMode;
+    state = next;
+  }
+
+  static String _backupString(
+    Map<String, dynamic> json,
+    String key,
+    String current,
+  ) {
+    if (!json.containsKey(key)) return current;
+    final value = json[key];
+    if (value is! String || value.trim().isEmpty) {
+      throw FormatException('配置字段 $key 无效');
+    }
+    return value.trim();
+  }
+
+  static bool _backupBool(Map<String, dynamic> json, String key, bool current) {
+    if (!json.containsKey(key)) return current;
+    final value = json[key];
+    if (value is! bool) throw FormatException('配置字段 $key 无效');
+    return value;
+  }
+
+  static int _backupColor(Map<String, dynamic> json, String key, int current) {
+    if (!json.containsKey(key)) return current;
+    final value = json[key];
+    if (value is! int || value < 0 || value > 0xFFFFFFFF) {
+      throw FormatException('配置字段 $key 无效');
+    }
+    return value;
+  }
+
+  static List<int> _backupPalette(
+    Map<String, dynamic> json,
+    List<int> current,
+  ) {
+    if (!json.containsKey('themePalette')) return current;
+    final value = json['themePalette'];
+    if (value is! List ||
+        value.any(
+          (color) => color is! int || color < 0 || color > 0xFFFFFFFF,
+        )) {
+      throw const FormatException('配置字段 themePalette 无效');
+    }
+    return List<int>.unmodifiable(value.cast<int>());
+  }
+
+  static List<String> _backupDirectories(
+    Object? value, {
+    required String fallback,
+  }) {
+    if (value is! List || value.any((path) => path is! String)) {
+      throw const FormatException('配置字段 localMusicDirs 无效');
+    }
+    return _normalizeLocalMusicDirs(value.cast<String>(), fallback: fallback);
+  }
+
+  static Set<MusicSource> _backupSearchSources(Object? value) {
+    if (value is! List || value.any((code) => code is! String)) {
+      throw const FormatException('配置字段 enabledSearchSources 无效');
+    }
+    final sources = <MusicSource>{};
+    for (final code in value.cast<String>()) {
+      final source = MusicSource.tryFromCode(code);
+      if (source == null || !kManageableSearchSources.contains(source)) {
+        throw const FormatException('配置字段 enabledSearchSources 无效');
+      }
+      sources.add(source);
+    }
+    if (sources.isEmpty) {
+      throw const FormatException('配置至少需要启用一个搜索源');
+    }
+    return Set<MusicSource>.unmodifiable({
+      for (final source in kManageableSearchSources)
+        if (sources.contains(source)) source,
+    });
+  }
+
+  static MusicSource _backupMusicSource(Object? value, String key) {
+    if (value is! String) throw FormatException('配置字段 $key 无效');
+    final source = MusicSource.tryFromCode(value);
+    if (source == null) throw FormatException('配置字段 $key 无效');
+    return source;
+  }
+
+  static List<MusicSource> _backupDiscoverySourceOrder(Object? value) {
+    if (value is! List || value.any((code) => code is! String)) {
+      throw const FormatException('配置字段 discoverySourceOrder 无效');
+    }
+    final sources = <MusicSource>[];
+    for (final code in value.cast<String>()) {
+      final source = MusicSource.tryFromCode(code);
+      if (source == null || !kDefaultDiscoverySourceOrder.contains(source)) {
+        throw const FormatException('配置字段 discoverySourceOrder 无效');
+      }
+      sources.add(source);
+    }
+    return normalizeDiscoverySourceOrder(sources);
+  }
+
+  static DownloadFileNameFormat _backupDownloadFileNameFormat(Object? value) {
+    if (value is! String) {
+      throw const FormatException('配置字段 downloadFileNameFormat 无效');
+    }
+    for (final format in DownloadFileNameFormat.values) {
+      if (format.code == value) return format;
+    }
+    throw const FormatException('配置字段 downloadFileNameFormat 无效');
+  }
+
+  static ThemeMode _backupThemeMode(
+    Map<String, dynamic> json,
+    ThemeMode current,
+  ) {
+    if (!json.containsKey('themeMode')) return current;
+    final value = json['themeMode'];
+    if (value is! String ||
+        !const {'system', 'light', 'dark'}.contains(value)) {
+      throw const FormatException('配置字段 themeMode 无效');
+    }
+    return _decodeThemeMode(value);
+  }
+
+  static AppColorStyle _backupColorStyle(
+    Map<String, dynamic> json,
+    AppColorStyle current,
+  ) {
+    if (!json.containsKey('colorStyle')) return current;
+    final value = json['colorStyle'];
+    if (value is! String || !AppColorStyle.isKnownCode(value)) {
+      throw const FormatException('配置字段 colorStyle 无效');
+    }
+    return AppColorStyle.fromCode(value);
+  }
+
+  static LiquidGlassMode _backupLiquidGlassMode(
+    Map<String, dynamic> json,
+    LiquidGlassMode current,
+  ) {
+    if (!json.containsKey('liquidGlassMode')) return current;
+    final value = json['liquidGlassMode'];
+    if (value is! String ||
+        !LiquidGlassMode.values.any((mode) => mode.code == value)) {
+      throw const FormatException('配置字段 liquidGlassMode 无效');
+    }
+    return LiquidGlassMode.fromCode(value);
+  }
+
+  static double _backupNumber(
+    Map<String, dynamic> json,
+    String key,
+    double current,
+  ) {
+    if (!json.containsKey(key)) return current;
+    final value = json[key];
+    if (value is! num || !value.isFinite) {
+      throw FormatException('配置字段 $key 无效');
+    }
+    return value.toDouble();
+  }
+
+  static double _backupLyricFontWeight(
+    Map<String, dynamic> json,
+    double current,
+  ) {
+    final value = _backupNumber(json, 'lyricFontWeight', current);
+    if (!_validLyricFontWeight(value)) {
+      throw const FormatException('配置字段 lyricFontWeight 无效');
+    }
+    return normalizeLyricFontWeight(value);
+  }
+
+  static double _backupLyricFontSize(
+    Map<String, dynamic> json,
+    double current,
+  ) {
+    final value = _backupNumber(json, 'lyricFontSize', current);
+    if (!_validLyricFontSize(value)) {
+      throw const FormatException('配置字段 lyricFontSize 无效');
+    }
+    return normalizeLyricFontSize(value);
+  }
+
+  static double _backupCarDisplaySize(
+    Map<String, dynamic> json,
+    double current,
+  ) {
+    final value = _backupNumber(json, 'carDisplaySize', current);
+    if (value < 0.85 || value > 1.25) {
+      throw const FormatException('配置字段 carDisplaySize 无效');
+    }
+    return value;
+  }
+
+  static AppNavigationMode _backupNavigationMode(
+    Map<String, dynamic> json,
+    AppNavigationMode current,
+  ) {
+    if (!json.containsKey('navigationMode')) return current;
+    final value = json['navigationMode'];
+    if (value is! String ||
+        !{
+          ...AppNavigationMode.values.map((mode) => mode.code),
+          'single_capsule',
+          'dual_capsule',
+        }.contains(value)) {
+      throw const FormatException('配置字段 navigationMode 无效');
+    }
+    return AppNavigationMode.fromCode(value);
+  }
+
+  static NetworkAdapterMode _backupNetworkAdapterMode(
+    Map<String, dynamic> json,
+    NetworkAdapterMode current,
+  ) {
+    if (!json.containsKey('networkAdapterMode')) return current;
+    final value = json['networkAdapterMode'];
+    if (value is! String ||
+        !NetworkAdapterMode.values.any((mode) => mode.code == value)) {
+      throw const FormatException('配置字段 networkAdapterMode 无效');
+    }
+    return NetworkAdapterMode.fromCode(value);
+  }
+
+  static OnlinePlaybackQuality _backupOnlineQuality(
+    Map<String, dynamic> json,
+    String key,
+    OnlinePlaybackQuality current,
+  ) {
+    if (!json.containsKey(key)) return current;
+    final value = json[key];
+    if (value is! String ||
+        !OnlinePlaybackQuality.values.any((quality) => quality.code == value)) {
+      throw FormatException('配置字段 $key 无效');
+    }
+    return OnlinePlaybackQuality.fromCode(value);
+  }
+
   Map<String, dynamic> exportAppearanceForSync() => {
     'themeMode': _encodeThemeMode(state.themeMode),
     'themeSeedArgb': state.themeSeed.toARGB32(),
@@ -1020,6 +1570,7 @@ const List<MusicSource> kDefaultDiscoverySourceOrder = <MusicSource>[
   MusicSource.kw,
   MusicSource.kg,
   MusicSource.mg,
+  MusicSource.qs,
 ];
 
 List<MusicSource> decodeDiscoverySourceOrder(List<String>? codes) {

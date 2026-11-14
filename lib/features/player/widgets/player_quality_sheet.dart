@@ -20,10 +20,9 @@ List<QualityOption> availablePlaybackQualityOptions(PlayerTrack track) {
             QualityOption(type: quality),
         ]
       : track.availableQualityOptions;
-  return [
-    for (final option in allOptions)
-      if (_knownQualitySize(option) != null) option,
-  ];
+  // Source-declared qualities remain selectable even when catalogue sizes are
+  // absent. Size is optional metadata, not proof of source support.
+  return allOptions;
 }
 
 String playerQualityLabel(PlayerTrack track) {
@@ -94,9 +93,4 @@ class _PlaybackQualitySheet extends StatelessWidget {
       ),
     ),
   );
-}
-
-String? _knownQualitySize(QualityOption option) {
-  final size = option.size?.trim();
-  return size == null || size.isEmpty ? null : size;
 }

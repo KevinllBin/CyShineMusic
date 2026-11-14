@@ -7,6 +7,8 @@ import android.graphics.RectF
 import android.os.Build
 import android.view.View
 import android.view.ViewTreeObserver
+import androidx.annotation.DoNotInline
+import androidx.annotation.RequiresApi
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import kotlin.math.*
@@ -38,7 +40,7 @@ class ScreenCornersBridge(private val activity: Activity, messenger: BinaryMesse
             view.width, view.height, display.displayId, display.rotation,
             display.mode.modeId, activity.resources.configuration.toString(),
             Build.VERSION.SDK_INT >= 24 && activity.isInMultiWindowMode,
-            *Array(4) { corner(it) },
+            *Array(4) { cornerRadius(it) },
         )
         if (key == lastKey) return
         lastKey = key
@@ -50,9 +52,18 @@ class ScreenCornersBridge(private val activity: Activity, messenger: BinaryMesse
         channel.setMethodCallHandler(null)
     }
 
-    private fun corner(index: Int) = if (Build.VERSION.SDK_INT >= 31) {
-        view.rootWindowInsets?.getRoundedCorner(index)
-    } else null
+    private fun cornerRadius(index: Int): Int = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        Api31Impl.cornerRadius(view, index)
+    } else 0
+
+    // Keep RoundedCorner out of the bridge's signatures and arrays: resolving
+    // that type on Android 11 or earlier can fail before the SDK check runs.
+    @RequiresApi(Build.VERSION_CODES.S)
+    private object Api31Impl {
+        @DoNotInline
+        fun cornerRadius(view: View, index: Int): Int =
+            view.rootWindowInsets?.getRoundedCorner(index)?.radius ?: 0
+    }
 
     @Suppress("DEPRECATION")
     private fun read(): Map<String, Any> {
@@ -65,7 +76,7 @@ class ScreenCornersBridge(private val activity: Activity, messenger: BinaryMesse
         if (fullScreen) {
             val fallback = if (display!!.displayId == 0) fallbackRadii() else FloatArray(4)
             for (i in 0..3) {
-                val radius = corner(i)?.radius?.toFloat() ?: 0f
+                val radius = cornerRadius(i).toFloat()
                 radii[i] = if (radius > 0) radius else fallback[i]
                 sources[i] = if (radius > 0) "insets" else if (fallback[i] > 0) "fallback" else "none"
                 // Reject malformed OEM metadata, rather than cutting out half the screen.

@@ -101,6 +101,7 @@ class LyricBuilder {
       case MusicSource.tx:
       case MusicSource.kg:
       case MusicSource.kw:
+      case MusicSource.qs:
         return true;
       case MusicSource.all:
       case MusicSource.wy:

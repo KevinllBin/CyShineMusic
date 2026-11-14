@@ -1,8 +1,10 @@
 import '../../theme/app_theme.dart';
 import 'widgets/settings_sheet.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +19,7 @@ import '../../core/services/saf_storage.dart';
 import '../../core/services/storage_location.dart';
 import '../../core/services/app_icon_service.dart';
 import '../../core/storage/settings_store.dart';
+import '../../core/storage/settings_backup_service.dart';
 import '../../core/sync/webdav_sync_controller.dart';
 import '../../core/ui/app_toast.dart';
 import '../../core/ui/car_display_layout.dart';
@@ -764,6 +767,32 @@ class SettingsPage extends ConsumerWidget {
                             ],
                           ),
                         if (section == null) ...[
+                          const SizedBox(height: 16),
+                          SettingsCard(
+                            title: '配置',
+                            children: [
+                              SettingsAction(
+                                key: const ValueKey('export-settings'),
+                                icon: Icons.file_upload_outlined,
+                                title: '导出配置',
+                                value: '包含设置和音源',
+                                trailing: Symbols.chevron_right,
+                                onTap: () =>
+                                    unawaited(_exportSettings(context, ref)),
+                              ),
+                              SettingsAction(
+                                key: const ValueKey('import-settings'),
+                                icon: Icons.file_download_outlined,
+                                title: '导入配置',
+                                value: '从 JSON 文件恢复',
+                                trailing: Symbols.chevron_right,
+                                onTap: () =>
+                                    unawaited(_importSettings(context, ref)),
+                              ),
+                            ],
+                          ),
+                        ],
+                        if (section == null) ...[
                           const SizedBox(height: 32),
                           Text(
                             versionLabel,
@@ -796,6 +825,96 @@ class SettingsPage extends ConsumerWidget {
     if (value) await _ensureBluetoothLyricNotice(context, ref);
     if (!context.mounted) return;
     await ref.read(settingsProvider.notifier).setBluetoothLyricEnabled(value);
+  }
+
+  Future<void> _exportSettings(BuildContext context, WidgetRef ref) async {
+    try {
+      final backup = await ref
+          .read(settingsBackupServiceProvider)
+          .exportBackup();
+      if (!context.mounted) return;
+      final content = const JsonEncoder.withIndent('  ').convert(backup);
+      final bytes = Uint8List.fromList(utf8.encode('$content\n'));
+      final now = DateTime.now();
+      String two(int value) => value.toString().padLeft(2, '0');
+      final timestamp =
+          '${two(now.year % 100)}${two(now.month)}${two(now.day)}_'
+          '${two(now.hour)}${two(now.minute)}';
+      var path = await FilePicker.platform.saveFile(
+        dialogTitle: '导出应用配置',
+        fileName: 'CyShineMusic-settings_$timestamp.json',
+        type: FileType.custom,
+        allowedExtensions: const ['json'],
+        bytes: Platform.isAndroid || Platform.isIOS ? bytes : null,
+      );
+      if (path == null || path.isEmpty || !context.mounted) return;
+      // Mobile pickers have already saved the bytes through the provider.
+      if (!Platform.isAndroid && !Platform.isIOS) {
+        if (!path.toLowerCase().endsWith('.json')) path = '$path.json';
+        await File(path).writeAsBytes(bytes, flush: true);
+      }
+      if (!context.mounted) return;
+      showAppToast(context, '配置和音源已导出', type: AppToastType.success);
+    } catch (error) {
+      if (!context.mounted) return;
+      showAppToast(context, '无法导出配置：$error', type: AppToastType.error);
+    }
+  }
+
+  Future<void> _importSettings(BuildContext context, WidgetRef ref) async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        dialogTitle: '导入应用配置',
+        type: FileType.custom,
+        allowedExtensions: const ['json'],
+        withData: true,
+      );
+      if (result == null || !context.mounted) return;
+      final picked = result.files.single;
+      final content = picked.bytes != null
+          ? utf8.decode(picked.bytes!)
+          : await File(picked.path!).readAsString();
+      final decoded = jsonDecode(content);
+      if (!context.mounted) return;
+      final service = ref.read(settingsBackupServiceProvider);
+      final backup = service.validateBackup(decoded);
+      final sources = backup['musicSources'] as Map?;
+      final sourceCount = (sources?['records'] as List?)?.length;
+      final confirmed = await showSettingsDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          icon: const Icon(Icons.file_download_outlined),
+          title: const Text('导入应用配置？'),
+          content: Text(
+            sourceCount == null
+                ? '将恢复应用设置。这份旧版备份不含音源，保留本机现有音源。'
+                : '将恢复应用设置，并用备份中的 $sourceCount 个音源替换本机音源，'
+                      '同时恢复启用状态和首选顺序。\n\n请仅导入可信备份，音源脚本可以访问网络。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('导入'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !context.mounted) return;
+      await service.importBackup(backup);
+      if (!context.mounted) return;
+      showAppToast(
+        context,
+        sourceCount == null ? '应用配置已导入' : '配置和 $sourceCount 个音源已恢复',
+        type: AppToastType.success,
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      showAppToast(context, '无法导入配置：$error', type: AppToastType.error);
+    }
   }
 
   Future<void> _setBluetoothFullLyricEnabled(

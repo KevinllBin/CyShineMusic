@@ -3,9 +3,11 @@ import '../models/lyric_info.dart';
 import '../models/music_info.dart';
 import '../services/app_logger.dart';
 import 'internal/builders.dart';
+import 'catalog/qs_catalog.dart';
 import 'kg_sdk.dart';
 import 'kw_sdk.dart';
 import 'mg_sdk.dart';
+import 'qs_sdk.dart';
 import 'tx_sdk.dart';
 import 'wy_sdk.dart';
 
@@ -29,6 +31,10 @@ class MusicSdkAggregator {
         return TxSdk.search(keyword, page: page, limit: limit);
       case MusicSource.wy:
         return WySdk.search(keyword, page: page, limit: limit);
+      case MusicSource.qs:
+        return qishuiCatalog
+            .searchTracks(keyword, page: page, limit: limit)
+            .then((result) => result.list);
       case MusicSource.all:
         throw ArgumentError('use search() for source=all');
     }
@@ -46,6 +52,8 @@ class MusicSdkAggregator {
         return TxSdk.tip(keyword);
       case MusicSource.wy:
         return WySdk.tip(keyword);
+      case MusicSource.qs:
+        return qishuiCatalog.tip(keyword);
       case MusicSource.all:
         throw ArgumentError('use tip() for source=all');
     }
@@ -75,6 +83,17 @@ class MusicSdkAggregator {
           page: page,
           source: MusicSource.all,
           allPage: page,
+        );
+      }
+      if (source == MusicSource.qs) {
+        final result = await qishuiCatalog.searchTracks(trimmed, page: page);
+        return SearchResult(
+          list: sortByKeyword(result.list, trimmed),
+          page: page,
+          source: source,
+          allPage: result.hasMore ? page + 1 : page,
+          total: result.list.length,
+          limit: qsSearchPageSize,
         );
       }
       final list = await _searchSingle(source, trimmed, page, limit);
@@ -191,6 +210,8 @@ class MusicSdkAggregator {
         return TxSdk.getLyric(info);
       case MusicSource.wy:
         return WySdk.getLyric(info);
+      case MusicSource.qs:
+        return qishuiSdk.getLyric(info);
       case MusicSource.all:
         throw ArgumentError('lyric requires a concrete source');
     }
@@ -224,6 +245,8 @@ class MusicSdkAggregator {
           return await TxSdk.getPicUrl(info);
         case MusicSource.wy:
           return await WySdk.getPicUrl(info);
+        case MusicSource.qs:
+          return cached;
         case MusicSource.all:
           return null;
       }

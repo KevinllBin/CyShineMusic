@@ -30,6 +30,23 @@ void main() {
     }
   });
 
+  test(
+    'legacy capability caches require refresh and current caches round-trip',
+    () {
+      final record = _record(
+        'source-a',
+        capabilities: {
+          MusicSource.qs: [Quality.flac],
+        },
+      );
+      final legacy = record.toJson()..remove('capabilitiesVersion');
+      expect(MusicSourceRecord.fromJson(legacy).capabilitiesVersion, 0);
+      final restored = MusicSourceRecord.fromJson(record.toJson());
+      expect(restored.capabilitiesVersion, kMusicSourceCapabilitiesVersion);
+      expect(restored.supports(MusicSource.qs), isTrue);
+    },
+  );
+
   test('migrates the legacy active source to enabledIds v2', () async {
     final records = [_record('source-a'), _record('source-b')];
     SharedPreferences.setMockInitialValues({

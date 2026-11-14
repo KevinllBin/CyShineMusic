@@ -21,6 +21,7 @@ import '../player/player_controller.dart';
 import '../search/widgets/quality_picker_sheet.dart';
 import '../shell/shell_toolbar_visibility.dart';
 import '../shell/shell_bottom_area.dart';
+import '../songs/local_song_scan_cache.dart';
 import '../songs/songs_toolbar_state.dart';
 import '../songs/widgets/songs_placeholders.dart';
 import '../songs/widgets/songs_sort_sheet.dart';
@@ -127,6 +128,13 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
     }
 
     final history = ref.watch(downloadHistoryProvider);
+    final scanSnapshot = ref.watch(localSongScanCacheProvider).snapshot;
+    final modifiedAtByPath = <String, DateTime>{};
+    for (final file in scanSnapshot?.files ?? const <LocalSongFileSnapshot>[]) {
+      for (final path in [file.path, file.playbackPath, ...file.aliases]) {
+        modifiedAtByPath[localSongPathKey(path)] = file.modifiedAt;
+      }
+    }
     final localIndex = LocalHistoryIndex(history);
     final resolved = playlist.tracks
         .map((track) {
@@ -143,7 +151,7 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
     final matching = _searchMode
         ? filterResolvedTracksByQuery(resolved, _searchQuery)
         : resolved;
-    final filtered = _sortResolvedTracks(matching);
+    final filtered = _sortResolvedTracks(matching, modifiedAtByPath);
     final queue = [
       for (final item in filtered)
         if (item.queueEntry != null) item.queueEntry!,
@@ -523,6 +531,7 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
 
   List<ResolvedPlaylistTrack> _sortResolvedTracks(
     List<ResolvedPlaylistTrack> tracks,
+    Map<String, DateTime> modifiedAtByPath,
   ) {
     if (_sortMode == SongSortMode.added) {
       return _ascending
@@ -536,6 +545,14 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
     ) {
       final left = a.$2.track;
       final right = b.$2.track;
+      DateTime? modifiedAt(ResolvedPlaylistTrack item) {
+        final entryModifiedAt = item.localEntry?.modifiedAt;
+        if (entryModifiedAt != null) return entryModifiedAt;
+        final path = item.track.localPath?.trim();
+        if (path == null || path.isEmpty) return null;
+        return modifiedAtByPath[localSongPathKey(path)];
+      }
+
       final primary = switch (_sortMode) {
         SongSortMode.title => left.name.trim().toLowerCase().compareTo(
           right.name.trim().toLowerCase(),
@@ -544,6 +561,11 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage> {
           right.singer.trim().toLowerCase(),
         ),
         SongSortMode.added => a.$1.compareTo(b.$1),
+        SongSortMode.modified =>
+          (modifiedAt(a.$2) ?? DateTime.fromMillisecondsSinceEpoch(0))
+              .compareTo(
+                modifiedAt(b.$2) ?? DateTime.fromMillisecondsSinceEpoch(0),
+              ),
       };
       final directed = _ascending ? primary : -primary;
       return directed == 0 ? a.$1.compareTo(b.$1) : directed;

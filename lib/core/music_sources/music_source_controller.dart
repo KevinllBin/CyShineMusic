@@ -42,9 +42,31 @@ class MusicSourceController extends AsyncNotifier<MusicSourceState> {
 
   @override
   Future<MusicSourceState> build() async {
-    // Imported scripts were validated before they were enabled. Loading them
-    // lazily avoids initializing up to five QuickJS contexts during startup.
-    return _store.load();
+    final stored = await _store.load();
+    var records = stored.records;
+    var changed = false;
+    // Older runtimes dropped qs before persisting the capabilities. Refresh
+    // enabled legacy records once; current records retain lazy initialization.
+    for (final record in stored.enabledRecords) {
+      if (record.capabilitiesVersion >= kMusicSourceCapabilitiesVersion) {
+        continue;
+      }
+      try {
+        final ready = await _validate(
+          record,
+          await _store.readScript(record.id),
+        );
+        records = _replace(records, ready);
+        changed = true;
+      } catch (_) {
+        // Keep working capabilities and priority, and retry at the next launch.
+        await AppLogger.write('music-source', 'capability refresh failed');
+      }
+    }
+    if (!changed) return stored;
+    final refreshed = stored.copyWith(records: records);
+    await _store.save(refreshed);
+    return refreshed;
   }
 
   Future<void> checkAllForUpdates() async {
@@ -298,36 +320,45 @@ class MusicSourceController extends AsyncNotifier<MusicSourceState> {
     }
   }
 
-  Future<Map<String, dynamic>> exportForSync() => _change(() async {
-    final current = await future;
-    final scripts = <String, String>{};
-    final records = <Map<String, dynamic>>[];
-    for (final record in current.records) {
-      scripts[record.id] = await _store.readScript(record.id);
-      final json = record.toJson()..remove('lastError');
-      json['origin'] = _portableOrigin(record.origin);
-      records.add(json);
-    }
-    return {
-      'records': records,
-      'enabledIds': current.enabledIds,
-      'scripts': scripts,
-    };
-  });
+  Future<Map<String, dynamic>> exportForSync() =>
+      _exportSnapshot(localOrigin: 'WebDAV 同步');
 
-  Future<void> applyFromSync(Object value) => _change(() async {
+  Future<Map<String, dynamic>> exportForBackup() =>
+      _exportSnapshot(localOrigin: '配置导入');
+
+  Future<Map<String, dynamic>> _exportSnapshot({required String localOrigin}) =>
+      _change(() async {
+        final current = await future;
+        final scripts = <String, String>{};
+        final records = <Map<String, dynamic>>[];
+        for (final record in current.records) {
+          scripts[record.id] = await _store.readScript(record.id);
+          final json = record.toJson()..remove('lastError');
+          json['origin'] = _portableOrigin(record.origin, localOrigin);
+          records.add(json);
+        }
+        return {
+          'records': records,
+          'enabledIds': current.enabledIds,
+          'scripts': scripts,
+        };
+      });
+
+  Future<void> applyFromSync(Object value) => applyFromBackup(value);
+
+  Future<void> applyFromBackup(Object value) => _change(() async {
     if (value is! Map) {
-      throw const MusicSourceRuntimeException('云端音源格式无效');
+      throw const MusicSourceRuntimeException('备份音源格式无效');
     }
     final json = Map<String, dynamic>.from(value);
     final rawRecords = json['records'];
     final rawEnabledIds = json['enabledIds'];
     final rawScripts = json['scripts'];
     if (rawRecords is! List || rawEnabledIds is! List || rawScripts is! Map) {
-      throw const MusicSourceRuntimeException('云端音源数据不完整');
+      throw const MusicSourceRuntimeException('备份音源数据不完整');
     }
     if (rawRecords.length > kMaxMusicSourceCount) {
-      throw const MusicSourceRuntimeException('云端音源数量超过 20 个');
+      throw const MusicSourceRuntimeException('备份音源数量超过 20 个');
     }
 
     final scripts = <String, String>{};
@@ -353,21 +384,21 @@ class MusicSourceController extends AsyncNotifier<MusicSourceState> {
         parsedRecords.add(record);
       }
     } catch (error) {
-      throw const MusicSourceRuntimeException('云端音源脚本或索引无效');
+      throw const MusicSourceRuntimeException('备份音源脚本或索引无效');
     }
 
     final enabledIds = <String>[];
     for (final rawId in rawEnabledIds) {
       if (rawId is! String || !ids.contains(rawId)) {
-        throw const MusicSourceRuntimeException('云端启用音源列表无效');
+        throw const MusicSourceRuntimeException('备份启用音源列表无效');
       }
       if (!enabledIds.contains(rawId)) enabledIds.add(rawId);
     }
     if (enabledIds.length > kMaxEnabledMusicSourceCount) {
-      throw const MusicSourceRuntimeException('云端启用音源数量超过 5 个');
+      throw const MusicSourceRuntimeException('备份启用音源数量超过 5 个');
     }
     if (scripts.length != parsedRecords.length) {
-      throw const MusicSourceRuntimeException('云端音源脚本数量不一致');
+      throw const MusicSourceRuntimeException('备份音源脚本数量不一致');
     }
 
     final records = <MusicSourceRecord>[];
@@ -378,7 +409,7 @@ class MusicSourceController extends AsyncNotifier<MusicSourceState> {
     } catch (error) {
       await _runtime.disposeRuntime();
       if (error is MusicSourceRuntimeException) rethrow;
-      throw const MusicSourceRuntimeException('云端音源脚本初始化失败');
+      throw const MusicSourceRuntimeException('备份音源脚本初始化失败');
     }
 
     final next = MusicSourceState(
@@ -462,7 +493,11 @@ class MusicSourceController extends AsyncNotifier<MusicSourceState> {
     if (capabilities.isEmpty) {
       throw const MusicSourceRuntimeException('音源没有声明可用的 musicUrl 能力');
     }
-    return record.copyWith(capabilities: capabilities, clearLastError: true);
+    return record.copyWith(
+      capabilities: capabilities,
+      capabilitiesVersion: kMusicSourceCapabilitiesVersion,
+      clearLastError: true,
+    );
   }
 
   Future<void> deactivate(String id) => _change(() async {
@@ -507,12 +542,12 @@ class MusicSourceController extends AsyncNotifier<MusicSourceState> {
   }
 }
 
-String _portableOrigin(String origin) {
+String _portableOrigin(String origin, String localOrigin) {
   final uri = Uri.tryParse(origin.trim());
   if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
     return uri.toString();
   }
-  return 'WebDAV 同步';
+  return localOrigin;
 }
 
 final musicSourceControllerProvider =

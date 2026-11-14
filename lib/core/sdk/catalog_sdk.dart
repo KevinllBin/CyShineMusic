@@ -5,12 +5,18 @@ import '../models/search_category.dart';
 import 'catalog/kw_catalog.dart';
 import 'catalog/tx_catalog.dart';
 import 'catalog/wy_catalog.dart';
+import 'catalog/qs_catalog.dart';
 
 class CatalogSdk {
   static bool supports(MusicSource source, SearchCategory category) =>
       category == SearchCategory.songs ||
       category == SearchCategory.all ||
-      const {MusicSource.wy, MusicSource.tx, MusicSource.kw}.contains(source);
+      const {
+        MusicSource.wy,
+        MusicSource.tx,
+        MusicSource.kw,
+        MusicSource.qs,
+      }.contains(source);
 
   static Future<CatalogResult> search(
     String keyword,
@@ -22,6 +28,7 @@ class CatalogSdk {
     MusicSource.wy => WyCatalog.search(keyword, category, page, limit),
     MusicSource.kw => KwCatalog.search(keyword, category, page, limit),
     MusicSource.tx => TxCatalog.search(keyword, category, page, limit),
+    MusicSource.qs => qishuiCatalog.search(keyword, category, page, limit),
     _ => throw UnsupportedError('${source.label}暂不支持${category.label}搜索'),
   };
 
@@ -42,6 +49,11 @@ class CatalogSdk {
       maxTracks: maxTracks,
     ),
     MusicSource.tx => TxCatalog.detail(
+      id,
+      artist: artist,
+      maxTracks: maxTracks,
+    ),
+    MusicSource.qs => qishuiCatalog.detail(
       id,
       artist: artist,
       maxTracks: maxTracks,

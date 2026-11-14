@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -235,15 +236,20 @@ class _EqualizerPageState extends ConsumerState<EqualizerPage> {
 
   Future<void> _exportSpeq(EqualizerSettings settings) async {
     try {
+      final bytes = Uint8List.fromList(utf8.encode(settings.toSpeq()));
       var path = await FilePicker.platform.saveFile(
         dialogTitle: '导出均衡器配置',
         fileName: 'CyShineMusic.speq',
         type: FileType.custom,
         allowedExtensions: const ['speq'],
+        bytes: Platform.isAndroid || Platform.isIOS ? bytes : null,
       );
       if (path == null || !mounted) return;
-      if (!path.toLowerCase().endsWith('.speq')) path = '$path.speq';
-      await File(path).writeAsString(settings.toSpeq(), flush: true);
+      // Mobile pickers have already saved the bytes through the provider.
+      if (!Platform.isAndroid && !Platform.isIOS) {
+        if (!path.toLowerCase().endsWith('.speq')) path = '$path.speq';
+        await File(path).writeAsBytes(bytes, flush: true);
+      }
       if (!mounted) return;
       showAppToast(context, '均衡器配置已导出', type: AppToastType.success);
     } catch (error) {

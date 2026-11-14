@@ -208,10 +208,10 @@ void main() {
       );
       expect(find.text('9.48 MB'), findsOneWidget);
       expect(find.text('文件大小未知'), findsNothing);
-      expect(find.text('较高品质 192K'), findsNothing);
+      expect(find.text('较高品质 192K'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('player-quality-option-192k')),
-        findsNothing,
+        findsOneWidget,
       );
       expect(find.text('3.82 MB'), findsOneWidget);
 

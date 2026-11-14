@@ -505,15 +505,19 @@ class PlayerController extends StateNotifier<PlayerState>
     _invalidateGrooveShift();
     _requestToken = token;
     _transportSuppressionToken = token;
-    final selectedQuality =
+    final playbackPreference = _ref
+        .read(settingsProvider)
+        .onlinePlaybackQuality;
+    var selectedQuality =
         quality ??
-        music.playbackQualityFor(
-          _ref.read(settingsProvider).onlinePlaybackQuality,
-        );
+        (music.meta.qualitys.isEmpty
+            ? playbackPreference.preferredQuality
+            : null) ??
+        music.playbackQualityFor(playbackPreference);
     _currentMusic = music;
     _logPlayback(
       'load_start kind=remote music=${music.source.code}:${music.id} '
-      'requestedQuality=${selectedQuality.code} '
+      'requestedQuality=${quality?.code ?? playbackPreference.code} '
       'initialPositionMs=${initialPosition.inMilliseconds} '
       'autoPlay=$autoPlay excludedSources=${excludedSourceIds.length}',
     );
@@ -567,6 +571,15 @@ class PlayerController extends StateNotifier<PlayerState>
     }
 
     try {
+      final resolver = _ref.read(musicUrlResolverProvider);
+      if (quality == null &&
+          playbackPreference == OnlinePlaybackQuality.highest) {
+        // Catalogue quality lists can be absent (Qishui) or incomplete. Start
+        // with the enabled sources' highest quality; the resolver downgrades
+        // only after those sources fail to supply it.
+        selectedQuality = await resolver.highestQualityFor(music);
+        if (!identical(_requestToken, token)) return false;
+      }
       final api = _ref.read(musicApiProvider);
       Future<String?> fetchCover() async {
         final String? coverUrl;
@@ -599,36 +612,34 @@ class PlayerController extends StateNotifier<PlayerState>
 
       final coverFuture = fetchCover();
 
-      final fallback = await _ref
-          .read(musicUrlResolverProvider)
-          .useFirstAvailable(
+      final fallback = await resolver.useFirstAvailable(
+        music: music,
+        quality: selectedQuality,
+        excludedSourceIds: excludedSourceIds,
+        isCancelled: () => !identical(_requestToken, token),
+        use: (_, resolved) async {
+          if (resolved.url.trim().isEmpty) {
+            throw Exception('音源没有返回播放地址');
+          }
+          final resolvedQuality = resolved.type ?? selectedQuality;
+          final initialTrack = PlayerTrack.fromMusic(
             music: music,
-            quality: selectedQuality,
-            excludedSourceIds: excludedSourceIds,
-            isCancelled: () => !identical(_requestToken, token),
-            use: (_, resolved) async {
-              if (resolved.url.trim().isEmpty) {
-                throw Exception('音源没有返回播放地址');
-              }
-              final resolvedQuality = resolved.type ?? selectedQuality;
-              final initialTrack = PlayerTrack.fromMusic(
-                music: music,
-                quality: resolvedQuality,
-                url: resolved.url,
-                coverUrl: music.meta.picUrl,
-              );
-              final initialItem = await _mediaItemForTrack(initialTrack);
-              if (!identical(_requestToken, token)) {
-                throw const MusicSourceFallbackCancelledException();
-              }
-              await _audioHandler.load(
-                item: initialItem,
-                sourceUri: Uri.parse(resolved.url),
-                queueIndex: _hasCurrentQueueTrack ? _queueIndex : null,
-              );
-              return resolved;
-            },
+            quality: resolvedQuality,
+            url: resolved.url,
+            coverUrl: music.meta.picUrl,
           );
+          final initialItem = await _mediaItemForTrack(initialTrack);
+          if (!identical(_requestToken, token)) {
+            throw const MusicSourceFallbackCancelledException();
+          }
+          await _audioHandler.load(
+            item: initialItem,
+            sourceUri: Uri.parse(resolved.url),
+            queueIndex: _hasCurrentQueueTrack ? _queueIndex : null,
+          );
+          return resolved;
+        },
+      );
       if (!identical(_requestToken, token)) return false;
       final resolved = fallback.value;
       final resolvedQuality = resolved.type ?? selectedQuality;
@@ -2359,6 +2370,14 @@ class PlayerController extends StateNotifier<PlayerState>
         state == AppLifecycleState.resumed) {
       unawaited(AppLogger.logAndroidDiagnostics(state.name));
       unawaited(AppLogger.flush());
+    }
+    if (state == AppLifecycleState.resumed &&
+        mounted &&
+        _transportSuppressionToken == null) {
+      final position = _audioHandler.position;
+      if (position != this.state.position) {
+        this.state = this.state.copyWith(position: position);
+      }
     }
     if (state != AppLifecycleState.resumed) {
       _persistPositionCheckpoint();

@@ -10,6 +10,7 @@ import 'internal/tx_quality.dart';
 import 'playlist_adapters/kg_playlist_adapter.dart';
 import 'playlist_adapters/kw_playlist_adapter.dart';
 import 'playlist_adapters/mg_playlist_adapter.dart';
+import 'qs_sdk.dart';
 
 class PlaylistSdk {
   const PlaylistSdk._();
@@ -19,6 +20,9 @@ class PlaylistSdk {
     MusicSource source = MusicSource.all,
     int? maxTracks,
   }) async {
+    if (source == MusicSource.qs && input.startsWith('chart:')) {
+      return qishuiSdk.leaderboard(input, maxTracks: maxTracks);
+    }
     final directTarget = parseTarget(input, source: source);
     if (directTarget == null &&
         source == MusicSource.all &&
@@ -48,6 +52,8 @@ class PlaylistSdk {
         return KgPlaylistAdapter.parse(target.id, maxTracks: maxTracks);
       case MusicSource.mg:
         return MgPlaylistAdapter.parse(target.id, maxTracks: maxTracks);
+      case MusicSource.qs:
+        return qishuiSdk.playlist(target.id, maxTracks: maxTracks);
       case MusicSource.all:
         throw Exception('无法识别歌单来源');
     }
@@ -104,6 +110,19 @@ class PlaylistSdk {
   }
 
   static ParsedPlaylistTarget? _parseUriTarget(Uri uri, MusicSource source) {
+    if ((source == MusicSource.qs || source == MusicSource.all) &&
+        (_isHost(uri.host, 'qishui.com') ||
+            _isHost(uri.host, 'music.douyin.com'))) {
+      final id =
+          _playlistPathId(uri.path) ??
+          _numeric(uri.queryParameters['playlist_id']) ??
+          (_hasPlaylistPath(uri.path)
+              ? _numeric(uri.queryParameters['id'])
+              : null);
+      if (id != null) {
+        return ParsedPlaylistTarget(id: id, source: MusicSource.qs);
+      }
+    }
     if ((source == MusicSource.wy || source == MusicSource.all) &&
         _isHost(uri.host, 'music.163.com')) {
       final id = _parseWyId(uri);

@@ -250,6 +250,11 @@ class _SongsPageState extends ConsumerState<SongsPage> {
           return a.singer.toLowerCase().compareTo(b.singer.toLowerCase());
         case SongSortMode.added:
           return a.createdAt.compareTo(b.createdAt);
+        case SongSortMode.modified:
+          return (a.modifiedAt ?? DateTime.fromMillisecondsSinceEpoch(0))
+              .compareTo(
+                b.modifiedAt ?? DateTime.fromMillisecondsSinceEpoch(0),
+              );
       }
     }
 
@@ -314,6 +319,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
       qualityCode: entry.qualityCode,
       status: entry.status,
       createdAt: file.createdAt,
+      modifiedAt: file.modifiedAt,
       savedPath: file.path,
       message: entry.message,
       picUrl: entry.picUrl,
@@ -336,6 +342,7 @@ class _SongsPageState extends ConsumerState<SongsPage> {
       qualityCode: file.extension.toLowerCase(),
       status: DownloadHistoryStatus.completed,
       createdAt: file.createdAt,
+      modifiedAt: file.modifiedAt,
       savedPath: file.path,
       sizeBytes: file.sizeBytes,
     );

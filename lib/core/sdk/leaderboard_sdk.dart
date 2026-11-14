@@ -18,6 +18,7 @@ import 'playlist_adapters/kg_playlist_adapter.dart';
 import 'playlist_adapters/kw_playlist_adapter.dart';
 import 'playlist_adapters/mg_playlist_adapter.dart';
 import 'playlist_sdk.dart';
+import 'qs_sdk.dart';
 
 typedef LeaderboardJsonPoster =
     Future<dynamic> Function(
@@ -66,6 +67,11 @@ class LeaderboardSdk {
     LeaderboardJsonPoster? jsonPoster,
     LeaderboardPlaylistLoader? playlistLoader,
   }) async {
+    if (board.source == MusicSource.qs && board.previewTracks.isNotEmpty) {
+      return board.copyWith(
+        previewTracks: board.previewTracks.take(limit).toList(growable: false),
+      );
+    }
     final detail = await get(
       source: board.source,
       boardId: board.boardId,
@@ -117,6 +123,7 @@ class LeaderboardSdk {
         maxTracks: maxTracks,
         load: jsonLoader ?? SdkHttp.getJson,
       ),
+      MusicSource.qs => qishuiSdk.leaderboard(boardId, maxTracks: maxTracks),
       MusicSource.all => throw Exception('排行榜不支持“全部”音源'),
     };
   }

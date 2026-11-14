@@ -70,6 +70,7 @@ MusicInfo buildMusicInfo({
       id = '${source.code}_$songId';
     case MusicSource.kw:
     case MusicSource.wy:
+    case MusicSource.qs:
     case MusicSource.all:
       id = '${source.code}_$songId';
   }

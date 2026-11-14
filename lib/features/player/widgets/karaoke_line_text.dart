@@ -374,14 +374,10 @@ class _LyricParagraph {
               last.width *
                   ((to - lastGlyph.from) / (lastGlyph.to - lastGlyph.from))
                       .clamp(0.0, 1.0);
-          final atStart = (firstX - firstRow.rect.left).abs() < 0.5;
           sweeps.add(
             _TimedSweep(
               word,
-              firstRow.start +
-                  firstX -
-                  firstRow.rect.left -
-                  (atStart ? feather : 0),
+              firstRow.start + firstX - firstRow.rect.left,
               lastRow.start + lastX - lastRow.rect.left,
             ),
           );
@@ -419,20 +415,29 @@ class _LyricParagraph {
     orElse: () => visualLines.last,
   );
 
-  double frontAt(double ms) {
-    if (sweeps.isEmpty) return end;
+  ({double front, double fadeStart}) sweepAt(double ms) {
+    if (sweeps.isEmpty) return (front: end, fadeStart: end);
     var front = sweeps.first.start;
     for (final sweep in sweeps) {
-      if (ms < sweep.word.startMs) return front;
+      if (ms < sweep.word.startMs) return (front: front, fadeStart: front);
       if (ms < sweep.word.endMs) {
-        return sweep.start +
+        front =
+            sweep.start +
             (sweep.end - sweep.start) *
                 ((ms - sweep.word.startMs) /
                     math.max(1, sweep.word.endMs - sweep.word.startMs));
+        // Feather only inside the current word's elapsed span. Extending it
+        // ahead of the front lights the next word before its timestamp, even
+        // during a gap. Taper at both ends so completed words stay fully lit.
+        final fadeWidth = math.max(
+          0.0,
+          math.min(feather, math.min(front - sweep.start, sweep.end - front)),
+        );
+        return (front: front, fadeStart: front - fadeWidth);
       }
       front = sweep.end;
     }
-    return end;
+    return (front: end, fadeStart: end);
   }
 
   double riseAt(double center, double front) {
@@ -594,6 +599,7 @@ class _KaraokePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (size.width <= 0) return;
     final p = paragraph;
     final ms = position.value;
     final peak = _dimAlpha + (1 - _dimAlpha) * emphasis.value;
@@ -622,7 +628,8 @@ class _KaraokePainter extends CustomPainter {
       canvas.restore();
       return;
     }
-    final front = p.frontAt(ms);
+    final sweep = p.sweepAt(ms);
+    final front = sweep.front;
     for (final row in p.visualLines) {
       final bounds = Rect.fromLTRB(
         0,
@@ -660,16 +667,27 @@ class _KaraokePainter extends CustomPainter {
         p.text.paint(canvas, Offset.zero);
         canvas.restore();
       }
-      final x = row.rect.left + front - row.start;
+      final fadeStart =
+          ((row.rect.left + sweep.fadeStart - row.start) / size.width).clamp(
+            0.0,
+            1.0,
+          );
+      final fadeEnd = ((row.rect.left + front - row.start) / size.width).clamp(
+        0.0,
+        1.0,
+      );
+      final lit = Colors.white.withValues(alpha: peak);
+      final dim = Colors.white.withValues(alpha: _dimAlpha);
       canvas.drawRect(
         bounds,
         Paint()
           ..blendMode = BlendMode.dstIn
-          ..shader =
-              ui.Gradient.linear(Offset(x, 0), Offset(x + p.feather, 0), [
-                Colors.white.withValues(alpha: peak),
-                Colors.white.withValues(alpha: _dimAlpha),
-              ]),
+          ..shader = ui.Gradient.linear(
+            Offset.zero,
+            Offset(size.width, 0),
+            [lit, lit, dim, dim],
+            [0, fadeStart, fadeEnd, 1],
+          ),
       );
       canvas.restore();
     }

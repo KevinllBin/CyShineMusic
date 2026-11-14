@@ -10,7 +10,8 @@ const String songsLibraryPlaylistIdStorageKey = 'songs_library_playlist_id_v1';
 enum SongSortMode {
   title('title', '标题', Icons.sort_by_alpha_rounded),
   artist('artist', '歌手', Icons.person_outline_rounded),
-  added('added', '添加时间', Icons.schedule_rounded);
+  added('added', '添加时间', Icons.schedule_rounded),
+  modified('modified', '修改时间', Icons.update_rounded);
 
   const SongSortMode(this.code, this.label, this.icon);
 
@@ -22,6 +23,7 @@ enum SongSortMode {
     return switch (code) {
       'artist' => SongSortMode.artist,
       'added' => SongSortMode.added,
+      'modified' => SongSortMode.modified,
       _ => SongSortMode.title,
     };
   }

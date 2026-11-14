@@ -12,10 +12,12 @@ import '../models/catalog_result.dart';
 import '../models/search_category.dart';
 import '../models/online_collection_kind.dart';
 import '../sdk/catalog_sdk.dart';
+import '../sdk/catalog/qs_catalog.dart';
 import '../sdk/leaderboard_sdk.dart';
 import '../sdk/music_sdk.dart' as sdk;
 import '../sdk/playlist_catalog_sdk.dart';
 import '../sdk/playlist_sdk.dart';
+import '../sdk/qs_sdk.dart';
 import '../storage/settings_store.dart';
 
 class MusicApi {
@@ -113,7 +115,11 @@ class MusicApi {
     SearchResponse? songs;
     var total = 0;
     var hasMore = false;
-    final pageSize = category == SearchCategory.all ? 6 : limit;
+    final pageSize = category == SearchCategory.all
+        ? 6
+        : source == MusicSource.qs
+        ? qsSearchPageSize
+        : limit;
     await Future.wait(
       categories.map((type) async {
         if (type == SearchCategory.songs) {
@@ -259,6 +265,7 @@ class MusicApi {
   }
 
   Future<List<LeaderboardSummary>> getLeaderboards(MusicSource source) async {
+    if (source == MusicSource.qs) return qishuiSdk.boards();
     return LeaderboardSdk.boards(source);
   }
 

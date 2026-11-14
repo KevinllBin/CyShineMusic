@@ -54,7 +54,7 @@ class _SongsSortSheetState extends State<_SongsSortSheet> {
     if (_mode == mode) return;
     setState(() {
       _mode = mode;
-      _ascending = mode != SongSortMode.added;
+      _ascending = mode != SongSortMode.added && mode != SongSortMode.modified;
     });
     widget.onChanged(_mode, _ascending);
   }
